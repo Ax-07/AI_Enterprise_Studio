@@ -2,6 +2,7 @@
 import ast, csv, io, json, re, math, ipaddress, socket, ssl, http.client, urllib.parse, time
 from html.parser import HTMLParser
 import verification
+import autopilot
 import hashlib
 from datetime import datetime, timezone
 
@@ -250,6 +251,7 @@ def demo_action(s,t):
 def execute(s,t,v,cfg,mode):
     mid=t['mission']; a=v['action']; target=v['target'].strip(); text=v['text']; detail=v['detail']; agent=t['agent']
     if a not in PERMS[agent]: raise ValueError('Outil interdit à '+agent)
+    with s.db() as c: autopilot.guard(c,mid,agent,a,target,PERMS[agent])
     if max(len(target),len(text),len(detail))>24000: raise ValueError('Paramètre trop long')
     if a=='test_file':
         if mode!='cloud': raise ValueError('Les tests agents sont réservés aux missions Cloud; simulation standard inchangée')
@@ -358,6 +360,8 @@ def final_schema():
 def context(s,t,m,cfg):
     mid=t['mission']; agent=t['agent']
     with s.db() as c:
+        allowed,campaign=autopilot.permitted(c,mid,agent,PERMS[agent])
+        campaign_hint=('AUTOPILOTE : agents délégables '+', '.join(sorted(autopilot.ROLES[campaign['kind']]))+' ; enveloppe restante estimée '+str(max(0,campaign['budget']-autopilot.costs(c,campaign['id']))/1e6)+' USD. Respecte les seuls outils affichés.' if campaign else '')
         tasks=[dict(x) for x in c.execute('SELECT id,agent,goal,criteria,state,result FROM tasks WHERE mission=? ORDER BY id',(mid,))]
         for x in tasks:
             if len(x['result'])>1600: x['result']=x['result'][:1600]+' [extrait; mémoire pour retrouver]'
@@ -374,7 +378,7 @@ def context(s,t,m,cfg):
         decisions=[dict(x) for x in c.execute('SELECT id,state,body FROM requests WHERE task=?',(t['id'],))]
         remaining=(cfg['budget']-s.used(c))/1e6
         tries=c.execute('SELECT COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()[0]
-    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}/{cfg["turn_limit"]}. Dernier tour réservé au rapport.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), 'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(PERMS[agent])},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants. Si ton propre test a réussi, termine dès que les critères couverts sont établis; ne relis pas les mêmes fichiers ou la mémoire sans question nouvelle. Signale explicitement les critères non testés. N’attends pas le plafond.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
+    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}/{cfg["turn_limit"]}. Dernier tour réservé au rapport.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), campaign_hint,'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(allowed)},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants. Si ton propre test a réussi, termine dès que les critères couverts sont établis; ne relis pas les mêmes fichiers ou la mémoire sans question nouvelle. Signale explicitement les critères non testés. N’attends pas le plafond.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
 
 def run(s,mid):
     try:
@@ -400,6 +404,10 @@ def run(s,mid):
                 if len(p.encode())>100000: raise RuntimeError('Contexte trop volumineux; arrêt sans troncature silencieuse')
                 closing=t['turns']+1>=cfg['turn_limit']
                 schema=final_schema() if closing else SCHEMA
+                if not closing:
+                    with s.db() as c: allowed,campaign=autopilot.permitted(c,mid,t['agent'],PERMS[t['agent']])
+                    if campaign:
+                        schema=json.loads(json.dumps(SCHEMA));schema['properties']['action']['enum']=sorted(allowed)
                 validator=finish_only if closing else validate_action
                 if closing: p+='\nDERNIER TOUR : seul finish est autorisé. Dépose un rapport honnête, même partiel; cite les preuves et les critères non atteints. Aucun autre outil.'
                 maxout=2048 if closing else 8192 if t['agent']=='NEXUS' else 4096
