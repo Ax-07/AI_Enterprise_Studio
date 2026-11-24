@@ -1,6 +1,7 @@
 """Bounded, persistent internal campaign scheduler. No provider outside the mission engine."""
 import json, hashlib
 import protocol_recovery
+import working_memory
 from decimal import Decimal, InvalidOperation
 
 ACTIVE='actif'
@@ -72,12 +73,18 @@ def _missions(c,cid):
     return list(c.execute("""SELECT cm.kind,cm.artifact,m.id,m.state,m.error,m.title
         FROM campaign_missions cm JOIN missions m ON m.id=cm.mission WHERE cm.campaign=? ORDER BY m.id""",(cid,)))
 
+def recovery_kind(c,mid,cfg):
+    if protocol_recovery.recovery_task(c,mid,cfg):return 'protocol'
+    if working_memory.recovery_task(c,mid,cfg):return 'memory'
+    return None
+
 def status(c,cfg=None):
     p=c.execute('SELECT * FROM campaigns ORDER BY id DESC LIMIT 1').fetchone()
     if not p:return None
     d=dict(p);d['permissions']=json.loads(d['permissions'])
     d['spent']=costs(c,p['id']);d['searches']=searches(c,p['id']);d['missions']=[dict(x) for x in _missions(c,p['id'])]
-    d['recoverable']=bool(cfg and p['state']=='bloqué' and d['missions'] and protocol_recovery.recovery_task(c,d['missions'][-1]['id'],cfg))
+    d['recovery_kind']=recovery_kind(c,d['missions'][-1]['id'],cfg) if cfg and p['state']=='bloqué' and d['missions'] else None
+    d['recoverable']=bool(d['recovery_kind'])
     return d
 
 def start(c,body,cfg):
@@ -115,9 +122,9 @@ def resume(c,cid,cfg):
     if not p or p['state'] not in ('interrompu','arrêté','en attente','bloqué'):raise ValueError('Campagne non reprenable automatiquement')
     if active(c) or c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone():raise ValueError('Un travail est déjà en cours')
     if c.execute("SELECT 1 FROM requests WHERE state='en attente'").fetchone():raise ValueError('Traiter les décisions en attente')
-    if not cfg['key'] or costs(c,cid)>=p['budget']:raise ValueError('Ressources insuffisantes; aucune remise à zéro')
+    if not cfg['key'] or costs(c,cid)>=p['budget'] or c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0]>=cfg['budget']:raise ValueError('Ressources insuffisantes; aucune remise à zéro')
     ms=_missions(c,cid)
-    recover=bool(p['state']=='bloqué' and ms and protocol_recovery.recovery_task(c,ms[-1]['id'],cfg))
+    recover=bool(p['state']=='bloqué' and ms and recovery_kind(c,ms[-1]['id'],cfg))
     if p['state']=='bloqué' and not recover:raise ValueError('Blocage non récupérable sans diagnostic; aucun compteur réinitialisé')
     if ms and (recover or ms[-1]['state'] in ('interrompue','arrêtée','en attente','prête')):
         c.execute("UPDATE missions SET state='en cours',error='' WHERE id=?",(ms[-1]['id'],))

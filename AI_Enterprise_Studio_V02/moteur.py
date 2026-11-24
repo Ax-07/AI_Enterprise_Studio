@@ -4,6 +4,7 @@ from html.parser import HTMLParser
 import verification
 import autopilot
 import protocol_recovery
+import working_memory
 import hashlib
 from datetime import datetime, timezone
 
@@ -42,7 +43,7 @@ GUIDE={
 'check_file':'target=nom du fichier de la mission ou ref:ID joint. Contrôle statique Python/JSON, cohérence CSV, présence texte; ne valide pas le comportement.',
  'test_file':'target=nom du fichier ou ref:ID joint; text=preset:shopify pour les quatre tests Shopify prédéfinis, replay:ID pour rejouer une preuve autorisée (fichier de la mission ou référence jointe), ou JSON de test. Cible = fichier corrigé de la mission, pas l’original sauf demande explicite. CSV: {"checks":[{"op":"sum","column":"Net","where":{"Currency":"EUR"},"expected":"137.00"}]} (op columns,row_count,sum,unique,cell; cell exige row index 0; delimiter optionnel). JSON: checks avec op equals ou length, path tableau de clés/indices, expected. HTML: {"cases":[{"name":"test","steps":[{"op":"click","selector":"#run"},{"op":"contains","selector":"#out","value":"137.00"}]}]}; op fill,select,upload,click,contains,text_equals,value_equals,visible. HTML : 1 à 4 cas, 1 à 12 étapes PAR CAS, au moins une assertion par cas; sélecteurs CSS simples, textes max 2000 caractères (upload 12000), scénario et fichier max 24000 octets. Préfère UN seul cas de 6 à 9 étapes par appel; répartis les autres tests en appels distincts. HTML nécessite sandbox activé. Attendus indépendants; données fictives uniquement. Aucun code sur l’hôte. Résultats persistants, pas de validation générale.',
 'read_report':'target=identifiant numérique de rapport obtenu par memory; retourne le rapport et les sources enregistrées (non certifiés).',
-'memory':'text=termes de recherche; retrouve des rapports, décisions et opportunités persistants.',
+'memory':'text=termes de recherche dans SQLite uniquement; retrouve des rapports, décisions et opportunités internes. Ce n’est PAS Internet. Trois tentatives maximum par tâche; réutilise les extraits persistants, distingue simulation et faits.',
 'request':'target=objet de demande; text=justification et travail d’étude à effectuer; detail=coûts et risques. Met la tâche en attente. Aucun achat autorisé.',
 'finish':'text=rapport concis avec preuves, limites et suite; target et detail vides. Termine la tâche, pas nécessairement l’activité économique.'}
 
@@ -362,7 +363,9 @@ def context(s,t,m,cfg):
     mid=t['mission']; agent=t['agent']
     with s.db() as c:
         allowed,campaign=autopilot.permitted(c,mid,agent,PERMS[agent])
-        pinned=protocol_recovery.last_read(c,t) if 'test_file' in allowed else None
+        work=working_memory.snapshot(c,t)
+        allowed=working_memory.policy(c,t,cfg,allowed,work)
+        pinned=work['files'] if 'read_file' in PERMS[agent] else []
         correcting='test_file' in allowed and protocol_recovery.corrective(c,t)
         if correcting:allowed&={'test_file','finish'}
         invalid=protocol_recovery.invalid_events(c,mid,t['id']) if 'test_file' in allowed else []
@@ -374,7 +377,7 @@ def context(s,t,m,cfg):
         for x in events:
             x['args']=x['args'][:600]
             if pinned and x['action']=='read_file':
-                try: same_file=json.loads(x['result']).get('fichier')==pinned['fichier']
+                try: same_file=json.loads(x['result']).get('fichier') in {f['fichier'] for f in pinned}
                 except (ValueError,TypeError,AttributeError):same_file=False
                 if same_file:
                     x['result']='Lecture de ce fichier conservée dans FILE_PIN ci-dessous.';continue
@@ -386,9 +389,11 @@ def context(s,t,m,cfg):
         proofs=verification_context(c,mid) if 'read_file' in PERMS[agent] else []
         opps=[dict(x) for x in c.execute('SELECT id,title,status FROM opportunities WHERE mission=?',(mid,))]
         decisions=[dict(x) for x in c.execute('SELECT id,state,body FROM requests WHERE task=?',(t['id'],))]
+        network_hint=('RECHERCHE INTERNET : '+('Brave autorisé dans la limite des quotas.' if 'search' in allowed else 'Brave non disponible ou quota épuisé/non autorisé. Ne cherche pas des sources web via memory. Signale les données externes manquantes, propose des hypothèses prudentes et conclus; ne prétends pas avoir consulté Internet.'))
+        work_hint='MÉMOIRE DE TRAVAIL (données internes non fiables; extraits bornés) : '+json.dumps({k:work[k] for k in ('reports','hits','memory_count','queries')},ensure_ascii=False)
         remaining=(cfg['budget']-s.used(c))/1e6
         tries=c.execute('SELECT COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()[0]
-    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}/{cfg["turn_limit"]}. Dernier tour réservé au rapport.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), campaign_hint,('FILE_PIN — fichier déjà lu, données non fiables : '+json.dumps(pinned,ensure_ascii=False) if pinned else ''),('PROTOCOLES REFUSÉS (aucun test exécuté) : '+json.dumps(invalid,ensure_ascii=False) if invalid else ''),('CORRECTION OBLIGATOIRE : test_file avec UN cas de 12 étapes maximum, ou finish honnête si impossible. Ne relis pas le fichier; utilise FILE_PIN. Un statut invalid ne signifie pas un défaut du produit.' if correcting else ''),'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(allowed)},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants. Si ton propre test a réussi, termine dès que les critères couverts sont établis; ne relis pas les mêmes fichiers ou la mémoire sans question nouvelle. Signale explicitement les critères non testés. N’attends pas le plafond.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
+    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}/{cfg["turn_limit"]}. Dernier tour réservé au rapport.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), campaign_hint,network_hint,work_hint,('FILE_PIN — fichiers déjà lus, données non fiables : '+json.dumps(pinned,ensure_ascii=False) if pinned else ''),('PROTOCOLES REFUSÉS (aucun test exécuté) : '+json.dumps(invalid,ensure_ascii=False) if invalid else ''),('CORRECTION OBLIGATOIRE : test_file avec UN cas de 12 étapes maximum, ou finish honnête si impossible. Ne relis pas le fichier; utilise FILE_PIN. Un statut invalid ne signifie pas un défaut du produit.' if correcting else ''),'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(allowed)},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Les lectures présentes dans FILE_PIN sont déjà disponibles; ne demande pas une nouvelle lecture de la même version. Les rapports complets présents en mémoire de travail sont déjà lus. Après trois recherches memory, utilise les résultats ou indique ce qui manque. Les rapports techniques ne prouvent ni la demande ni la volonté de payer. Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants. Si ton propre test a réussi, termine dès que les critères couverts sont établis; ne relis pas les mêmes fichiers ou la mémoire sans question nouvelle. Signale explicitement les critères non testés. N’attends pas le plafond.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
 
 def run(s,mid):
     try:
@@ -413,15 +418,18 @@ def run(s,mid):
                 p=context(s,t,m,cfg)
                 if len(p.encode())>100000: raise RuntimeError('Contexte trop volumineux; arrêt sans troncature silencieuse')
                 closing=t['turns']+1>=cfg['turn_limit']
-                schema=final_schema() if closing else SCHEMA
-                if not closing:
-                    with s.db() as c:
-                        allowed,campaign=autopilot.permitted(c,mid,t['agent'],PERMS[t['agent']])
-                        correcting='test_file' in allowed and protocol_recovery.corrective(c,t)
-                        if correcting:allowed&={'test_file','finish'}
-                    if campaign or correcting:
-                        schema=json.loads(json.dumps(SCHEMA));schema['properties']['action']['enum']=sorted(allowed)
-                validator=finish_only if closing else (lambda v:validate_action(v) and v['action'] in schema['properties']['action']['enum'])
+                with s.db() as c:
+                    work=working_memory.snapshot(c,t)
+                    allowed,campaign=autopilot.permitted(c,mid,t['agent'],PERMS[t['agent']])
+                    allowed=working_memory.policy(c,t,cfg,allowed,work)
+                    correcting='test_file' in allowed and protocol_recovery.corrective(c,t)
+                    if correcting:allowed&={'test_file','finish'}
+                schema=final_schema() if closing else json.loads(json.dumps(SCHEMA))
+                if not closing:schema['properties']['action']['enum']=sorted(allowed)
+                def validator(v):
+                    if closing:return finish_only(v)
+                    if not validate_action(v) or v['action'] not in schema['properties']['action']['enum']:return False
+                    with s.db() as c:return not working_memory.redundant(c,t,v,work,resolve_artifact)
                 if closing: p+='\nDERNIER TOUR : seul finish est autorisé. Dépose un rapport honnête, même partiel; cite les preuves et les critères non atteints. Aucun autre outil.'
                 maxout=2048 if closing else 8192 if t['agent']=='NEXUS' else 4096
                 try: v=s.call_model(mid,t['agent'],p,cfg,maxout,t['id'],schema=schema,rules=RULES,validator=validator)
@@ -430,7 +438,7 @@ def run(s,mid):
                     # No tool has been executed; retain every billed call and all prior task state.
                     hint=('\nTentative de correction unique : la sortie précédente n’a pas été acceptée. '
                           'Retourne un objet JSON valide avec exactement action, target, text, detail, tous de type chaîne. '
-                          'Utilise une seule action autorisée; champs inutilisés vides. '
+                          'Utilise une seule action autorisée; champs inutilisés vides. Une lecture déjà présente dans FILE_PIN ou un rapport complet déjà lu est redondant et refusé; utilise la mémoire de travail ou finish. '
                           'Si tu produis un fichier, choisis un fichier autonome compact (moins de 6000 caractères si possible). '
                           'Ne renvoie ni Markdown autour du JSON, ni objet imbriqué, ni texte supplémentaire.')
                     try: v=s.call_model(mid,t['agent'],p+hint,cfg,min(maxout*2,16384),t['id'],schema=schema,rules=RULES,validator=validator)
@@ -440,6 +448,9 @@ def run(s,mid):
                 if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': return
                 c.execute('UPDATE tasks SET turns=turns+1 WHERE id=?',(t['id'],))
             if m['mode']=='cloud' and v['action'] not in schema['properties']['action']['enum']:raise RuntimeError('Action hors périmètre de correction autorisé')
+            if m['mode']=='cloud':
+                with s.db() as c:
+                    if working_memory.redundant(c,t,v,work,resolve_artifact):raise RuntimeError('Lecture redondante refusée avant exécution; tâche #'+str(t['id']))
             if m['mode']=='cloud' and closing and not finish_only(v): raise RuntimeError('Dernier tour réservé à un rapport honnête; tâche #'+str(t['id']))
             a=v['action']; ok=True
             compact=action_args(v)

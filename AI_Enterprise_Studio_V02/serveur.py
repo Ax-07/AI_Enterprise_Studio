@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.3.5"
+VERSION="0.3.6"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
