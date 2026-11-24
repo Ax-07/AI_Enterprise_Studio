@@ -229,7 +229,9 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
                     if c.execute("SELECT COUNT(*) FROM missions WHERE state='en cours'").fetchone()[0] or LOCK.locked(): raise ValueError('Une mission est déjà en cours.')
-                    mid=moteur.create(sys.modules[__name__],c,title,mode) if p.get('engine')=='dynamic' else c.execute("INSERT INTO missions(title,mode,state) VALUES(?,?,'en cours')",(title,mode)).lastrowid
+                    artifact_id=p.get('artifact_id')
+                    if artifact_id is not None and p.get('engine')!='dynamic': raise ValueError('Référence réservée au moteur dynamique')
+                    mid=moteur.create(sys.modules[__name__],c,title,mode,artifact_id=artifact_id) if p.get('engine')=='dynamic' else c.execute("INSERT INTO missions(title,mode,state) VALUES(?,?,'en cours')",(title,mode)).lastrowid
                 threading.Thread(target=run,args=(mid,),daemon=True).start(); return self.send({'id':mid})
             if self.route()=='/api/resume':
                 print(f'[REPRISE] POST /api/resume — serveur {VERSION}',flush=True)
