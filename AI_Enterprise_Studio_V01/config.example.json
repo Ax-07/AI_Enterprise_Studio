@@ -1,0 +1,7 @@
+{
+  "openai_api_key": "",
+  "brave_api_key": "",
+  "openai_budget_usd": 2,
+  "brave_max_searches": 10,
+  "models": {"ATLAS":"gpt-6.2-sol","ORION":"gpt-6-luna","MIDAS":"gpt-6.1-terra","SENTINEL":"gpt-6.1-terra"}
+}

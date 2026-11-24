@@ -1,0 +1,13 @@
+AI Enterprise Studio V0.1.2 — Diagnostic de reprise
+
+Arrêter le serveur (Ctrl+C). Sauvegarder le dossier de l'application.
+Extraire ce ZIP dans un dossier temporaire et remplacer serveur.py et index.html dans le dossier où se trouve Demarrer_Enterprise.bat.
+Conserver config.json et donnees/ sans les modifier.
+Relancer Demarrer_Enterprise.bat. La console doit afficher V0.1.2.
+Ouvrir http://127.0.0.1:8790/api/health : version 0.1.2, resume_supported true, paid_call false. Cette vérification ne contacte aucun fournisseur.
+Ouvrir http://127.0.0.1:8790/ et actualiser Ctrl+F5. L'interface doit indiquer Serveur V0.1.2.
+Missions > #2 > Reprendre cette mission > confirmer uniquement si tu veux autoriser les appels facturables. La reprise conserve les rapports et les coûts.
+Si une erreur subsiste, noter le message complet (méthode, route, statut HTTP, version) et les lignes [REPRISE] ou [HTTP 404] de la console. Ne pas envoyer de clés API ni config.json.
+
+Le défaut exact sur le PC n'a pas été reproduit : les routes V0.1.1 correspondent dans les fichiers d'origine. Ce correctif améliore le diagnostic, tolère une barre finale et les paramètres d'URL et vérifie la version avant reprise. Aucun changement aux modèles, aux budgets ou aux données.
+Tests hors ligne facultatifs : python -m unittest -v après copie des fichiers test_*.py. Ils ne consomment aucun crédit.

@@ -1,0 +1,4 @@
+config.json
+donnees/
+__pycache__/
+*.pyc
