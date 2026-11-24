@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.3.0"
+VERSION="0.3.1"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -211,6 +211,15 @@ class Handler(BaseHTTPRequestHandler):
             if self.route()=='/api/health': return self.send({'application':'AI Enterprise Studio','version':VERSION,'resume_supported':True,'resume_route':'POST /api/resume','paid_call':False})
             if self.route()=='/': return self.send((ROOT/'index.html').read_text(encoding='utf8').replace('__SESSION__',SESSION).encode(),typ='text/html; charset=utf-8')
             if self.route()=='/api/status' and self.headers.get('X-Session')==SESSION: return self.send(status())
+            if self.route()=='/api/mission_diagnostic' and self.headers.get('X-Session')==SESSION:
+                mid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
+                with db() as c:
+                    mission=c.execute('SELECT * FROM missions WHERE id=?',(mid,)).fetchone()
+                    if not mission: raise ValueError('Mission absente')
+                    events=[dict(r) for r in c.execute('SELECT id,task,agent,action,substr(args,1,600) AS args,substr(result,1,800) AS result,ok,created FROM events WHERE mission=? ORDER BY id DESC LIMIT 100',(mid,))]
+                    tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=?',(mid,))]
+                    calls,cost=c.execute('SELECT COUNT(*),COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger WHERE mission=?',(mid,)).fetchone()
+                return self.send({'mission':dict(mission),'tasks':tasks,'events':events,'calls':calls,'estimated_usd':cost/1e6,'limit':'Extraits de journal local; vérifier avant partage.'})
             if self.route()=='/api/verification' and self.headers.get('X-Session')==SESSION:
                 vid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c: r=c.execute('SELECT * FROM verification_results WHERE id=?',(vid,)).fetchone()
@@ -231,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
             p=json.loads(self.rfile.read(n)); cfg=config()
             if self.route()=='/api/verify':
                 if p.get('confirm') is not True: raise ValueError('Confirmation requise')
-                return self.send({'verification':moteur.quick_verify(sys.modules[__name__],p.get('id'),cfg)})
+                return self.send({'verification':moteur.quick_verify(sys.modules[__name__],p.get('id'),cfg,p.get('profile'))})
             if self.route()=='/api/start':
                 mode=p['mode']; title=p['title'].strip()
                 if mode not in ('demo','cloud') or not 1<=len(title)<=1500: raise ValueError('Mission invalide.')

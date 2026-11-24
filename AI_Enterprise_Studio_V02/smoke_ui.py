@@ -15,7 +15,7 @@ def smoke():
             mid=m.create(s,c,'Étude Shopify', 'cloud')
             c.execute("UPDATE missions SET state='terminée' WHERE id=?",(mid,))
             aid=c.execute("INSERT INTO artifacts(mission,name,version,agent,content,description) VALUES(?, 'kit.csv',1,'NEXUS','a,b\n1,2\n','test')",(mid,)).lastrowid
-            html_aid=c.execute("INSERT INTO artifacts(mission,name,version,agent,content,description) VALUES(?, 'prototype_rapprochement_shopify_fr_en.html',1,'NEXUS','<p>fixture</p>','test')",(mid,)).lastrowid
+            html_aid=c.execute("INSERT INTO artifacts(mission,name,version,agent,content,description) VALUES(?, 'prototype_shopify_correction_v2_fr_en.html',1,'NEXUS','<p>fixture</p>','test')",(mid,)).lastrowid
             c.execute("INSERT INTO reports(mission,step,agent,report,sources) VALUES(?,0,'NEXUS',?,'[]')",(mid,json.dumps({'rapport':'Rapprochement Shopify'})))
             c.execute("INSERT INTO ledger(mission,model,reserved,actual,state,agent) VALUES(?,'test',1000,500,'mesuré','NEXUS')",(mid,))
         server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
@@ -30,7 +30,7 @@ def smoke():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
                 page.goto(base)
-                expect(page.locator('#connection-text')).to_have_text('Serveur V0.3.0')
+                expect(page.locator('#connection-text')).to_have_text('Serveur V0.3.1')
                 expect(page.locator('#quick-products')).to_have_text('2')
                 for section in ('decisions','missions','work','opps','files','goals','agents','finance','memory','tools','home'):
                     page.locator(f'[data-page="{section}"]').click()
@@ -53,7 +53,7 @@ def smoke():
                 page.locator('[data-page="files"]').click()
                 page.once('dialog',lambda d:d.accept())
                 page.get_by_role('button',name='Test rapide Shopify').click()
-                proof=page.locator('#file-list .file-card').filter(has_text='prototype_rapprochement_shopify_fr_en.html')
+                proof=page.locator('#file-list .file-card').filter(has_text='prototype_shopify_correction_v2_fr_en.html')
                 expect(proof.locator('summary')).to_contain_text('Indisponible')
                 proof.locator('summary').click()
                 with page.expect_download() as dl:
@@ -82,6 +82,10 @@ def smoke():
                 page.locator('#file-filter').select_option(str(mid))
                 page.locator('#file-list .file-card').filter(has_text='kit.csv').get_by_role('button',name='Améliorer').click()
                 expect(page.locator('#attached-file')).to_be_visible()
+                page.locator('[data-page="missions"]').click()
+                with page.expect_download() as dl:
+                    page.locator('#mission-diagnostic').click()
+                assert 'estimated_usd' in json.loads(Path(dl.value.path()).read_text())
                 # Cloud start checks only the request and persistent reference.
                 # Stub the worker: no model calls, no external side effects.
                 with patch.object(s,'run',return_value=None):
