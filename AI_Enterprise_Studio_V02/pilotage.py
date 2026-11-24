@@ -1,8 +1,9 @@
 """Read-only next-step planner. No provider calls, no mutation, no autonomous spend."""
 import json
 import verification
+import recovery
 
-VERSION='1'
+VERSION='2'
 RESUMABLE={'bloquée','interrompue','arrêtée','prête'}
 
 def plan(c,cfg):
@@ -54,6 +55,9 @@ def plan(c,cfg):
             return step('verify','Tester gratuitement le livrable Shopify','Aucun résultat exploitable pour cette version. Exécuter le scénario prédéfini sans appel IA.')
         return step('files','Activer ou examiner le bac à sable','Le test HTML est indisponible sans sandbox activé. Aucun appel IA nécessaire pour cette configuration.')
     if state in RESUMABLE:
+        recover=recovery.candidate(c,mid,cfg)
+        if recover:
+            return result('close_audit','Clôturer l’audit sur preuve','SENTINEL a réussi les quatre tests puis épuisé ses tours. Synthèse technique partielle gratuite, sans rapport inventé ni remise à zéro. La conclusion ATLAS reste à reprendre.',mid,recover['artifact'],recover['proof'],task=recover['task'],**limits)
         if not cfg.get('key') or global_left<=0 or mission_left<=0 or calls_left<=0 or events>=cfg.get('call_limit',0):
             return step('diagnostic','Examiner les limites de la mission','Clé ou marge budgétaire/appels insuffisants selon les plafonds locaux. Ne pas relancer.')
         if mission['engine']=='dynamic' and (not next_task or next_task['turns']>=cfg.get('turn_limit',0)):
