@@ -28,7 +28,9 @@ def corrective(c,t):
     if t['agent'] not in ('SENTINEL','NEXUS'):return False
     # Only restrict after invalid protocol, until a new actual test result is recorded.
     for e in c.execute("SELECT result FROM events WHERE mission=? AND task=? AND action='test_file' ORDER BY id DESC LIMIT 1",(t['mission'],t['id'])):
-        try:return json.loads(e['result']).get('status')=='invalid'
+        try:
+            r=json.loads(e['result'])
+            return r.get('kind')=='html' and r.get('status')=='invalid'
         except (ValueError,TypeError,AttributeError):return False
     return False
 
@@ -40,6 +42,13 @@ def recovery_task(c,mid,cfg):
         ORDER BY CASE WHEN parent IS NULL THEN 1 ELSE 0 END,id LIMIT 1""",(mid,)).fetchone()
     if not t or t['agent']!='SENTINEL' or t['turns']+1>=cfg['turn_limit']:return None
     if not m['error'].startswith('Action identique répétée trois fois; tâche #'+str(t['id'])+' ; outil read_file ; cible '):return None
-    if not corrective(c,t) or not last_read(c,t):return None
+    pinned=last_read(c,t)
+    if not corrective(c,t) or not pinned or not pinned['nom'].lower().endswith('.html'):return None
+    if m['error']!='Action identique répétée trois fois; tâche #'+str(t['id'])+' ; outil read_file ; cible ref:'+str(pinned['fichier']):return None
+    last=c.execute("SELECT result FROM events WHERE mission=? AND task=? AND action='test_file' ORDER BY id DESC LIMIT 1",(mid,t['id'])).fetchone()
+    try:
+        v=json.loads(last['result']); proof=c.execute('SELECT * FROM verification_results WHERE id=? AND mission=? AND artifact=? AND agent=?',(v['verification_id'],mid,pinned['fichier'],t['agent'])).fetchone()
+        if not proof or json.loads(proof['result']).get('status')!='invalid':return None
+    except (ValueError,TypeError,KeyError,AttributeError):return None
     if c.execute('SELECT COUNT(*) FROM events WHERE mission=?',(mid,)).fetchone()[0]>=cfg['call_limit']:return None
     return t['id']

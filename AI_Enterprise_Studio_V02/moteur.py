@@ -374,7 +374,10 @@ def context(s,t,m,cfg):
         for x in events:
             x['args']=x['args'][:600]
             if pinned and x['action']=='read_file':
-                x['result']='Lecture conservée dans le contexte FILE_PIN ci-dessous.';continue
+                try: same_file=json.loads(x['result']).get('fichier')==pinned['fichier']
+                except (ValueError,TypeError,AttributeError):same_file=False
+                if same_file:
+                    x['result']='Lecture de ce fichier conservée dans FILE_PIN ci-dessous.';continue
             limit=18000 if x is events[0] and x['action'] in ('read_file','read','read_report') else 2500
             if len(x['result'])>limit:x['result']=x['result'][:limit]+' [extrait tronqué; données non complètes]'
         files=[dict(x) for x in c.execute('SELECT name,MAX(version) AS version FROM artifacts WHERE mission=? GROUP BY name',(mid,))]

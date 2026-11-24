@@ -128,7 +128,11 @@ def _proof(c,artifact,mid):
     rows=list(c.execute("""SELECT v.result,v.spec,a.content FROM verification_results v JOIN artifacts a ON a.id=v.artifact
         WHERE v.artifact=? AND v.mission=? AND v.agent='SENTINEL' ORDER BY v.id""",(artifact,mid)))
     states=[]
-    previous=[json.loads(x['spec']) for x in c.execute('SELECT spec FROM verification_results WHERE artifact=? AND mission<?',(artifact,mid))]
+    previous=[]
+    for x in c.execute('SELECT spec,result FROM verification_results WHERE artifact=? AND mission<?',(artifact,mid)):
+        try:
+            if json.loads(x['result']).get('status') in ('passed','failed'):previous.append(json.loads(x['spec']))
+        except (ValueError,TypeError,AttributeError):continue
     for r in rows:
         result=json.loads(r['result'])
         if result.get('sha256')!=hashlib.sha256(r['content'].encode()).hexdigest():continue
