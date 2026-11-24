@@ -1,5 +1,5 @@
 """Bounded deterministic verification. Never execute generated code in the host process."""
-import csv, decimal, hashlib, io, json, os, re, subprocess, tempfile, threading, uuid
+import csv, decimal, hashlib, io, json, math, os, re, subprocess, tempfile, threading, uuid
 from pathlib import Path
 
 IMAGE='aes-verifier:0.3.0'
@@ -15,7 +15,11 @@ def decode(s):
             d[k]=v
         return d
     def invalid(x): raise ValueError('Nombre JSON non fini')
-    return json.loads(s,object_pairs_hook=pairs,parse_constant=invalid)
+    def finite(x):
+        v=float(x)
+        if not math.isfinite(v): raise ValueError('Nombre JSON non fini')
+        return v
+    return json.loads(s,object_pairs_hook=pairs,parse_constant=invalid,parse_float=finite)
 
 def integer(v,lo,hi):
     if type(v) is not int or not lo<=v<=hi: raise ValueError('Entier hors limites')
@@ -114,7 +118,7 @@ def docker_command(config_dir,name):
     run=base+['run','--rm','--pull=never','--name',name,'--network=none','--read-only',
               '--cap-drop=ALL','--security-opt=no-new-privileges','--user=1000:1000',
               '--pids-limit=128','--memory=768m','--memory-swap=768m','--cpus=1.5',
-              '--shm-size=128m','--tmpfs=/tmp:rw,nosuid,nodev,size=192m',
+              '--shm-size=128m','--tmpfs=/tmp:rw,nosuid,nodev,size=192m,mode=1777',
               '--log-driver=none','--init','-i','--env=HOME=/tmp',
               '--env=PYTHONDONTWRITEBYTECODE=1',IMAGE]
     return base,run

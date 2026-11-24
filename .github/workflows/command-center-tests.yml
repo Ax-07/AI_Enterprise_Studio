@@ -1,7 +1,7 @@
 name: Command Center tests
 on:
   push:
-    branches: ['feature/v0.2.2-command-center']
+    branches: [main, 'feature/**', 'fix/**']
   pull_request:
     branches: [main]
 permissions:
@@ -9,7 +9,7 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: AI_Enterprise_Studio_V02
@@ -30,3 +30,8 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Chromium smoke (no external API)
         run: python smoke_ui.py
+
+      - name: Build optional HTML sandbox
+        run: docker build -t aes-verifier:0.3.0 sandbox
+      - name: Functional sandbox test
+        run: python smoke_sandbox.py
