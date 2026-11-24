@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, sys
+import moteur, pilotage, recovery, autopilot, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.3.3"
+VERSION="0.3.4"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -42,6 +42,7 @@ def init():
             if name not in cols: c.execute(f'ALTER TABLE ledger ADD COLUMN {name} {typ}')
         c.execute("UPDATE missions SET state='interrompue',error='Redémarrage : vérifier les réservations et reprendre la mission si nécessaire.' WHERE state='en cours'")
     moteur.init(sys.modules[__name__])
+    with db() as c: autopilot.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -83,6 +84,7 @@ def call_model(mid, agent, prompt, cfg, maxout=8192, stage=None, *, schema=None,
             spent,count=c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0),COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()
             if count>=cfg['call_limit']: raise RuntimeError('Plafond des appels IA de mission atteint.')
             if spent+reserve>cfg['mission_budget']: raise RuntimeError('Budget de mission insuffisant pour réserver cet appel.')
+        autopilot.reserve(c,mid,reserve)
         rid=c.execute("INSERT INTO ledger(mission,model,reserved,state,agent,stage,limit_out) VALUES(?,?,?,'réservé',?,?,?)",(mid,model,reserve,agent,stage,maxout)).lastrowid
     try: r=request('https://api.openai.com/v1/responses',{'Authorization':'Bearer '+cfg['key']},body)
     except Exception as e:
@@ -127,8 +129,10 @@ def search(mid, queries, cfg):
     out=[]
     for q in [q.strip()[:200] for q in queries if isinstance(q,str) and q.strip()][:3]:
         with db() as c:
+            c.execute('BEGIN IMMEDIATE')
             if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': break
             if c.execute('SELECT COUNT(*) FROM searches').fetchone()[0]>=cfg['limit']: break
+            autopilot.search_allowed(c,mid)
             sid=c.execute("INSERT INTO searches(mission,query,status) VALUES(?,?,'tentée')",(mid,q)).lastrowid
         try:
             url='https://api.search.brave.com/res/v1/web/search?'+urllib.parse.urlencode({'q':q,'count':5})
@@ -195,7 +199,7 @@ def run(mid):
 def status():
     cfg=config()
     with db() as c:
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'autopilot':autopilot.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 class Handler(BaseHTTPRequestHandler):
     def send(self,data,status=200,typ='application/json'):
         b=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type',typ); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store, no-cache, must-revalidate'); self.send_header('X-Enterprise-Version',VERSION); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer'); self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"); self.end_headers(); self.wfile.write(b)
@@ -238,6 +242,20 @@ class Handler(BaseHTTPRequestHandler):
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n)); cfg=config()
+            if self.route() in ('/api/autopilot/start','/api/autopilot/resume','/api/autopilot/stop'):
+                if p.get('confirm') is not True: raise ValueError('Confirmation requise')
+                route=self.route()
+                if route!='/api/autopilot/stop' and LOCK.locked():raise ValueError('Un moteur travaille déjà')
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    if route=='/api/autopilot/start': cid=autopilot.start(c,p,cfg)
+                    else:
+                        cid=p.get('id')
+                        if type(cid) is not int or not 1<=cid<=9007199254740991:raise ValueError('Campagne invalide')
+                        if route=='/api/autopilot/stop':autopilot.stop(c,cid)
+                        else:autopilot.resume(c,cid,cfg)
+                if route!='/api/autopilot/stop':threading.Thread(target=autopilot.worker,args=(sys.modules[__name__],cid),daemon=True).start()
+                return self.send({'campaign':cid})
             if self.route()=='/api/close_audit':
                 if p.get('confirm') is not True: raise ValueError('Confirmation de clôture partielle requise')
                 if not LOCK.acquire(blocking=False): raise ValueError('Une mission est déjà en cours')
@@ -256,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
                 if mode=='cloud' and (not cfg['key'] or p.get('confirm') is not True): raise ValueError('Clé OpenAI et confirmation requises.')
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
-                    if c.execute("SELECT COUNT(*) FROM missions WHERE state='en cours'").fetchone()[0] or LOCK.locked(): raise ValueError('Une mission est déjà en cours.')
+                    if c.execute("SELECT COUNT(*) FROM missions WHERE state='en cours'").fetchone()[0] or LOCK.locked() or autopilot.active(c): raise ValueError('Une mission ou campagne est déjà en cours.')
                     artifact_id=p.get('artifact_id')
                     if artifact_id is not None and p.get('engine')!='dynamic': raise ValueError('Référence réservée au moteur dynamique')
                     mid=moteur.create(sys.modules[__name__],c,title,mode,artifact_id=artifact_id) if p.get('engine')=='dynamic' else c.execute("INSERT INTO missions(title,mode,state) VALUES(?,?,'en cours')",(title,mode)).lastrowid
@@ -269,13 +287,18 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute('BEGIN IMMEDIATE')
                     m=c.execute('SELECT * FROM missions WHERE id=?',(mid,)).fetchone()
                     if not m or m['state'] not in ('bloquée','interrompue','arrêtée','prête'): raise ValueError('Mission non reprenable.')
+                    if autopilot.link(c,mid):raise ValueError('Reprendre depuis Autopilote, sans contourner son enveloppe.')
                     if m['mode']=='cloud' and not cfg['key']: raise ValueError('Clé OpenAI manquante.')
-                    if c.execute("SELECT COUNT(*) FROM missions WHERE state='en cours'").fetchone()[0] or LOCK.locked(): raise ValueError('Une mission est déjà en cours.')
+                    if c.execute("SELECT COUNT(*) FROM missions WHERE state='en cours'").fetchone()[0] or LOCK.locked() or autopilot.active(c): raise ValueError('Une mission ou campagne est déjà en cours.')
                     c.execute("UPDATE missions SET state='en cours',error='' WHERE id=?",(mid,))
                 print(f'[REPRISE] Mission #{mid} acceptée; rapports conservés.',flush=True)
                 threading.Thread(target=run,args=(mid,),daemon=True).start(); return self.send({'id':mid})
             if self.route()=='/api/stop':
-                with db() as c: c.execute("UPDATE missions SET state='arrêtée' WHERE id=? AND state IN ('en cours','en attente','prête')",(int(p['id']),))
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    linked=autopilot.link(c,int(p['id']))
+                    if linked and linked['state']=='actif':autopilot.stop(c,linked['id'])
+                    elif not linked:c.execute("UPDATE missions SET state='arrêtée' WHERE id=? AND state IN ('en cours','en attente','prête')",(int(p['id']),))
                 return self.send({'ok':True})
             if self.route()=='/api/decision':
                 if p['decision'] not in ('étude acceptée','refusée'): raise ValueError('Décision invalide.')
@@ -284,13 +307,15 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute('BEGIN IMMEDIATE')
                     r=c.execute('SELECT r.*,m.state AS mission_state,m.mode FROM requests r JOIN missions m ON m.id=r.mission WHERE r.id=?',(int(p['id']),)).fetchone()
                     if not r or r['state']!='en attente': raise ValueError('Demande déjà traitée ou inconnue')
+                    linked=autopilot.link(c,r['mission'])
+                    if autopilot.active(c):raise ValueError('Arrête la campagne active avant de traiter une décision.')
                     if r['task'] is not None:
                         if r['mode']=='cloud' and p.get('confirm') is not True: raise ValueError('Confirme les nouveaux appels facturables.')
                         if r['mission_state']=='en attente' and c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone(): raise ValueError('Une autre mission travaille; termine-la avant de traiter cette demande.')
                     c.execute('UPDATE requests SET state=? WHERE id=?',(p['decision'],r['id']))
                     if r['task'] is not None:
                         c.execute("UPDATE tasks SET state='prête' WHERE id=? AND state='en attente'",(r['task'],))
-                        if r['mission_state']=='en attente':
+                        if r['mission_state']=='en attente' and not linked:
                             c.execute("UPDATE missions SET state='en cours',error='' WHERE id=?",(r['mission'],));start=r['mission']
                 if start is not None: threading.Thread(target=run,args=(start,),daemon=True).start()
                 return self.send({'ok':True,'reprise':start})
