@@ -1,10 +1,16 @@
-AI Enterprise Studio V0.2.1 — Correctif JSON NEXUS
+AI Enterprise Studio V0.2.2 — Command Center (candidat de livraison)
 
-1. Fermer le serveur (Ctrl+C). Sauvegarder le dossier V0.2 actuel.
-2. Décompresser ce ZIP. Remplacer uniquement serveur.py, moteur.py et index.html dans le dossier où se trouve Demarrer_Enterprise.bat.
-3. Ne pas toucher à config.json ou donnees. Ne pas recopier une ancienne base.
-4. Relancer Demarrer_Enterprise.bat. Vérifier la console et /api/health : version 0.2.1.
-5. Actualiser avec Ctrl+F5. Sélectionner la mission #2 bloquée et cliquer Reprendre cette mission. Les tâches terminées ne sont pas rejouées.
+1. Arrêter le serveur (Ctrl+C). Sauvegarder le dossier V0.2 complet.
+2. Depuis la branche feature/v0.2.2-command-center, télécharger le ZIP GitHub et extraire AI_Enterprise_Studio_V02.
+3. Copier serveur.py, moteur.py et index.html dans le dossier existant. Ne jamais remplacer config.json ni donnees. La migration ajoute une table de références.
+4. Relancer Demarrer_Enterprise.bat. Vérifier http://127.0.0.1:8790/api/health (0.2.2) et actualiser Ctrl+F5.
+5. Vérifier les missions, fichiers et coûts précédents. Tester la navigation et la simulation gratuite avant tout Cloud.
+6. Les boutons intelligents préparent une mission modifiable. Cloud nécessite confirmation. Simulation = scénario fictif standard, pas de traitement du fichier joint.
+7. Production : choisir un fichier Cloud, puis Améliorer ou Audit statique. La référence précise est transmise en lecture seule à la nouvelle mission. Le nouveau livrable reste distinct; pas d'écrasement de l'original. Aucun code généré exécuté.
+8. Finances : synthèse et export des 100 dernières lignes, estimations locales et réservations, pas une facture fournisseur.
+9. Mémoire : recherche locale dans les rapports chargés, pas une recherche vectorielle exhaustive.
+10. Interroger un agent prépare une mission ATLAS; pas de chat indépendant.
 
-Correction : diagnostic structurel JSON, génération NEXUS 8192 tokens, une tentative de correction jusqu'à 16384 tokens (autres agents 4096/8192), uniquement après JSON invalide ou limite de tokens; refus et filtrage non relancés. Chaque appel reste facturable et soumis aux plafonds inchangés. Aucun code produit exécuté.
-28 tests unitaires et d'intégration avec réponses API simulées : réussis. Les tests sont inclus à titre de vérification facultative (python -m unittest discover -v). Validation cloud réelle non effectuée.
+Tests : depuis le dossier de la nouvelle version, python -m unittest discover -v (API simulées).
+Ne pas considérer les tests comme réussis sans résultat effectif.
+Retour arrière : arrêter le serveur et restaurer la sauvegarde complète. Aucun changement de plafond ou permission commerciale.
