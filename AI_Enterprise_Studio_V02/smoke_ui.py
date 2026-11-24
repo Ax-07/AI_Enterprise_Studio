@@ -182,7 +182,41 @@ def smoke_autopilot():
     finally:fixture.doCleanups()
     print('Chromium Autopilote: autorisation, verrouillage manuel, arrêt et reprise visible; aucun fournisseur')
 
+def smoke_working_memory():
+    from test_working_memory import WorkingMemoryTests
+    import autopilot as a
+    fixture=WorkingMemoryTests('test_recovery_real_worker_mocked_provider')
+    fixture.setUp()
+    try:
+        cid,mid,tid,aid,data=fixture.blocked()
+        with patch.object(s,'config',return_value=fixture.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.object(a,'worker',return_value=None) as worker:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page()
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base)
+                    expect(page.locator('#auto-resume')).to_have_text('Reprendre avec mémoire de travail')
+                    expect(page.locator('#auto-start')).to_be_hidden()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/autopilot/resume') as res:page.locator('#auto-resume').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#auto-state')).to_have_text('actif')
+                    with s.db() as c:
+                        assert a.costs(c,cid)==11000
+                        assert c.execute('SELECT turns FROM tasks WHERE id=?',(tid,)).fetchone()[0]==9
+                    network.assert_not_called();worker.assert_called_once()
+                    assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:fixture.doCleanups()
+    print('Chromium mémoire de travail: reprise ciblée, campagne et compteurs conservés')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
     smoke_autopilot()
+    smoke_working_memory()
