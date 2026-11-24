@@ -1,16 +1,13 @@
-AI Enterprise Studio V0.2.2 — Command Center (candidat de livraison)
+AI Enterprise Studio V0.3.0 — Vérification des productions
 
-1. Arrêter le serveur (Ctrl+C). Sauvegarder le dossier V0.2 complet.
-2. Depuis la branche feature/v0.2.2-command-center, télécharger le ZIP GitHub et extraire AI_Enterprise_Studio_V02.
-3. Copier serveur.py, moteur.py et index.html dans le dossier existant. Ne jamais remplacer config.json ni donnees. La migration ajoute une table de références.
-4. Relancer Demarrer_Enterprise.bat. Vérifier http://127.0.0.1:8790/api/health (0.2.2) et actualiser Ctrl+F5.
-5. Vérifier les missions, fichiers et coûts précédents. Tester la navigation et la simulation gratuite avant tout Cloud.
-6. Les boutons intelligents préparent une mission modifiable. Cloud nécessite confirmation. Simulation = scénario fictif standard, pas de traitement du fichier joint.
-7. Production : choisir un fichier Cloud, puis Améliorer ou Audit statique. La référence précise est transmise en lecture seule à la nouvelle mission. Le nouveau livrable reste distinct; pas d'écrasement de l'original. Aucun code généré exécuté.
-8. Finances : synthèse et export des 100 dernières lignes, estimations locales et réservations, pas une facture fournisseur.
-9. Mémoire : recherche locale dans les rapports chargés, pas une recherche vectorielle exhaustive.
-10. Interroger un agent prépare une mission ATLAS; pas de chat indépendant.
+Mise à jour : arrêter le serveur, sauvegarder le dossier local (dont donnees et config.json), récupérer main après fusion, redémarrer. Migration additive: verification_results. Ne pas recopier une ancienne base.
+Les tests CSV et JSON sont intégrés sans dépendances. NEXUS et SENTINEL peuvent utiliser test_file avec des assertions JSON déclaratives. Les preuves sont conservées avec empreinte SHA-256, version, auteur, mission, résultat et scénario. Pas de récompense XP supplémentaire ni de validation générale.
 
-Tests : depuis le dossier de la nouvelle version, python -m unittest discover -v (API simulées).
-Ne pas considérer les tests comme réussis sans résultat effectif.
-Retour arrière : arrêter le serveur et restaurer la sauvegarde complète. Aucun changement de plafond ou permission commerciale.
+Sandbox HTML facultatif : désactivé par défaut. Seul le propriétaire peut l'activer dans config.json. Nécessite Docker Desktop/Engine Linux local en cours de fonctionnement (Windows: conteneurs Linux, pipe docker_engine; Linux: /var/run/docker.sock). Depuis AI_Enterprise_Studio_V02 :
+    docker build -t aes-verifier:0.3.0 sandbox
+Puis ajouter au config.json existant (sans écraser les autres paramètres) :
+    "html_sandbox_enabled": true
+Le moteur ne télécharge aucune image automatiquement. Le build initial télécharge une image publique et Playwright ; pas d'appel OpenAI/Brave, pas d'achat de service. Le sandbox n'accepte ni commandes ni scripts de test arbitraires : le scénario est une liste bornée d'actions navigateur. Exécution HTML uniquement dans un conteneur non privilégié sans réseau, sans montage de fichiers de l'hôte, racine en lecture seule, temps/RAM/processus limités. Aucun secret injecté. Docker n'est pas une garantie absolue contre une faille de l'hôte; n'activer que sur un moteur Docker à jour et avec des fichiers internes maîtrisés. L'activation ne donne pas aux agents le droit d'installer Docker ou d'exécuter des commandes sur l'hôte.
+Si Docker/image est absent, le résultat est indisponible, jamais réussi. Mettre html_sandbox_enabled à false pour désactiver. Arrêter une mission n'interrompt pas instantanément un test déjà engagé ; durée bornée.
+Production : Tests fonctionnels prépare une mission Cloud (appels IA facturables dans plafonds existants). Test rapide Shopify exécute quatre cas fictifs prédéfinis sur le fichier prototype_rapprochement_shopify_fr_en.html, sans appel IA ; exige le sandbox pour effectuer réellement les tests. Les tests ne couvrent pas les exports Shopify réels ni les risques commerciaux. Les tests HTML pour les autres fichiers passent par une mission. Aucun test d'exécution Python/JS arbitraire. Simulation gratuite standard inchangée.
+Tests développeur : python -m unittest discover -v ; smoke_ui.py (Playwright) ; smoke_sandbox.py (Docker + image construite). Aucun accès à la base locale utilisateur pour les tests.

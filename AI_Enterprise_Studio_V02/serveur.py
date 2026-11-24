@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.2.2"
+VERSION="0.3.0"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -54,7 +54,9 @@ def config():
         return v
     mission_budget=float(cfg.get('mission_budget_usd',0.75))
     if not math.isfinite(mission_budget) or not 0<mission_budget<=15: raise ValueError('Budget mission invalide')
-    return {'mission_budget':round(mission_budget*1e6),'call_limit':bounded('mission_max_calls',24,16,100),'task_limit':bounded('mission_max_tasks',8,5,30),'turn_limit':bounded('task_max_turns',10,5,30),'mission_search_limit':bounded('mission_max_searches',6,0,50),'page_limit':bounded('mission_max_pages',8,0,50),'key':os.getenv('OPENAI_API_KEY') or cfg.get('openai_api_key',''),'brave':os.getenv('BRAVE_API_KEY') or cfg.get('brave_api_key',''),'budget':round(budget*1e6),'limit':limit,'models':models}
+    sandbox=cfg.get('html_sandbox_enabled',False)
+    if type(sandbox) is not bool: raise ValueError('html_sandbox_enabled doit être true ou false')
+    return {'html_sandbox_enabled':sandbox,'mission_budget':round(mission_budget*1e6),'call_limit':bounded('mission_max_calls',24,16,100),'task_limit':bounded('mission_max_tasks',8,5,30),'turn_limit':bounded('task_max_turns',10,5,30),'mission_search_limit':bounded('mission_max_searches',6,0,50),'page_limit':bounded('mission_max_pages',8,0,50),'key':os.getenv('OPENAI_API_KEY') or cfg.get('openai_api_key',''),'brave':os.getenv('BRAVE_API_KEY') or cfg.get('brave_api_key',''),'budget':round(budget*1e6),'limit':limit,'models':models}
 def used(c): return c.execute('SELECT COALESCE(SUM(CASE WHEN actual IS NULL THEN reserved ELSE actual END),0) FROM ledger').fetchone()[0]
 def request(url, keyheaders, body=None):
     data=None if body is None else json.dumps(body,ensure_ascii=False).encode()
@@ -193,7 +195,7 @@ def run(mid):
 def status():
     cfg=config()
     with db() as c:
-        return {**moteur.extra_status(sys.modules[__name__],c),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 class Handler(BaseHTTPRequestHandler):
     def send(self,data,status=200,typ='application/json'):
         b=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type',typ); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store, no-cache, must-revalidate'); self.send_header('X-Enterprise-Version',VERSION); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer'); self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"); self.end_headers(); self.wfile.write(b)
@@ -209,6 +211,11 @@ class Handler(BaseHTTPRequestHandler):
             if self.route()=='/api/health': return self.send({'application':'AI Enterprise Studio','version':VERSION,'resume_supported':True,'resume_route':'POST /api/resume','paid_call':False})
             if self.route()=='/': return self.send((ROOT/'index.html').read_text(encoding='utf8').replace('__SESSION__',SESSION).encode(),typ='text/html; charset=utf-8')
             if self.route()=='/api/status' and self.headers.get('X-Session')==SESSION: return self.send(status())
+            if self.route()=='/api/verification' and self.headers.get('X-Session')==SESSION:
+                vid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
+                with db() as c: r=c.execute('SELECT * FROM verification_results WHERE id=?',(vid,)).fetchone()
+                if not r: raise ValueError('Test absent')
+                return self.send({'id':r['id'],'artifact':r['artifact'],'mission':r['mission'],'agent':r['agent'],'created':r['created'],'spec':r['spec'],'result':json.loads(r['result'])})
             if self.route()=='/api/artifact' and self.headers.get('X-Session')==SESSION:
                 aid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c: r=c.execute('SELECT * FROM artifacts WHERE id=?',(aid,)).fetchone()
@@ -222,6 +229,9 @@ class Handler(BaseHTTPRequestHandler):
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n)); cfg=config()
+            if self.route()=='/api/verify':
+                if p.get('confirm') is not True: raise ValueError('Confirmation requise')
+                return self.send({'verification':moteur.quick_verify(sys.modules[__name__],p.get('id'),cfg)})
             if self.route()=='/api/start':
                 mode=p['mode']; title=p['title'].strip()
                 if mode not in ('demo','cloud') or not 1<=len(title)<=1500: raise ValueError('Mission invalide.')

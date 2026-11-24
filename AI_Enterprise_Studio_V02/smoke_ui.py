@@ -9,12 +9,13 @@ import serveur as s
 import moteur as m
 
 def smoke():
-    with tempfile.TemporaryDirectory() as tmp, patch.object(s,'DB',Path(tmp)/'test.sqlite3'), patch.object(s,'config',return_value={**s.config(),'key':'fake-test-key','brave':'','budget':2000000}), patch.object(s,'request',side_effect=AssertionError('Appel fournisseur interdit')) as network, patch.object(m,'fetch_page',side_effect=AssertionError('Réseau interdit')):
+    with tempfile.TemporaryDirectory() as tmp, patch.object(s,'DB',Path(tmp)/'test.sqlite3'), patch.object(s,'config',return_value={**s.config(),'key':'fake-test-key','brave':'','budget':2000000,'html_sandbox_enabled':False}), patch.object(s,'request',side_effect=AssertionError('Appel fournisseur interdit')) as network, patch.object(m,'fetch_page',side_effect=AssertionError('Réseau interdit')):
         s.init()
         with s.db() as c:
             mid=m.create(s,c,'Étude Shopify', 'cloud')
             c.execute("UPDATE missions SET state='terminée' WHERE id=?",(mid,))
             aid=c.execute("INSERT INTO artifacts(mission,name,version,agent,content,description) VALUES(?, 'kit.csv',1,'NEXUS','a,b\n1,2\n','test')",(mid,)).lastrowid
+            html_aid=c.execute("INSERT INTO artifacts(mission,name,version,agent,content,description) VALUES(?, 'prototype_rapprochement_shopify_fr_en.html',1,'NEXUS','<p>fixture</p>','test')",(mid,)).lastrowid
             c.execute("INSERT INTO reports(mission,step,agent,report,sources) VALUES(?,0,'NEXUS',?,'[]')",(mid,json.dumps({'rapport':'Rapprochement Shopify'})))
             c.execute("INSERT INTO ledger(mission,model,reserved,actual,state,agent) VALUES(?,'test',1000,500,'mesuré','NEXUS')",(mid,))
         server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
@@ -29,8 +30,8 @@ def smoke():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
                 page.goto(base)
-                expect(page.locator('#connection-text')).to_have_text('Serveur V0.2.2')
-                expect(page.locator('#quick-products')).to_have_text('1')
+                expect(page.locator('#connection-text')).to_have_text('Serveur V0.3.0')
+                expect(page.locator('#quick-products')).to_have_text('2')
                 for section in ('decisions','missions','work','opps','files','goals','agents','finance','memory','tools','home'):
                     page.locator(f'[data-page="{section}"]').click()
                     expect(page.locator('#page-'+section)).to_be_visible()
@@ -38,17 +39,27 @@ def smoke():
                 expect(page.locator('#mission')).to_have_value(__import__('re').compile('NEXUS'))
                 expect(page.locator('#attached-file')).to_be_hidden()
                 page.locator('[data-page="files"]').click()
-                page.locator('#file-list').get_by_role('button',name='Aperçu texte').click()
+                page.locator('#file-list .file-card').filter(has_text='kit.csv').get_by_role('button',name='Aperçu texte').click()
                 expect(page.locator('#file-content')).to_have_text('a,b\n1,2',use_inner_text=True)
                 with page.expect_download() as dl:
-                    page.locator('#file-list').get_by_role('button',name='Télécharger').click()
+                    page.locator('#file-list .file-card').filter(has_text='kit.csv').get_by_role('button',name='Télécharger').click()
                 assert dl.value.suggested_filename=='kit.csv'
                 assert Path(dl.value.path()).read_text()=='a,b\n1,2\n'
-                page.locator('#file-list').get_by_role('button',name='Améliorer').click()
+                page.locator('#file-list .file-card').filter(has_text='kit.csv').get_by_role('button',name='Améliorer').click()
                 expect(page.locator('#attached-label')).to_contain_text('kit.csv')
                 expect(page.locator('#mission')).to_have_value(__import__('re').compile('ref:'+str(aid)))
                 page.locator('#detach-file').click()
                 expect(page.locator('#attached-file')).to_be_hidden()
+                page.locator('[data-page="files"]').click()
+                page.once('dialog',lambda d:d.accept())
+                page.get_by_role('button',name='Test rapide Shopify').click()
+                proof=page.locator('#file-list .file-card').filter(has_text='prototype_rapprochement_shopify_fr_en.html')
+                expect(proof.locator('summary')).to_contain_text('Indisponible')
+                proof.locator('summary').click()
+                with page.expect_download() as dl:
+                    proof.get_by_role('button',name='Exporter la preuve et le scénario').click()
+                evidence=json.loads(Path(dl.value.path()).read_text())
+                assert evidence['artifact']==html_aid and evidence['result']['status']=='unavailable'
                 page.locator('[data-page="memory"]').click()
                 page.locator('#memory-query').fill('Shopify')
                 page.locator('#memory-search').click()
@@ -69,7 +80,7 @@ def smoke():
                     assert s.used(c)==500
                 page.locator('[data-page="files"]').click()
                 page.locator('#file-filter').select_option(str(mid))
-                page.locator('#file-list').get_by_role('button',name='Améliorer').click()
+                page.locator('#file-list .file-card').filter(has_text='kit.csv').get_by_role('button',name='Améliorer').click()
                 expect(page.locator('#attached-file')).to_be_visible()
                 # Cloud start checks only the request and persistent reference.
                 # Stub the worker: no model calls, no external side effects.
