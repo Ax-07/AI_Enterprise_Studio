@@ -347,6 +347,14 @@ def execute(s,t,v,cfg,mode):
             return {'tache':t['id'],'statut':'rapport déposé (non certifié)'}
     raise ValueError('Action inconnue')
 
+def finish_only(v):
+    return validate_action(v) and v['action']=='finish' and bool(v['text'].strip()) and not v['target'] and not v['detail']
+
+def final_schema():
+    schema=json.loads(json.dumps(SCHEMA))
+    schema['properties']['action']['enum']=['finish']
+    return schema
+
 def context(s,t,m,cfg):
     mid=t['mission']; agent=t['agent']
     with s.db() as c:
@@ -366,7 +374,7 @@ def context(s,t,m,cfg):
         decisions=[dict(x) for x in c.execute('SELECT id,state,body FROM requests WHERE task=?',(t['id'],))]
         remaining=(cfg['budget']-s.used(c))/1e6
         tries=c.execute('SELECT COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()[0]
-    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), 'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(PERMS[agent])},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
+    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}/{cfg["turn_limit"]}. Dernier tour réservé au rapport.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), 'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(PERMS[agent])},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants. Si ton propre test a réussi, termine dès que les critères couverts sont établis; ne relis pas les mêmes fichiers ou la mémoire sans question nouvelle. Signale explicitement les critères non testés. N’attends pas le plafond.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
 
 def run(s,mid):
     try:
@@ -390,8 +398,12 @@ def run(s,mid):
             else:
                 p=context(s,t,m,cfg)
                 if len(p.encode())>100000: raise RuntimeError('Contexte trop volumineux; arrêt sans troncature silencieuse')
-                maxout=8192 if t['agent']=='NEXUS' else 4096
-                try: v=s.call_model(mid,t['agent'],p,cfg,maxout,t['id'],schema=SCHEMA,rules=RULES,validator=validate_action)
+                closing=t['turns']+1>=cfg['turn_limit']
+                schema=final_schema() if closing else SCHEMA
+                validator=finish_only if closing else validate_action
+                if closing: p+='\nDERNIER TOUR : seul finish est autorisé. Dépose un rapport honnête, même partiel; cite les preuves et les critères non atteints. Aucun autre outil.'
+                maxout=2048 if closing else 8192 if t['agent']=='NEXUS' else 4096
+                try: v=s.call_model(mid,t['agent'],p,cfg,maxout,t['id'],schema=schema,rules=RULES,validator=validator)
                 except (s.TokenLimit,s.InvalidModelOutput) as e:
                     # One corrective retry only, subject to the same cumulative and mission budgets.
                     # No tool has been executed; retain every billed call and all prior task state.
@@ -400,12 +412,13 @@ def run(s,mid):
                           'Utilise une seule action autorisée; champs inutilisés vides. '
                           'Si tu produis un fichier, choisis un fichier autonome compact (moins de 6000 caractères si possible). '
                           'Ne renvoie ni Markdown autour du JSON, ni objet imbriqué, ni texte supplémentaire.')
-                    try: v=s.call_model(mid,t['agent'],p+hint,cfg,min(maxout*2,16384),t['id'],schema=SCHEMA,rules=RULES,validator=validate_action)
+                    try: v=s.call_model(mid,t['agent'],p+hint,cfg,min(maxout*2,16384),t['id'],schema=schema,rules=RULES,validator=validator)
                     except (s.TokenLimit,s.InvalidModelOutput) as second:
                         raise RuntimeError(f'{second} Correction unique épuisée; rapports et fichiers conservés.') from None
             with s.db() as c:
                 if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': return
                 c.execute('UPDATE tasks SET turns=turns+1 WHERE id=?',(t['id'],))
+            if m['mode']=='cloud' and closing and not finish_only(v): raise RuntimeError('Dernier tour réservé à un rapport honnête; tâche #'+str(t['id']))
             a=v['action']; ok=True
             compact=action_args(v)
             with s.db() as c: repeats=repeat_count(c,t['id'],v)

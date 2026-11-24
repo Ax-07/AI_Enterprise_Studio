@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, sys
+import moteur, pilotage, recovery, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.3.2"
+VERSION="0.3.3"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -238,6 +238,15 @@ class Handler(BaseHTTPRequestHandler):
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n)); cfg=config()
+            if self.route()=='/api/close_audit':
+                if p.get('confirm') is not True: raise ValueError('Confirmation de clôture partielle requise')
+                if not LOCK.acquire(blocking=False): raise ValueError('Une mission est déjà en cours')
+                try:
+                    with db() as c:
+                        c.execute('BEGIN IMMEDIATE')
+                        result=recovery.close(c,p.get('id'),p.get('task'),p.get('proof'),cfg)
+                    return self.send(result)
+                finally: LOCK.release()
             if self.route()=='/api/verify':
                 if p.get('confirm') is not True: raise ValueError('Confirmation requise')
                 return self.send({'verification':moteur.quick_verify(sys.modules[__name__],p.get('id'),cfg,p.get('profile'))})
