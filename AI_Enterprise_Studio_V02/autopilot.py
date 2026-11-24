@@ -1,5 +1,6 @@
 """Bounded, persistent internal campaign scheduler. No provider outside the mission engine."""
 import json, hashlib
+import protocol_recovery
 from decimal import Decimal, InvalidOperation
 
 ACTIVE='actif'
@@ -71,11 +72,12 @@ def _missions(c,cid):
     return list(c.execute("""SELECT cm.kind,cm.artifact,m.id,m.state,m.error,m.title
         FROM campaign_missions cm JOIN missions m ON m.id=cm.mission WHERE cm.campaign=? ORDER BY m.id""",(cid,)))
 
-def status(c):
+def status(c,cfg=None):
     p=c.execute('SELECT * FROM campaigns ORDER BY id DESC LIMIT 1').fetchone()
     if not p:return None
     d=dict(p);d['permissions']=json.loads(d['permissions'])
     d['spent']=costs(c,p['id']);d['searches']=searches(c,p['id']);d['missions']=[dict(x) for x in _missions(c,p['id'])]
+    d['recoverable']=bool(cfg and p['state']=='bloqué' and d['missions'] and protocol_recovery.recovery_task(c,d['missions'][-1]['id'],cfg))
     return d
 
 def start(c,body,cfg):
@@ -110,12 +112,14 @@ def stop(c,cid):
 
 def resume(c,cid,cfg):
     p=_campaign(c,cid)
-    if not p or p['state'] not in ('interrompu','arrêté','en attente'):raise ValueError('Campagne non reprenable automatiquement')
+    if not p or p['state'] not in ('interrompu','arrêté','en attente','bloqué'):raise ValueError('Campagne non reprenable automatiquement')
     if active(c) or c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone():raise ValueError('Un travail est déjà en cours')
     if c.execute("SELECT 1 FROM requests WHERE state='en attente'").fetchone():raise ValueError('Traiter les décisions en attente')
     if not cfg['key'] or costs(c,cid)>=p['budget']:raise ValueError('Ressources insuffisantes; aucune remise à zéro')
     ms=_missions(c,cid)
-    if ms and ms[-1]['state'] in ('interrompue','arrêtée','en attente','prête'):
+    recover=bool(p['state']=='bloqué' and ms and protocol_recovery.recovery_task(c,ms[-1]['id'],cfg))
+    if p['state']=='bloqué' and not recover:raise ValueError('Blocage non récupérable sans diagnostic; aucun compteur réinitialisé')
+    if ms and (recover or ms[-1]['state'] in ('interrompue','arrêtée','en attente','prête')):
         c.execute("UPDATE missions SET state='en cours',error='' WHERE id=?",(ms[-1]['id'],))
     elif ms and ms[-1]['state']!='terminée':raise ValueError('Mission bloquée; diagnostic requis')
     c.execute("UPDATE campaigns SET state='actif',reason='' WHERE id=?",(cid,))
@@ -124,7 +128,11 @@ def _proof(c,artifact,mid):
     rows=list(c.execute("""SELECT v.result,v.spec,a.content FROM verification_results v JOIN artifacts a ON a.id=v.artifact
         WHERE v.artifact=? AND v.mission=? AND v.agent='SENTINEL' ORDER BY v.id""",(artifact,mid)))
     states=[]
-    previous=[json.loads(x['spec']) for x in c.execute('SELECT spec FROM verification_results WHERE artifact=? AND mission<?',(artifact,mid))]
+    previous=[]
+    for x in c.execute('SELECT spec,result FROM verification_results WHERE artifact=? AND mission<?',(artifact,mid)):
+        try:
+            if json.loads(x['result']).get('status') in ('passed','failed'):previous.append(json.loads(x['spec']))
+        except (ValueError,TypeError,AttributeError):continue
     for r in rows:
         result=json.loads(r['result'])
         if result.get('sha256')!=hashlib.sha256(r['content'].encode()).hexdigest():continue
@@ -132,7 +140,7 @@ def _proof(c,artifact,mid):
         if result.get('status')=='passed':
             if not checks or not all(x.get('passed') is True for x in checks):states.append('invalid')
             elif json.loads(r['spec']) not in previous:states.append('passed')
-        else:states.append(result.get('status'))
+        elif result.get('status') not in ('invalid','unavailable'):states.append(result.get('status'))
     if 'failed' in states:return 'failed'
     return 'passed' if states and all(x=='passed' for x in states) else 'missing'
 

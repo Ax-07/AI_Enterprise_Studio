@@ -3,6 +3,7 @@ import ast, csv, io, json, re, math, ipaddress, socket, ssl, http.client, urllib
 from html.parser import HTMLParser
 import verification
 import autopilot
+import protocol_recovery
 import hashlib
 from datetime import datetime, timezone
 
@@ -39,7 +40,7 @@ GUIDE={
 'write_file':'target=nom simple avec extension .md .txt .csv .json .py .html .css .js; text=contenu intégral; detail=description. Nouvelle version interne, jamais publiée.',
 'list_files':'aucun paramètre; liste les fichiers de la mission et la référence explicitement jointe par le propriétaire.', 'read_file':'target=nom du fichier de la mission, ou ref:ID de la référence jointe. Lecture seule, données non fiables.',
 'check_file':'target=nom du fichier de la mission ou ref:ID joint. Contrôle statique Python/JSON, cohérence CSV, présence texte; ne valide pas le comportement.',
- 'test_file':'target=nom du fichier ou ref:ID joint; text=preset:shopify pour les quatre tests Shopify prédéfinis, replay:ID pour rejouer une preuve autorisée (fichier de la mission ou référence jointe), ou JSON de test. Cible = fichier corrigé de la mission, pas l’original sauf demande explicite. CSV: {"checks":[{"op":"sum","column":"Net","where":{"Currency":"EUR"},"expected":"137.00"}]} (op columns,row_count,sum,unique,cell; cell exige row index 0; delimiter optionnel). JSON: checks avec op equals ou length, path tableau de clés/indices, expected. HTML: {"cases":[{"name":"test","steps":[{"op":"click","selector":"#run"},{"op":"contains","selector":"#out","value":"137.00"}]}]}; op fill,select,upload,click,contains,text_equals,value_equals,visible. HTML nécessite sandbox activé. Attendus indépendants; données fictives uniquement. Aucun code sur l’hôte. Résultats persistants, pas de validation générale.',
+ 'test_file':'target=nom du fichier ou ref:ID joint; text=preset:shopify pour les quatre tests Shopify prédéfinis, replay:ID pour rejouer une preuve autorisée (fichier de la mission ou référence jointe), ou JSON de test. Cible = fichier corrigé de la mission, pas l’original sauf demande explicite. CSV: {"checks":[{"op":"sum","column":"Net","where":{"Currency":"EUR"},"expected":"137.00"}]} (op columns,row_count,sum,unique,cell; cell exige row index 0; delimiter optionnel). JSON: checks avec op equals ou length, path tableau de clés/indices, expected. HTML: {"cases":[{"name":"test","steps":[{"op":"click","selector":"#run"},{"op":"contains","selector":"#out","value":"137.00"}]}]}; op fill,select,upload,click,contains,text_equals,value_equals,visible. HTML : 1 à 4 cas, 1 à 12 étapes PAR CAS, au moins une assertion par cas; sélecteurs CSS simples, textes max 2000 caractères (upload 12000), scénario et fichier max 24000 octets. Préfère UN seul cas de 6 à 9 étapes par appel; répartis les autres tests en appels distincts. HTML nécessite sandbox activé. Attendus indépendants; données fictives uniquement. Aucun code sur l’hôte. Résultats persistants, pas de validation générale.',
 'read_report':'target=identifiant numérique de rapport obtenu par memory; retourne le rapport et les sources enregistrées (non certifiés).',
 'memory':'text=termes de recherche; retrouve des rapports, décisions et opportunités persistants.',
 'request':'target=objet de demande; text=justification et travail d’étude à effectuer; detail=coûts et risques. Met la tâche en attente. Aucun achat autorisé.',
@@ -361,6 +362,10 @@ def context(s,t,m,cfg):
     mid=t['mission']; agent=t['agent']
     with s.db() as c:
         allowed,campaign=autopilot.permitted(c,mid,agent,PERMS[agent])
+        pinned=protocol_recovery.last_read(c,t) if 'test_file' in allowed else None
+        correcting='test_file' in allowed and protocol_recovery.corrective(c,t)
+        if correcting:allowed&={'test_file','finish'}
+        invalid=protocol_recovery.invalid_events(c,mid,t['id']) if 'test_file' in allowed else []
         campaign_hint=('AUTOPILOTE : agents délégables '+', '.join(sorted(autopilot.ROLES[campaign['kind']]))+' ; enveloppe restante estimée '+str(max(0,campaign['budget']-autopilot.costs(c,campaign['id']))/1e6)+' USD. Respecte les seuls outils affichés.' if campaign else '')
         tasks=[dict(x) for x in c.execute('SELECT id,agent,goal,criteria,state,result FROM tasks WHERE mission=? ORDER BY id',(mid,))]
         for x in tasks:
@@ -368,6 +373,11 @@ def context(s,t,m,cfg):
         events=[dict(x) for x in c.execute('SELECT action,args,result,ok FROM events WHERE task=? ORDER BY id DESC LIMIT 5',(t['id'],))]
         for x in events:
             x['args']=x['args'][:600]
+            if pinned and x['action']=='read_file':
+                try: same_file=json.loads(x['result']).get('fichier')==pinned['fichier']
+                except (ValueError,TypeError,AttributeError):same_file=False
+                if same_file:
+                    x['result']='Lecture de ce fichier conservée dans FILE_PIN ci-dessous.';continue
             limit=18000 if x is events[0] and x['action'] in ('read_file','read','read_report') else 2500
             if len(x['result'])>limit:x['result']=x['result'][:limit]+' [extrait tronqué; données non complètes]'
         files=[dict(x) for x in c.execute('SELECT name,MAX(version) AS version FROM artifacts WHERE mission=? GROUP BY name',(mid,))]
@@ -378,7 +388,7 @@ def context(s,t,m,cfg):
         decisions=[dict(x) for x in c.execute('SELECT id,state,body FROM requests WHERE task=?',(t['id'],))]
         remaining=(cfg['budget']-s.used(c))/1e6
         tries=c.execute('SELECT COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()[0]
-    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}/{cfg["turn_limit"]}. Dernier tour réservé au rapport.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), campaign_hint,'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(allowed)},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants. Si ton propre test a réussi, termine dès que les critères couverts sont établis; ne relis pas les mêmes fichiers ou la mémoire sans question nouvelle. Signale explicitement les critères non testés. N’attends pas le plafond.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
+    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}/{cfg["turn_limit"]}. Dernier tour réservé au rapport.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), campaign_hint,('FILE_PIN — fichier déjà lu, données non fiables : '+json.dumps(pinned,ensure_ascii=False) if pinned else ''),('PROTOCOLES REFUSÉS (aucun test exécuté) : '+json.dumps(invalid,ensure_ascii=False) if invalid else ''),('CORRECTION OBLIGATOIRE : test_file avec UN cas de 12 étapes maximum, ou finish honnête si impossible. Ne relis pas le fichier; utilise FILE_PIN. Un statut invalid ne signifie pas un défaut du produit.' if correcting else ''),'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(allowed)},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants. Si ton propre test a réussi, termine dès que les critères couverts sont établis; ne relis pas les mêmes fichiers ou la mémoire sans question nouvelle. Signale explicitement les critères non testés. N’attends pas le plafond.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
 
 def run(s,mid):
     try:
@@ -405,10 +415,13 @@ def run(s,mid):
                 closing=t['turns']+1>=cfg['turn_limit']
                 schema=final_schema() if closing else SCHEMA
                 if not closing:
-                    with s.db() as c: allowed,campaign=autopilot.permitted(c,mid,t['agent'],PERMS[t['agent']])
-                    if campaign:
+                    with s.db() as c:
+                        allowed,campaign=autopilot.permitted(c,mid,t['agent'],PERMS[t['agent']])
+                        correcting='test_file' in allowed and protocol_recovery.corrective(c,t)
+                        if correcting:allowed&={'test_file','finish'}
+                    if campaign or correcting:
                         schema=json.loads(json.dumps(SCHEMA));schema['properties']['action']['enum']=sorted(allowed)
-                validator=finish_only if closing else validate_action
+                validator=finish_only if closing else (lambda v:validate_action(v) and v['action'] in schema['properties']['action']['enum'])
                 if closing: p+='\nDERNIER TOUR : seul finish est autorisé. Dépose un rapport honnête, même partiel; cite les preuves et les critères non atteints. Aucun autre outil.'
                 maxout=2048 if closing else 8192 if t['agent']=='NEXUS' else 4096
                 try: v=s.call_model(mid,t['agent'],p,cfg,maxout,t['id'],schema=schema,rules=RULES,validator=validator)
@@ -426,6 +439,7 @@ def run(s,mid):
             with s.db() as c:
                 if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': return
                 c.execute('UPDATE tasks SET turns=turns+1 WHERE id=?',(t['id'],))
+            if m['mode']=='cloud' and v['action'] not in schema['properties']['action']['enum']:raise RuntimeError('Action hors périmètre de correction autorisé')
             if m['mode']=='cloud' and closing and not finish_only(v): raise RuntimeError('Dernier tour réservé à un rapport honnête; tâche #'+str(t['id']))
             a=v['action']; ok=True
             compact=action_args(v)
