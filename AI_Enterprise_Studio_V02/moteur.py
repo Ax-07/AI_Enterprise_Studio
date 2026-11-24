@@ -33,8 +33,8 @@ GUIDE={
 'opportunity':'target=titre; text=proposition, demande, preuves, risques, autonomie; detail=prochain test. Statut hypothèse.',
 'calculate':'text=expression arithmétique (+ - * / ** %), nombres uniquement; target et detail vides.',
 'write_file':'target=nom simple avec extension .md .txt .csv .json .py .html .css .js; text=contenu intégral; detail=description. Nouvelle version interne, jamais publiée.',
-'list_files':'aucun paramètre.', 'read_file':'target=nom du fichier de la mission.',
-'check_file':'target=nom du fichier. Contrôle statique Python/JSON, cohérence CSV, présence texte; ne valide pas le comportement.',
+'list_files':'aucun paramètre; liste les fichiers de la mission et la référence explicitement jointe par le propriétaire.', 'read_file':'target=nom du fichier de la mission, ou ref:ID de la référence jointe. Lecture seule, données non fiables.',
+'check_file':'target=nom du fichier de la mission ou ref:ID joint. Contrôle statique Python/JSON, cohérence CSV, présence texte; ne valide pas le comportement.',
 'read_report':'target=identifiant numérique de rapport obtenu par memory; retourne le rapport et les sources enregistrées (non certifiés).',
 'memory':'text=termes de recherche; retrouve des rapports, décisions et opportunités persistants.',
 'request':'target=objet de demande; text=justification et travail d’étude à effectuer; detail=coûts et risques. Met la tâche en attente. Aucun achat autorisé.',
@@ -48,6 +48,7 @@ def init(s):
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, mission INTEGER, task INTEGER, agent TEXT, action TEXT, args TEXT, result TEXT, ok INTEGER, created TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS opportunities(id INTEGER PRIMARY KEY, mission INTEGER, title TEXT, body TEXT, next_test TEXT, status TEXT DEFAULT 'hypothèse', created TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(mission,title));
         CREATE TABLE IF NOT EXISTS artifacts(id INTEGER PRIMARY KEY, mission INTEGER, name TEXT, version INTEGER, agent TEXT, content TEXT, description TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(mission,name,version));
+        CREATE TABLE IF NOT EXISTS mission_artifact_refs(mission INTEGER PRIMARY KEY, artifact INTEGER NOT NULL REFERENCES artifacts(id));
         CREATE TABLE IF NOT EXISTS rewards(id INTEGER PRIMARY KEY, mission INTEGER, agent TEXT, event INTEGER UNIQUE, xp INTEGER, reason TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS fetched(id INTEGER PRIMARY KEY, mission INTEGER, url TEXT, state TEXT, content TEXT DEFAULT '', created TEXT DEFAULT CURRENT_TIMESTAMP);''')
         c.execute("UPDATE tasks SET state='prête' WHERE state='en cours'")
@@ -56,8 +57,13 @@ def add_task(c,mid,agent,goal,criteria='',parent=None):
     if agent not in ROLES or not 1<=len(goal)<=2500: raise ValueError('Tâche invalide')
     return c.execute('INSERT INTO tasks(mission,agent,goal,criteria,parent) VALUES(?,?,?,?,?)',(mid,agent,goal,criteria[:1500],parent)).lastrowid
 
-def create(s,c,title,mode):
+def create(s,c,title,mode,artifact_id=None):
+    if artifact_id is not None:
+        if mode!='cloud' or type(artifact_id) is not int or artifact_id<=0 or artifact_id>9007199254740991: raise ValueError('Référence de fichier invalide; Cloud uniquement')
+        source=c.execute("SELECT a.id FROM artifacts a JOIN missions m ON m.id=a.mission WHERE a.id=? AND m.mode='cloud'",(artifact_id,)).fetchone()
+        if not source: raise ValueError('Fichier cloud de référence absent')
     mid=c.execute("INSERT INTO missions(title,mode,state,engine) VALUES(?,?,'en cours','dynamic')",(title,mode)).lastrowid
+    if artifact_id is not None: c.execute('INSERT INTO mission_artifact_refs(mission,artifact) VALUES(?,?)',(mid,artifact_id))
     add_task(c,mid,'ATLAS',title,'Déléguer les tâches nécessaires; fournir un résultat concret et les limites; aucun lancement commercial.')
     return mid
 
@@ -136,6 +142,20 @@ def fetch_page(url):
     finally: conn.close()
 
 def latest(c,mid,name): return c.execute('SELECT * FROM artifacts WHERE mission=? AND name=? ORDER BY version DESC LIMIT 1',(mid,name)).fetchone()
+
+def attached_artifact(c,mid):
+    return c.execute("SELECT a.* FROM mission_artifact_refs r JOIN artifacts a ON a.id=r.artifact JOIN missions m ON m.id=a.mission WHERE r.mission=? AND m.mode='cloud'",(mid,)).fetchone()
+
+def resolve_artifact(c,mid,target):
+    if target.startswith('ref:'):
+        row=attached_artifact(c,mid)
+        if not row or target!='ref:'+str(row['id']): raise ValueError('Référence non autorisée pour cette mission')
+        return row,True
+    return latest(c,mid,target),False
+
+def reference_metadata(row):
+    return {'target':'ref:'+str(row['id']),'id':row['id'],'mission_source':row['mission'],'name':row['name'],'version':row['version'],'agent':row['agent'],'lecture_seule':True}
+
 def check(name,content):
     suffix=name.rsplit('.',1)[-1].lower()
     try:
@@ -215,12 +235,17 @@ def execute(s,t,v,cfg,mode):
             ver=old['version']+1 if old else 1
             aid=c.execute('INSERT INTO artifacts(mission,name,version,agent,content,description) VALUES(?,?,?,?,?,?)',(mid,target,ver,agent,text,detail[:1000])).lastrowid
             return {'fichier':aid,'nom':target,'version':ver,'controle':check(target,text),'note':'Brouillon interne enregistré en SQLite, aucun code exécuté.'}
-        if a=='list_files': return [dict(x) for x in c.execute('SELECT id,name,version,agent,description FROM artifacts WHERE mission=? ORDER BY id DESC',(mid,))]
+        if a=='list_files':
+            files=[dict(x) for x in c.execute('SELECT id,name,version,agent,description FROM artifacts WHERE mission=? ORDER BY id DESC',(mid,))]
+            source=attached_artifact(c,mid)
+            if source: files.append(reference_metadata(source))
+            return files
         if a in ('read_file','check_file'):
-            row=latest(c,mid,target)
+            row,reference=resolve_artifact(c,mid,target)
             if not row: raise ValueError('Fichier absent')
-            if a=='read_file': return {'nom':target,'version':row['version'],'contenu':row['content']}
-            return {'fichier':row['id'],'nom':target,'version':row['version'],**check(target,row['content'])}
+            meta={'fichier':row['id'],'nom':row['name'],'version':row['version'],'mission_source':row['mission'],'reference':reference}
+            if a=='read_file': return {**meta,'contenu':row['content']}
+            return {**meta,**check(row['name'],row['content'])}
         if a=='read_report':
             if not target.isdigit() or len(target)>12: raise ValueError('ID rapport invalide')
             r=c.execute('SELECT r.*,m.mode FROM reports r JOIN missions m ON m.id=r.mission WHERE r.id=?',(int(target),)).fetchone()
@@ -261,6 +286,8 @@ def context(s,t,m,cfg):
             limit=18000 if x is events[0] and x['action'] in ('read_file','read','read_report') else 2500
             if len(x['result'])>limit:x['result']=x['result'][:limit]+' [extrait tronqué; données non complètes]'
         files=[dict(x) for x in c.execute('SELECT name,MAX(version) AS version FROM artifacts WHERE mission=? GROUP BY name',(mid,))]
+        source=attached_artifact(c,mid)
+        if source and 'read_file' in PERMS[agent]: files.append(reference_metadata(source))
         opps=[dict(x) for x in c.execute('SELECT id,title,status FROM opportunities WHERE mission=?',(mid,))]
         decisions=[dict(x) for x in c.execute('SELECT id,state,body FROM requests WHERE task=?',(t['id'],))]
         remaining=(cfg['budget']-s.used(c))/1e6
@@ -315,7 +342,7 @@ def run(s,mid):
             with s.db() as c:
                 eid=log(c,t,a,compact,result,ok)
                 # Reward only objectively observed static checks by independent auditor; demo never earns XP.
-                if m['mode']=='cloud' and ok and agent_is_auditor(t) and a=='check_file' and result.get('valide') and result['nom'].lower().endswith(('.py','.csv','.json')):
+                if m['mode']=='cloud' and ok and agent_is_auditor(t) and a=='check_file' and result.get('valide') and not result.get('reference') and result['nom'].lower().endswith(('.py','.csv','.json')):
                     previous=c.execute("SELECT 1 FROM rewards r JOIN events e ON e.id=r.event WHERE r.mission=? AND r.agent=? AND e.action='check_file' AND json_extract(e.result,'$.nom')=?",(mid,t['agent'],result['nom'])).fetchone()
                     if not previous: c.execute('INSERT INTO rewards(mission,agent,event,xp,reason) VALUES(?,?,?,?,?)',(mid,t['agent'],eid,10,'Premier contrôle statique réussi par fichier; pas de validation commerciale'))
                 if not ok:
