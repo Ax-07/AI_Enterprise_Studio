@@ -1,0 +1,25 @@
+name: Command Center tests
+on:
+  push:
+    branches: ['feature/v0.2.2-command-center']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: AI_Enterprise_Studio_V02
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -v
+      - name: JavaScript syntax
+        run: |
+          python -c "from pathlib import Path; s=Path('index.html').read_text(encoding='utf8'); Path('/tmp/enterprise-ui.js').write_text(s.split('<script>',1)[1].split('</script>',1)[0], encoding='utf8')"
+          node --check /tmp/enterprise-ui.js
