@@ -129,6 +129,7 @@ def search(mid, queries, cfg):
     out=[]
     for q in [q.strip()[:200] for q in queries if isinstance(q,str) and q.strip()][:3]:
         with db() as c:
+            c.execute('BEGIN IMMEDIATE')
             if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': break
             if c.execute('SELECT COUNT(*) FROM searches').fetchone()[0]>=cfg['limit']: break
             autopilot.search_allowed(c,mid)

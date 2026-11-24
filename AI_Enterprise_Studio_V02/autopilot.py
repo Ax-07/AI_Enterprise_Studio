@@ -50,6 +50,7 @@ def permitted(c,mid,agent,base):
     flags=json.loads(p['permissions']);kind=p['kind']
     allowed=set(base)
     if not flags['research'] or p['search_cap']==0: allowed-={'search','read'}
+    elif searches(c,p['id'])>=p['search_cap']:allowed.discard('search')
     if not flags['production'] or kind not in ('create','improve'): allowed.discard('write_file')
     if not flags['tests'] or kind!='functional': allowed.discard('test_file')
     if not flags['tests']: allowed.discard('check_file')
@@ -120,14 +121,18 @@ def resume(c,cid,cfg):
     c.execute("UPDATE campaigns SET state='actif',reason='' WHERE id=?",(cid,))
 
 def _proof(c,artifact,mid):
-    rows=list(c.execute("""SELECT v.result,a.content FROM verification_results v JOIN artifacts a ON a.id=v.artifact
+    rows=list(c.execute("""SELECT v.result,v.spec,a.content FROM verification_results v JOIN artifacts a ON a.id=v.artifact
         WHERE v.artifact=? AND v.mission=? AND v.agent='SENTINEL' ORDER BY v.id""",(artifact,mid)))
     states=[]
+    previous=[json.loads(x['spec']) for x in c.execute('SELECT spec FROM verification_results WHERE artifact=? AND mission<?',(artifact,mid))]
     for r in rows:
         result=json.loads(r['result'])
         if result.get('sha256')!=hashlib.sha256(r['content'].encode()).hexdigest():continue
         checks=result.get('checks',[])
-        states.append('passed' if result.get('status')=='passed' and checks and all(x.get('passed') is True for x in checks) else result.get('status'))
+        if result.get('status')=='passed':
+            if not checks or not all(x.get('passed') is True for x in checks):states.append('invalid')
+            elif json.loads(r['spec']) not in previous:states.append('passed')
+        else:states.append(result.get('status'))
     if 'failed' in states:return 'failed'
     return 'passed' if states and all(x=='passed' for x in states) else 'missing'
 
@@ -146,7 +151,7 @@ def choose(c,p):
         if verdict=='failed':
             if flags['production'] and 'improve' not in kinds:return ('improve',artifact,None),''
             return None,'Tests échoués; correction supplémentaire non autorisée ou déjà tentée.'
-        if verdict!='passed':return None,'Audit sans preuve fonctionnelle exploitable; diagnostic requis.'
+        if verdict!='passed':return None,'Audit sans nouvelle preuve fonctionnelle exploitable; diagnostic requis.'
         if flags['market'] and 'market' not in kinds:return ('market',artifact,None),''
     elif artifact and flags['tests']:
         a=c.execute('SELECT name FROM artifacts WHERE id=?',(artifact,)).fetchone()

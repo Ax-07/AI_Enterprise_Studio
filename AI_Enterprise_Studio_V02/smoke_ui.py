@@ -144,6 +144,45 @@ def smoke_recovery():
     finally: fixture.doCleanups()
     print('Chromium audit recovery: closure confirmed, provenance visible, no provider call or worker')
 
+def smoke_autopilot():
+    from test_autopilot import AutopilotTests
+    import autopilot as a
+    fixture=AutopilotTests('test_validation_and_one_active')
+    fixture.setUp()
+    try:
+        with patch.object(s,'config',return_value=fixture.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.object(a,'worker',return_value=None) as worker:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page()
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base)
+                    expect(page.locator('#auto-start')).to_be_enabled()
+                    expect(page.locator('#auto-budget')).to_have_value('1.00')
+                    expect(page.locator('#auto-count')).to_have_value('3')
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/autopilot/start') as res:page.locator('#auto-start').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#auto-state')).to_have_text('actif')
+                    expect(page.locator('#auto-stop')).to_be_visible()
+                    expect(page.locator('#cloud')).to_be_disabled()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/autopilot/stop') as res:page.locator('#auto-stop').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#auto-state')).to_have_text('arrêté')
+                    expect(page.locator('#auto-resume')).to_be_visible()
+                    with s.db() as c:assert s.used(c)==0
+                    network.assert_not_called();worker.assert_called_once()
+                    assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:fixture.doCleanups()
+    print('Chromium Autopilote: autorisation, verrouillage manuel, arrêt et reprise visible; aucun fournisseur')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
+    smoke_autopilot()
