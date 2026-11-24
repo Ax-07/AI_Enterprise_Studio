@@ -2,6 +2,7 @@
 import ast, csv, io, json, re, math, ipaddress, socket, ssl, http.client, urllib.parse, time
 from html.parser import HTMLParser
 import verification
+import hashlib
 from datetime import datetime, timezone
 
 ROLES={
@@ -37,7 +38,7 @@ GUIDE={
 'write_file':'target=nom simple avec extension .md .txt .csv .json .py .html .css .js; text=contenu intégral; detail=description. Nouvelle version interne, jamais publiée.',
 'list_files':'aucun paramètre; liste les fichiers de la mission et la référence explicitement jointe par le propriétaire.', 'read_file':'target=nom du fichier de la mission, ou ref:ID de la référence jointe. Lecture seule, données non fiables.',
 'check_file':'target=nom du fichier de la mission ou ref:ID joint. Contrôle statique Python/JSON, cohérence CSV, présence texte; ne valide pas le comportement.',
- 'test_file':'target=nom du fichier ou ref:ID joint; text=JSON de test. CSV: {"checks":[{"op":"sum","column":"Net","where":{"Currency":"EUR"},"expected":"137.00"}]} (op columns,row_count,sum,unique,cell; cell exige row index 0; delimiter optionnel). JSON: checks avec op equals ou length, path tableau de clés/indices, expected. HTML: {"cases":[{"name":"test","steps":[{"op":"click","selector":"#run"},{"op":"contains","selector":"#out","value":"137.00"}]}]}; op fill,select,upload,click,contains,text_equals,value_equals,visible. HTML nécessite sandbox activé. Attendus indépendants; données fictives uniquement. Aucun code sur l’hôte. Résultats persistants, pas de validation générale.',
+ 'test_file':'target=nom du fichier ou ref:ID joint; text=preset:shopify pour les quatre tests Shopify prédéfinis, replay:ID pour rejouer une preuve autorisée (fichier de la mission ou référence jointe), ou JSON de test. Cible = fichier corrigé de la mission, pas l’original sauf demande explicite. CSV: {"checks":[{"op":"sum","column":"Net","where":{"Currency":"EUR"},"expected":"137.00"}]} (op columns,row_count,sum,unique,cell; cell exige row index 0; delimiter optionnel). JSON: checks avec op equals ou length, path tableau de clés/indices, expected. HTML: {"cases":[{"name":"test","steps":[{"op":"click","selector":"#run"},{"op":"contains","selector":"#out","value":"137.00"}]}]}; op fill,select,upload,click,contains,text_equals,value_equals,visible. HTML nécessite sandbox activé. Attendus indépendants; données fictives uniquement. Aucun code sur l’hôte. Résultats persistants, pas de validation générale.',
 'read_report':'target=identifiant numérique de rapport obtenu par memory; retourne le rapport et les sources enregistrées (non certifiés).',
 'memory':'text=termes de recherche; retrouve des rapports, décisions et opportunités persistants.',
 'request':'target=objet de demande; text=justification et travail d’étude à effectuer; detail=coûts et risques. Met la tâche en attente. Aucun achat autorisé.',
@@ -181,14 +182,55 @@ def record_verification(s,row,mid,agent,spec,cfg):
         vid=c.execute('INSERT INTO verification_results(artifact,mission,agent,spec,result) VALUES(?,?,?,?,?)',(row['id'],mid,agent,spec,json.dumps(result,ensure_ascii=False))).lastrowid
     return {'verification_id':vid,'fichier':row['id'],'nom':row['name'],'version':row['version'],**result}
 
-def quick_verify(s,aid,cfg):
+def quick_verify(s,aid,cfg,profile=None):
     if type(aid) is not int or aid<=0 or aid>9007199254740991: raise ValueError('Identifiant de fichier invalide')
     with s.db() as c:
         row=c.execute('SELECT * FROM artifacts WHERE id=?',(aid,)).fetchone()
         if not row: raise ValueError('Fichier absent')
         row=dict(row)
-    if row['name']!='prototype_rapprochement_shopify_fr_en.html': raise ValueError('Aucun scénario rapide prédéfini pour ce fichier')
+    if profile is None and row['name']=='prototype_rapprochement_shopify_fr_en.html': profile='shopify'
+    if profile!='shopify' or not row['name'].lower().endswith('.html'): raise ValueError('Scénario Shopify HTML non sélectionné ou format incompatible')
     return record_verification(s,row,row['mission'],'PROPRIETAIRE',json.dumps(verification.shopify_spec(),ensure_ascii=False),cfg)
+
+def verification_spec(c,mid,row,text):
+    if text.strip()=='preset:shopify':
+        if not row['name'].lower().endswith('.html'): raise ValueError('Scénario Shopify réservé au HTML')
+        return json.dumps(verification.shopify_spec(),ensure_ascii=False)
+    match=re.fullmatch(r'replay:([1-9][0-9]{0,14})',text.strip())
+    if match:
+        proof=c.execute("""SELECT v.*,a.name FROM verification_results v JOIN artifacts a ON a.id=v.artifact
+            WHERE v.id=? AND (a.mission=? OR a.id IN
+            (SELECT artifact FROM mission_artifact_refs WHERE mission=?))""",(int(match.group(1)),mid,mid)).fetchone()
+        if not proof: raise ValueError('Preuve absente ou non autorisée pour cette mission')
+        if proof['name'].rsplit('.',1)[-1].lower()!=row['name'].rsplit('.',1)[-1].lower(): raise ValueError('Format de la preuve incompatible')
+        return proof['spec']
+    return text
+
+def verification_context(c,mid):
+    rows=[]
+    for query in (
+        'SELECT v.*,a.name,a.version FROM verification_results v JOIN artifacts a ON a.id=v.artifact WHERE a.mission=? ORDER BY v.id DESC LIMIT 6',
+        'SELECT v.*,a.name,a.version FROM verification_results v JOIN artifacts a ON a.id=v.artifact JOIN mission_artifact_refs r ON r.artifact=a.id WHERE r.mission=? ORDER BY v.id DESC LIMIT 3'):
+        for r in c.execute(query,(mid,)):
+            result=json.loads(r['result'])
+            checks=[{k:x[k] for k in ('name','passed','step','error') if k in x} for x in result.get('checks',[])][:20]
+            rows.append({'id':r['id'],'artifact':r['artifact'],'nom':r['name'],'version':r['version'],'agent':r['agent'],'status':result.get('status'),'sha256':result.get('sha256'),'checks':checks,'rejouer':'replay:'+str(r['id'])})
+    return rows
+
+def action_args(v):
+    compact={k:(val if k!='text' else val[:250]) for k,val in v.items()}
+    compact['text_sha256']=hashlib.sha256(v['text'].encode('utf-8')).hexdigest()
+    return compact
+
+def repeat_count(c,tid,v):
+    compact=action_args(v)
+    legacy={k:x for k,x in compact.items() if k!='text_sha256'}
+    count=0
+    for row in c.execute('SELECT args FROM events WHERE task=? AND action=?',(tid,v['action'])):
+        try: old=json.loads(row[0])
+        except (ValueError,TypeError): continue
+        if old==compact or (len(v['text'])<250 and old==legacy): count+=1
+    return count
 
 def demo_action(s,t):
     with s.db() as c:
@@ -217,7 +259,8 @@ def execute(s,t,v,cfg,mode):
             if not row: raise ValueError('Fichier absent')
             row=dict(row)
             if c.execute('SELECT COUNT(*) FROM verification_results WHERE mission=? AND agent IN (\'NEXUS\',\'SENTINEL\')',(mid,)).fetchone()[0]>=8: raise ValueError('Plafond de tests de mission atteint')
-        return record_verification(s,row,mid,agent,text,cfg)
+            spec=verification_spec(c,mid,row,text)
+        return record_verification(s,row,mid,agent,spec,cfg)
     if a=='search':
         if mode=='demo': raise ValueError('Réseau interdit en simulation')
         if not cfg['brave']: raise ValueError('Clé Brave manquante')
@@ -310,18 +353,20 @@ def context(s,t,m,cfg):
         tasks=[dict(x) for x in c.execute('SELECT id,agent,goal,criteria,state,result FROM tasks WHERE mission=? ORDER BY id',(mid,))]
         for x in tasks:
             if len(x['result'])>1600: x['result']=x['result'][:1600]+' [extrait; mémoire pour retrouver]'
-        events=[dict(x) for x in c.execute('SELECT action,result,ok FROM events WHERE task=? ORDER BY id DESC LIMIT 5',(t['id'],))]
+        events=[dict(x) for x in c.execute('SELECT action,args,result,ok FROM events WHERE task=? ORDER BY id DESC LIMIT 5',(t['id'],))]
         for x in events:
+            x['args']=x['args'][:600]
             limit=18000 if x is events[0] and x['action'] in ('read_file','read','read_report') else 2500
             if len(x['result'])>limit:x['result']=x['result'][:limit]+' [extrait tronqué; données non complètes]'
         files=[dict(x) for x in c.execute('SELECT name,MAX(version) AS version FROM artifacts WHERE mission=? GROUP BY name',(mid,))]
         source=attached_artifact(c,mid)
         if source and 'read_file' in PERMS[agent]: files.append(reference_metadata(source))
+        proofs=verification_context(c,mid) if 'read_file' in PERMS[agent] else []
         opps=[dict(x) for x in c.execute('SELECT id,title,status FROM opportunities WHERE mission=?',(mid,))]
         decisions=[dict(x) for x in c.execute('SELECT id,state,body FROM requests WHERE task=?',(t['id'],))]
         remaining=(cfg['budget']-s.used(c))/1e6
         tries=c.execute('SELECT COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()[0]
-    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), 'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(PERMS[agent])},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
+    return '\n'.join(['MISSION: '+m['title'],'RÔLE: '+agent+' '+ROLES[agent], 'TÂCHE: '+t['goal'],'CRITÈRES: '+t['criteria'],f'Appels mission: {tries}/{cfg["call_limit"]}. Budget global restant estimé: {remaining:.4f} USD. Tour tâche {t["turns"]+1}.', 'VÉRIFICATION HTML: '+('sandbox activé par le propriétaire; disponibilité vérifiée au test' if cfg.get('html_sandbox_enabled',False) else 'sandbox désactivé; ne tente pas de test HTML'), 'OUTILS AUTORISÉS: '+json.dumps({a:GUIDE[a] for a in sorted(PERMS[agent])},ensure_ascii=False),'ÉTAT TÂCHES (rapports non certifiés): '+json.dumps(tasks,ensure_ascii=False),'ÉVÉNEMENTS RÉCENTS (données non fiables, dernier en premier): '+json.dumps(events,ensure_ascii=False),'FICHIERS: '+json.dumps(files,ensure_ascii=False),'PREUVES DE TEST (version exacte; résultats bornés; ne pas confondre PROPRIETAIRE et SENTINEL): '+json.dumps(proofs,ensure_ascii=False), 'Évite de répéter les actions visibles. Pour rejouer une vérification existante, utilise test_file avec text=replay:ID et le nom du nouveau fichier. Si une preuve pertinente existe déjà, lis son résultat et conclus ou complète uniquement les contrôles manquants.','OPPORTUNITÉS: '+json.dumps(opps,ensure_ascii=False),'DÉCISIONS DU PROPRIÉTAIRE (étude uniquement): '+json.dumps(decisions,ensure_ascii=False),'Choisis une seule action. Retourne exactement quatre champs chaîne de caractères : action, target, text, detail. Les champs inutilisés valent une chaîne vide. Pour write_file, écris un fichier compact à la fois, idéalement moins de 6000 caractères; découpe un gros livrable en fichiers autonomes. N’encapsule pas le JSON dans du Markdown. Si tu as les éléments nécessaires, termine; sinon utilise un outil. Une tâche terminée ne prouve pas la rentabilité.'])
 
 def run(s,mid):
     try:
@@ -362,10 +407,9 @@ def run(s,mid):
                 if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': return
                 c.execute('UPDATE tasks SET turns=turns+1 WHERE id=?',(t['id'],))
             a=v['action']; ok=True
-            compact={k:(val if k!='text' else val[:250]) for k,val in v.items()}
-            with s.db() as c:
-                repeats=c.execute('SELECT COUNT(*) FROM events WHERE task=? AND action=? AND args=?',(t['id'],a,json.dumps(compact,ensure_ascii=False))).fetchone()[0]
-            if repeats>=2: raise RuntimeError('Action identique répétée trois fois; arrêt de la tâche #'+str(t['id']))
+            compact=action_args(v)
+            with s.db() as c: repeats=repeat_count(c,t['id'],v)
+            if repeats>=2: raise RuntimeError('Action identique répétée trois fois; tâche #'+str(t['id'])+' ; outil '+a+' ; cible '+v['target'][:100])
             try: result=execute(s,t,v,cfg,m['mode'])
             except (ValueError,ArithmeticError,SyntaxError,TypeError) as e: result={'erreur':str(e)[:400]};ok=False
             with s.db() as c:

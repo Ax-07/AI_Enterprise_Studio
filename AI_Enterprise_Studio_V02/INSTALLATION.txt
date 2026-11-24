@@ -1,3 +1,5 @@
+Correctif V0.3.1 : arrêt du serveur, sauvegarde, git pull --ff-only origin main. Image Docker aes-verifier:0.3.0 inchangée; ne pas la reconstruire. Le bouton Test rapide Shopify est disponible pour tout fichier HTML avec confirmation explicite; scénario spécifique Shopify. test_file accepte preset:shopify ou replay:ID (preuve accessible de la mission ou du fichier joint). Les agents voient les preuves et les arguments des dernières actions. L'anti-boucle compare désormais une empreinte du texte complet; les anciens arguments tronqués ne suffisent pas pour prouver une répétition longue. Exporter le diagnostic est gratuit et contient des extraits du journal, à vérifier avant partage. Aucun plafond ni état de tâche réinitialisé. Ne pas relancer une mission bloquée avant d'avoir testé gratuitement son fichier corrigé.
+
 AI Enterprise Studio V0.3.0 — Vérification des productions
 
 Mise à jour : arrêter le serveur, sauvegarder le dossier local (dont donnees et config.json), récupérer main après fusion, redémarrer. Migration additive: verification_results. Ne pas recopier une ancienne base.
