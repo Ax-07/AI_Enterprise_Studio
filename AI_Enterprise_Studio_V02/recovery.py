@@ -44,7 +44,7 @@ def close(c,mid,task,proof,cfg):
     report=(f"SYNTHÈSE TECHNIQUE DU MOTEUR — clôture administrative partielle, confirmée par le propriétaire. "
             f"SENTINEL, tâche #{task}, a exécuté test_file (événement #{p['event']}) : preuve #{proof}, "
             f"fichier #{p['artifact']} {p['name']} V{p['version']}, SHA-256 {p['sha256']}. "
-            "Résultat observé : 4 assertions sur 4 réussies. Cas : "+'; '.join(p['checks'])+". "
+            "Résultat observé : 4 cas de test sur 4 réussis. Cas : "+'; '.join(p['checks'])+". "
             f"Le plafond de {p['turns']} tours est atteint; aucun rapport de conclusion rédigé par SENTINEL. "
             "Cette clôture conserve la preuve, ne certifie pas les autres critères de la tâche (notamment repli sur date, langues et autres cas non couverts), "
             "ni les exports réels, la sécurité générale ou la validité commerciale. ATLAS doit distinguer ces limites dans sa conclusion et prévoir les tests manquants si nécessaires. Aucun appel IA pour cette clôture.")

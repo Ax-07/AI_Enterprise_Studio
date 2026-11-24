@@ -106,5 +106,44 @@ def smoke():
             server.shutdown();server.server_close();thread.join()
     print('Chromium smoke: navigation, missions, fichiers, mémoire, coûts, simulation et référence Cloud OK')
 
+def smoke_recovery():
+    # Same persisted evidence chain as the actual case, with a synthetic artifact.
+    from test_audit_recovery import AuditRecovery
+    fixture=AuditRecovery('test_recover_provenance_and_no_cost')
+    fixture.setUp()
+    try:
+        with patch.object(s,'config',return_value=fixture.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.object(s,'run',side_effect=AssertionError('No worker on closure')) as worker:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True)
+                    page=browser.new_page()
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base)
+                    expect(page.locator('#pilotage-plan')).to_contain_text('Clôturer l’audit sur preuve')
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/close_audit' and r.request.method=='POST') as response:
+                        page.locator('#pilotage-next').click()
+                    assert response.value.ok,response.value.text()
+                    assert response.value.json()['paid_call'] is False
+                    expect(page.locator('#mission-state')).to_have_text('prête')
+                    expect(page.locator('#reports')).to_contain_text('SYNTHÈSE TECHNIQUE DU MOTEUR')
+                    expect(page.locator('#close-audit')).to_be_hidden()
+                    expect(page.locator('#resume')).to_be_enabled()
+                    with s.db() as c:
+                        assert s.used(c)==500
+                        assert c.execute('SELECT turns FROM tasks WHERE id=?',(fixture.tid,)).fetchone()[0]==10
+                    assert not errors,errors
+                    network.assert_not_called();worker.assert_not_called()
+                    browser.close()
+            finally:
+                server.shutdown();server.server_close();thread.join()
+    finally: fixture.doCleanups()
+    print('Chromium audit recovery: closure confirmed, provenance visible, no provider call or worker')
+
 if __name__=='__main__':
     smoke()
+    smoke_recovery()
