@@ -60,9 +60,10 @@ def smoke():
                 assert '0.000500' in Path(dl.value.path()).read_text(encoding='utf-8-sig')
                 page.locator('[data-page="missions"]').click()
                 page.locator('#demo').click()
+                # Wait for the new mission, then its completion. Use locator assertions
+                # rather than evaluating JavaScript strings (the app blocks unsafe-eval).
+                expect(page.locator('#select')).not_to_have_value(str(mid),timeout=15000)
                 expect(page.locator('#mission-state')).to_have_text('terminée',timeout=15000)
-                # Verify real server completion rather than a stale state.
-                page.wait_for_function("document.querySelector('#select').value !== '"+str(mid)+"'")
                 with s.db() as c:
                     assert c.execute("SELECT state FROM missions WHERE mode='demo'").fetchone()[0]=='terminée'
                     assert s.used(c)==500
