@@ -61,6 +61,9 @@ def permitted(c,mid,agent,base):
     if not p:return set(base)-set(commercial.ACTIONS),None
     flags=json.loads(p['permissions']);kind=p['kind']
     allowed=set(base)
+    scope=portfolio.scope(c,p['id'])
+    if scope and scope['scope']=='draft_recovery':
+        allowed&=({'delegate','finish'} if agent=='ATLAS' else {'read_file','test_file','check_file','list_files','finish'} if agent=='SENTINEL' else set())
     if kind!='commercial':allowed-=set(commercial.ACTIONS)
     else:
         if not flags['market']:allowed-=set(commercial.ACTIONS)
@@ -91,6 +94,9 @@ def guard(c,mid,agent,action,target,base):
     if not p:return
     if p['state']!=ACTIVE: raise ValueError('Autopilote arrêté')
     if action not in allowed: raise ValueError('Action hors autorisations Autopilote')
+    scope=portfolio.scope(c,p['id'])
+    if scope and scope['scope']=='draft_recovery' and action in ('read_file','test_file','check_file') and target!='ref:'+str(p['artifact']):
+        raise ValueError('Audit de récupération : référence exacte uniquement')
     if action=='delegate' and commercial.followup(c,p['id']) and target not in ('ORION','SENTINEL'):raise ValueError('Complément documentaire : ORION et SENTINEL uniquement')
     if action=='delegate' and target not in delegable(p,c): raise ValueError('Agent hors périmètre de cette mission Autopilote')
 
@@ -256,6 +262,9 @@ def choose(c,p):
     cid=p['id'];flags=json.loads(p['permissions']);ms=_missions(c,cid);kinds={x['kind'] for x in ms}
     scoped=portfolio.scope(c,cid)
     if scoped:
+        if scoped['scope']=='draft_recovery':
+            import draft_recovery
+            return draft_recovery.choose(c,cid),'Audit de récupération borné.'
         if scoped['scope']=='commercial':
             return (('commercial',p['source'],None),'') if not ms else (None,'Préparation commerciale terminée; aucun test externe autorisé.')
         if scoped['scope']=='improvement':
@@ -342,6 +351,9 @@ def worker(s,cid):
                             else:
                                 follow=commercial.followup(c,cid) if kind=='commercial' else None
                                 mission_title=improvement.production_title(cy,improvement.row(c,artifact)) if cy else title(p,kind,artifact,opp)
+                                if scoped_recovery := portfolio.scope(c,cid):
+                                    if scoped_recovery['scope']=='draft_recovery':
+                                        mission_title=('AUDIT DE RÉCUPÉRATION — fichier exact ref:'+str(artifact)+' ; ATLAS délègue SENTINEL pour lire et tester ce brouillon sans le modifier. Assertions indépendantes sur critères enregistrés, données fictives, aucune publication. Un contrôle statique ne suffit pas. Rapports courts et honnêtes.')
                                 if follow:mission_title=("COMPLÉMENT DOCUMENTAIRE — offre #"+str(follow['base_offer'])+" ; ATLAS délègue ORION pour rechercher les besoins acheteurs et alternatives/prix, lire les pages et enregistrer de nouveaux commercial_signal. Puis SENTINEL seulement pour commercial_extend sur l’offre historique : conserver les signaux précédents, ajouter les nouveaux indices exploitables, réviser risques et revue. Aucun nouveau prix, protocole, calcul MIDAS ou offre HERMES. Si aucun nouvel indice exploitable, terminer sans nouvelle offre. Aucun lancement externe.")
                                 mid=s.moteur.create(s,c,mission_title,'cloud',artifact_id=artifact)
                                 c.execute('INSERT INTO campaign_missions(campaign,mission,kind,artifact) VALUES(?,?,?,?)',(cid,mid,kind,artifact))
