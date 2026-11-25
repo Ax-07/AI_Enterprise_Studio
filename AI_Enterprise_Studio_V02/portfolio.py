@@ -1,6 +1,7 @@
 """Persistent activity portfolio. Facts and local costs, never inferred commercial validation."""
 import hashlib,json
 import laboratory
+import improvement
 
 STATES=('active','paused','archived')
 def init(c):
@@ -54,6 +55,8 @@ def scope(c,cid):
     return c.execute('SELECT * FROM campaign_projects WHERE campaign=?',(cid,)).fetchone()
 
 def latest(c,pid):
+    ref=improvement.pinned(c,pid)
+    if ref:return ref
     return c.execute("""SELECT a.* FROM artifacts a JOIN project_missions pm ON pm.mission=a.mission
         JOIN missions m ON m.id=a.mission WHERE pm.project=? AND m.state='terminée'
         AND a.agent='NEXUS' ORDER BY a.mission DESC, CASE WHEN lower(a.name) LIKE '%.html' THEN 0 ELSE 1 END,a.id DESC LIMIT 1""",(pid,)).fetchone()
@@ -155,7 +158,7 @@ def status(c):
         market=sum(r['state']=='terminée' for r in history(c,pid,'market'))
         step,reason=next_step(c,pid,flags)
         items.append({**dict(p),'opportunity_data':dict(o) if o else None,'missions':ms,'files':files,
-            'latest_artifact':a['id'] if a else None,'proofs':evidence(c,a),'laboratory':laboratory.canonical(c,a),'spent':spend,'search_results':search_count,
+            'latest_artifact':a['id'] if a else None,'versions':improvement.status(c,pid),'improvement_modes':improvement.available(c,a),'proofs':evidence(c,a),'laboratory':laboratory.canonical(c,a),'spent':spend,'search_results':search_count,
             'market_studies':market,'next_kind':step[0] if step else None,'reason':reason})
     unallocated=c.execute("""SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved)),0) FROM ledger l
         LEFT JOIN project_missions pm ON pm.mission=l.mission WHERE pm.mission IS NULL""").fetchone()[0]
