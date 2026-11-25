@@ -71,7 +71,7 @@ class CommercialTests(unittest.TestCase):
             ids=[]
             for domain,kind,quote in [('buyer.example','buyer_problem','Les erreurs coûtent du temps.'),('vendor.example','competitor_price','Forfait annoncé de 100 EUR.')]:
                 url='https://'+domain+'/test'
-                page=c.execute("INSERT INTO fetched(mission,url,state,content) VALUES(?,?,'reçue',?)",(mid,url,json.dumps({'url':url,'texte':quote,'date':'2026-11-25'}))).lastrowid
+                page=c.execute("INSERT INTO fetched(mission,url,state,content) VALUES(?,?,'reçue',?)",(mid,url,json.dumps({'url':url,'texte':quote+' '+('Texte documentaire synthétique de test uniquement. '*4),'date':'2026-11-25'}))).lastrowid
                 spec={'kind':kind,'quote':quote,'interpretation':'Indice documentaire seulement.'}
                 with self.assertRaises(ValueError):co.execute(c,orion,'commercial_signal',str(page),json.dumps({**spec,'quote':'Citation inventée absente.'}),'')
                 with self.assertRaises(ValueError):co.execute(c,hermes,'commercial_signal',str(page),json.dumps(spec),'')
