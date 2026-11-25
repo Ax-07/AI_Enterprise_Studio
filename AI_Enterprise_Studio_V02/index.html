@@ -167,9 +167,11 @@ function renderPortfolio(s){
    n.append(detail);return n
  }):[empty('Les opportunités Cloud et productions terminées apparaîtront ici. Les simulations sont exclues.')]);
 }
+let intelPreset=false;
+const INTEL_CAPS=['worldbank.market','n8n.market_compare'];
 const AUTONOMY_GOAL='Vérifier et approfondir de manière autonome l’activité sélectionnée. Exploiter les connaissances et preuves existantes, contrôler la référence et étudier sa viabilité. Ne pas répéter inutilement les travaux déjà réalisés.';
 function prepareProgression(pid){
- go('home');if(pid!=null)$('auto-project').value=String(pid);
+ intelPreset=false;go('home');if(pid!=null)$('auto-project').value=String(pid);
  if(snapshot)renderPortfolio(snapshot);
  $('auto-improvement').value='';$('auto-count').value='3';$('auto-budget').value='0.50';$('auto-search-cap').value='0';$('auto-connector-cap').value='0';
  for(const k of ['research','production','tests','market'])$('auto-'+k).checked=true;
@@ -178,13 +180,13 @@ function prepareProgression(pid){
  $('auto-project').scrollIntoView({block:'center'});
 }
 $('auto-preset').onclick=()=>prepareProgression();
-$('auto-intelligence').onclick=()=>{prepareProgression('explore');$('auto-count').value='1';$('auto-connector-cap').value='3';$('auto-goal').value='Comparer des marchés internationaux (France, Royaume-Uni, Canada, année 2023) à partir de worldbank.market et n8n.market_compare si autorisés. ORION : collecte le relevé, compare les pays, identifie au moins deux opportunités de secteurs différents, enregistre-les. MIDAS : évalue les hypothèses économiques des opportunités avec assess_opportunity et cite le relevé. Pas de preuve de demande ou de concurrence inventée. Aucun lancement.';for(const k of ['production','tests','market'])$('auto-'+k).checked=false;$('auto-advanced').open=true;if(snapshot)renderAuto(snapshot)};
-$('auto-project').onchange=()=>{if(snapshot){renderPortfolio(snapshot);renderAuto(snapshot)}};
+$('auto-intelligence').onclick=()=>{prepareProgression('explore');intelPreset=true;$('auto-count').value='1';$('auto-connector-cap').value='3';$('auto-goal').value='Comparer des marchés internationaux (France, Royaume-Uni, Canada, année 2023) à partir de worldbank.market et n8n.market_compare si autorisés. ORION : collecte le relevé, compare les pays, identifie au moins deux opportunités de secteurs différents, enregistre-les. MIDAS : évalue les hypothèses économiques des opportunités avec assess_opportunity et cite le relevé. Pas de preuve de demande ou de concurrence inventée. Aucun lancement.';for(const k of ['production','tests','market'])$('auto-'+k).checked=false;$('auto-advanced').open=true;if(snapshot)renderAuto(snapshot)};
+$('auto-project').onchange=()=>{intelPreset=false;if(snapshot){renderPortfolio(snapshot);renderAuto(snapshot)}};
 $('auto-budget').oninput=()=>{if(snapshot)renderAuto(snapshot)};
 $('auto-connector-cap').oninput=$('auto-research').onchange=()=>{if(snapshot)renderAuto(snapshot)};
 let newInsteadOfResume=null;
 $('auto-new').onclick=()=>{newInsteadOfResume=snapshot?.autopilot?.id;prepareProgression();};
-function prepareImprovement(){if($('auto-improvement').value){$('auto-count').value='1';$('auto-search-cap').value='0';$('auto-connector-cap').value='0';$('auto-production').checked=true;$('auto-tests').checked=true;$('auto-goal').value=$('auto-improvement').value==='catalogue-csv-v1'?'Ajouter l’import CSV local sans régression du moteur JSON.':'Améliorer le produit existant sans régression; préciser le gain attendu.'}if(snapshot){renderPortfolio(snapshot);renderAuto(snapshot)}}
+function prepareImprovement(){if($('auto-improvement').value){intelPreset=false;$('auto-count').value='1';$('auto-search-cap').value='0';$('auto-connector-cap').value='0';$('auto-production').checked=true;$('auto-tests').checked=true;$('auto-goal').value=$('auto-improvement').value==='catalogue-csv-v1'?'Ajouter l’import CSV local sans régression du moteur JSON.':'Améliorer le produit existant sans régression; préciser le gain attendu.'}if(snapshot){renderPortfolio(snapshot);renderAuto(snapshot)}}
 $('auto-improvement').onchange=()=>{if($('auto-improvement').value)prepareImprovement();else prepareProgression();if(snapshot)renderAuto(snapshot)};
 
 function pctLab(v){return typeof v==='number'?(v*100).toLocaleString('fr-FR',{maximumFractionDigits:2})+' %':'Non mesuré'}
@@ -221,7 +223,8 @@ function renderIntelligence(s){
  const euro=c=>new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(c/100);
  fill('intel-ranking',data.ranking.length?data.ranking.map(r=>{
    const n=el('article',undefined,'request'),v=r.result,d=r.assumptions;
-   n.append(el('h3',r.title),badge('Score hypothétique '+v.score+'/100'),el('p','Mission #'+r.mission+' · évaluation #'+r.id+' · '+v.evidence_count+' relevé(s) macro contextualisant'),el('p','Prix '+euro(d.price_cents)+' · coût variable '+euro(d.variable_cost_cents)+' · '+d.monthly_units+' unités/mois supposées'),el('p','Contribution '+euro(v.contribution_cents)+' · résultat mensuel hypothétique '+euro(v.monthly_result_cents)+' · seuil '+(v.breakeven_units??'non atteignable')+' unités'),el('p','Automatisation estimée '+d.automation_pct+' % · risque '+d.risk+'/5 · '+d.rationale),el('small',v.limit));
+   n.append(el('h3',r.title),badge('Score hypothétique '+v.score+'/100'),el('p','Mission #'+r.mission+' · évaluation #'+r.id+' · '+v.evidence_count+' relevé(s) macro · '+(v.page_count||0)+' page(s) publique(s) lue(s)'),el('p','Prix '+euro(d.price_cents)+' · coût variable '+euro(d.variable_cost_cents)+' · '+d.monthly_units+' unités/mois supposées'),el('p','Contribution '+euro(v.contribution_cents)+' · résultat mensuel hypothétique '+euro(v.monthly_result_cents)+' · seuil '+(v.breakeven_units??'non atteignable')+' unités'),el('p','Automatisation estimée '+d.automation_pct+' % · risque '+d.risk+'/5 · '+d.rationale),el('small',v.limit));
+   for(const p of v.pages||[])n.append(el('small','Page #'+p.id+' · '+p.url+' · '+p.date));
    if(r.project)n.append(btn('Voir le portefeuille',()=>go('portfolio'),'quiet'));return n
  }):[empty('Aucune évaluation structurée terminée. Les anciennes opportunités restent non classées.')]);
  fill('intel-sources',data.sources.length?data.sources.map(r=>{
@@ -278,6 +281,8 @@ function renderAuto(s){
  const chosen=s.portfolio?.projects?.find(x=>String(x.id)===$('auto-project').value);
  if(chosen&&!$('auto-improvement').value&&!chosen.next_kind)blockers.push('Aucune prochaine étape proposée pour cette activité. Choisir une autre activité ou une amélioration.');
  const cc=Number($('auto-connector-cap').value);
+ text('auto-connector-note',intelPreset?'Étude internationale : Banque mondiale et comparaison n8n uniquement, budget distinct 0 USD.':'GitHub public, Banque mondiale et workflows n8n locaux autorisés ; budget connecteurs 0 USD. Aucun lancement commercial.');
+ if(intelPreset&&(!Number.isInteger(cc)||cc<2||INTEL_CAPS.some(id=>!s.connectors?.capabilities?.some(x=>x.id===id&&x.available&&x.policy.enabled&&x.policy.agents.includes('ORION')&&x.calls<x.policy.max_calls))))blockers.push('Étude internationale : activer les deux nouveaux connecteurs pour ORION, avec au moins deux tentatives disponibles.');
  if(!Number.isInteger(cc)||cc<0||cc>10)blockers.push('Quota connecteurs entre 0 et 10');
  else if(cc&&($('auto-improvement').value||!$('auto-research').checked))blockers.push('Connecteurs : recherche autorisée et progression habituelle requises');
  else if(cc&&!s.connectors?.capabilities?.some(x=>x.available&&x.policy.enabled&&x.policy.agents.length&&x.calls<x.policy.max_calls))blockers.push('Aucun connecteur actif avec quota disponible');
@@ -311,8 +316,8 @@ $('auto-start').onclick=()=>{
  const permissions=Object.fromEntries(['research','production','tests','market'].map(k=>[k,$('auto-'+k).checked]));
  const scope=$('auto-project').value;
  const mode=$('auto-improvement').value;
- const body={connector_cap:Number($('auto-connector-cap').value),connector_budget:'0',...(mode?{improvement:mode}:{}),project:['auto','explore'].includes(scope)?scope:Number(scope),goal:$('auto-goal').value.trim(),budget:$('auto-budget').value,max_missions:Number($('auto-count').value),search_cap:Number($('auto-search-cap').value),permissions,confirm:true};
- if(confirm('Autoriser une campagne pour '+$('auto-project').selectedOptions[0].textContent+' jusqu’à '+body.budget+' USD OpenAI, '+body.max_missions+' missions et '+body.search_cap+' tentatives Brave séparées et '+body.connector_cap+' tentatives connecteurs publics (budget 0 USD) ? '+(mode?'Une candidate sera comparée; sélection automatique uniquement pour le profil CSV et critères démontrés. ':'')+'Aucun lancement commercial.'))action('autopilot/start',body);
+ const body={...(intelPreset?{connector_selection:INTEL_CAPS}:{}),connector_cap:Number($('auto-connector-cap').value),connector_budget:'0',...(mode?{improvement:mode}:{}),project:['auto','explore'].includes(scope)?scope:Number(scope),goal:$('auto-goal').value.trim(),budget:$('auto-budget').value,max_missions:Number($('auto-count').value),search_cap:Number($('auto-search-cap').value),permissions,confirm:true};
+ if(confirm('Autoriser une campagne pour '+$('auto-project').selectedOptions[0].textContent+' jusqu’à '+body.budget+' USD OpenAI, '+body.max_missions+' missions et '+body.search_cap+' tentatives Brave séparées et '+body.connector_cap+' tentatives connecteurs autorisés (budget 0 USD) ? '+(mode?'Une candidate sera comparée; sélection automatique uniquement pour le profil CSV et critères démontrés. ':'')+'Aucun lancement commercial.'))action('autopilot/start',body);
 };
 $('auto-stop').onclick=()=>{const p=snapshot?.autopilot;if(p&&confirm('Arrêter la campagne ? Les appels déjà engagés peuvent être facturés.'))action('autopilot/stop',{id:p.id,confirm:true})};
 $('auto-resume').onclick=()=>{const p=snapshot?.autopilot;if(p&&confirm('Reprendre la campagne dans la même enveloppe, sans réinitialisation des compteurs ?'))action('autopilot/resume',{id:p.id,confirm:true})};

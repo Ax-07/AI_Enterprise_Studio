@@ -238,7 +238,7 @@ class Handler(BaseHTTPRequestHandler):
                 if cap not in files:raise ValueError('Workflow inconnu')
                 return self.send(json.loads((ROOT/'n8n'/files[cap]).read_text(encoding='utf8')))
             if self.route()=='/api/intelligence' and self.headers.get('X-Session')==SESSION:
-                with db() as c:return self.send(intelligence.status(c))
+                with db() as c:return self.send(intelligence.status(c,full=True))
             if self.route()=='/api/connectors' and self.headers.get('X-Session')==SESSION:
                 with db() as c:return self.send(connectors.status(c))
             if self.route()=='/api/campaign_diagnostic' and self.headers.get('X-Session')==SESSION:

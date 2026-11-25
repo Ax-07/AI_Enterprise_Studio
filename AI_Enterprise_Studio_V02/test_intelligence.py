@@ -13,7 +13,7 @@ def fixture(value=SPEC,missing=False):
             rows.append({'countryiso3code':country,'indicator':{'id':key},'date':str(d['year']),'value':None if missing and country=='GBR' and key=='IT.NET.USER.ZS' else v})
     raw=json.dumps([{'page':1,'pages':1,'total':len(rows),'lastupdated':'2025-10-01'},rows]).encode()
     snap=i.parse(raw,d)
-    return {'source':'World Bank / WDI (source 2)','url':i.url_for(d),'retrieved':'2026-11-25T00:00:00+00:00','raw_sha256':__import__('hashlib').sha256(raw).hexdigest(),'snapshot':snap,'snapshot_sha256':i.digest(snap)}
+    return {'source':'World Bank / WDI (source 2)','url':i.url_for(d),'retrieved':'2026-11-25T00:00:00+00:00','raw_sha256':__import__('hashlib').sha256(raw).hexdigest(),'snapshot':snap,'snapshot_sha256':i.digest(snap),'raw_json':raw.decode('utf8')}
 
 class IntelligenceTests(unittest.TestCase):
     setUp=test_autopilot.AutopilotTests.setUp

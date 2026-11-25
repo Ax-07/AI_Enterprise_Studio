@@ -85,16 +85,19 @@ def authorize_campaign(c,cid,body):
     count=body.get('connector_cap',0);budget=micro(body.get('connector_budget','0'))
     if type(count) is not int or not 0<=count<=10:raise ValueError('Quota connecteurs entre 0 et 10')
     if not count:
-        if budget:raise ValueError('Budget connecteurs sans quota')
+        if budget or body.get('connector_selection') is not None:raise ValueError('Sélection ou budget connecteurs sans quota')
         return
     if 'project' not in body or not body['permissions']['research'] or 'improvement' in body:
         raise ValueError('Connecteurs : campagne ciblée de recherche (hors amélioration) requise')
+    selection=body.get('connector_selection')
+    if selection is not None and (not isinstance(selection,list) or not selection or len(selection)>len(REGISTRY) or any(not isinstance(k,str) or k not in REGISTRY for k in selection) or len(set(selection))!=len(selection) or count<len(selection)):raise ValueError('Sélection explicite des connecteurs invalide')
     caps={}
     for cap,spec in REGISTRY.items():
+        if selection is not None and cap not in selection:continue
         p=policy(c,cap);t=totals(c,'WHERE capability=?',(cap,))
         if p['enabled'] and p['agents'] and usable(cap) and spec['risk'] in ('public_read','local_compute') and spec['cost_usd_micro'] is not None and t['calls']<p['max_calls'] and t['reserved']+spec['cost_usd_micro']<=p['budget'] and spec['cost_usd_micro']<=budget:
             caps[cap]={'agents':p['agents'],'cost':spec['cost_usd_micro'],'revision':spec.get('revision',1)}
-    if not caps:raise ValueError('Aucun connecteur autorisé avec quota et budget disponibles')
+    if not caps or (selection is not None and set(caps)!=set(selection)):raise ValueError('Connecteur sélectionné non autorisé ou quota/budget indisponible')
     c.execute('INSERT INTO connector_campaigns(campaign,max_calls,budget,capabilities) VALUES(?,?,?,?)',
         (cid,count,budget,json.dumps(caps)))
 
@@ -210,6 +213,7 @@ def invoke(s,cap,text,mid=None,tid=None,actor='PROPRIETAIRE'):
         if cap==intel.CAP:intel.record(c,rid,result)
         if is_n8n:c.execute('UPDATE connector_workflow_results SET execution_id=?,result=? WHERE run=?',(result['execution_id'],json.dumps(result,ensure_ascii=False),rid))
         c.execute("UPDATE connector_runs SET state='received',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
+    if cap==intel.CAP:result={k:v for k,v in result.items() if k!='raw_json'}
     return {'connector':cap,'run':rid,'status':'received','data':result}
 
 def status(c):
