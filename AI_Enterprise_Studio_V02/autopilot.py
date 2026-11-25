@@ -143,6 +143,13 @@ def start(c,body,cfg):
     if not cfg['key'] or budget>remaining:raise ValueError('Clé ou budget global disponible insuffisant')
     portfolio.sync(c)
     requested=body.get('project')
+    explicit=body.get('campaign_mode')
+    if 'campaign_mode' in body:
+        if explicit not in ('progression','explore','international','commercial','improvement'):raise ValueError('Mode de campagne inconnu')
+        if (explicit=='commercial')!=('commercial' in body) or (explicit=='improvement')!=('improvement' in body):raise ValueError('Mode et action incohérents')
+        if explicit in ('explore','international') and requested!='explore':raise ValueError('Exploration : sélection explore requise')
+        if explicit=='progression' and requested=='explore':raise ValueError('Sélectionner explicitement le mode exploration')
+        if explicit=='international' and (body.get('connector_selection')!=[ 'worldbank.market','n8n.market_compare'] or count!=1):raise ValueError('Étude internationale : deux connecteurs précis et une mission requis')
     # Old API clients and already-authorized campaigns retain their original scope.
     frozen=None
     if 'commercial' in body:
@@ -252,9 +259,9 @@ def choose(c,p):
         return None,'Format sans vérificateur fonctionnel; examen nécessaire.'
     if flags['research'] and 'opportunity' not in kinds:return ('opportunity',None,None),''
     if flags['production'] and 'create' not in kinds:
-        opp=c.execute("""SELECT o.id,o.title FROM opportunities o JOIN campaign_missions cm ON cm.mission=o.mission
-            WHERE cm.campaign=? AND cm.kind='opportunity' ORDER BY o.id DESC LIMIT 1""",(cid,)).fetchone()
-        if opp:return ('create',None,dict(opp)),''
+        for opp in c.execute("""SELECT o.id,o.title FROM opportunities o JOIN campaign_missions cm ON cm.mission=o.mission
+            WHERE cm.campaign=? AND cm.kind='opportunity' ORDER BY o.id DESC""",(cid,)):
+            if not portfolio.economic_hold(c,opp['id']):return ('create',None,dict(opp)),''
     return None,'Aucune nouvelle étape autorisée et fondée sur les résultats disponibles.'
 
 def title(p,kind,artifact,opp):

@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.3"
+VERSION="0.4.3.1"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -223,7 +223,7 @@ def campaign_audit(c,cfg,cid):
         reports=[dict(r) for r in c.execute('SELECT * FROM reports WHERE mission=? ORDER BY id',(mid,))]
         tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=? ORDER BY id',(mid,))]
         events=[dict(r) for r in c.execute('SELECT id,task,agent,action,substr(args,1,600) AS args,substr(result,1,800) AS result,ok,created FROM events WHERE mission=? ORDER BY id DESC LIMIT 100',(mid,))]
-        missions.append({'mission':m,'reports':reports,'tasks':tasks,'events':events,'collective_evidence':collective_evidence.registry(c,mid)})
+        missions.append({'mission':m,'reports':reports,'tasks':tasks,'events':events,'collective_evidence':collective_evidence.registry(c,mid),'research':research.mission(c,mid,full=True)})
     return {'schema':'aes-campaign-audit-v1','version':VERSION,'campaign_id':cid,
         'diagnostic_campagne':{'version':VERSION,'readiness':autopilot.readiness(c,cfg,LOCK.locked()),'campaign':campaign},
         'connecteurs':connectors.status(c),'intelligence_economique':intelligence.status(c,full=True),
@@ -308,6 +308,14 @@ class Handler(BaseHTTPRequestHandler):
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n)); cfg=config()
+            if self.route()=='/api/research/diagnostic':
+                if p!={'confirm':True}:raise ValueError('Diagnostic fixe : confirmation seule requise')
+                if not LOCK.acquire(blocking=False):raise ValueError('Un moteur travaille déjà')
+                try:
+                    with db() as c:
+                        if autopilot.active(c) or c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone():raise ValueError('Un travail est déjà en cours')
+                    return self.send(research.diagnostic(moteur.fetch_page))
+                finally:LOCK.release()
             if self.route() in ('/api/connectors/policy','/api/connectors/test'):
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 if not LOCK.acquire(blocking=False):raise ValueError('Un moteur travaille déjà')
