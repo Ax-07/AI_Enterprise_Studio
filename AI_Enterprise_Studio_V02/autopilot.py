@@ -5,6 +5,7 @@ import working_memory
 import portfolio
 import laboratory
 import improvement
+import connectors
 from decimal import Decimal, InvalidOperation
 
 ACTIVE='actif'
@@ -60,6 +61,7 @@ def permitted(c,mid,agent,base):
     if not flags['tests'] or kind!='functional': allowed.discard('test_file')
     if not flags['tests']: allowed.discard('check_file')
     if kind!='opportunity': allowed.discard('opportunity')
+    if not flags['research'] or kind not in ('opportunity','market') or not connectors.campaign_status(c,p['id'])['max_calls']:allowed.discard('connector')
     return allowed,p
 
 def guard(c,mid,agent,action,target,base):
@@ -103,6 +105,7 @@ def status(c,cfg=None):
     d['spent']=costs(c,p['id']);d['searches']=searches(c,p['id']);d['missions']=[dict(x) for x in _missions(c,p['id'])]
     d['recovery_kind']=recovery_kind(c,d['missions'][-1]['id'],cfg) if cfg and p['state']=='bloqué' and d['missions'] else None
     d['recoverable']=bool(d['recovery_kind'])
+    d['connectors']=connectors.campaign_status(c,p['id'])
     d['laboratory']=[laboratory.summary_row(r) for r in c.execute('SELECT * FROM laboratory_runs WHERE campaign=?',(p['id'],))]
     scope=portfolio.scope(c,p['id'])
     d['project']=scope['project'] if scope else None;d['scope']=scope['scope'] if scope else 'legacy'
@@ -151,6 +154,7 @@ def start(c,body,cfg):
     cid=c.execute("""INSERT INTO campaigns(goal,budget,max_missions,permissions,search_cap,source,state)
         VALUES(?,?,?,?,?,?,'actif')""",(goal.strip(),budget,count,json.dumps(flags),cap,source)).lastrowid
     if 'project' in body:c.execute('INSERT INTO campaign_projects(campaign,project,scope) VALUES(?,?,?)',(cid,pid,scope))
+    connectors.authorize_campaign(c,cid,body)
     if frozen is not None:improvement.begin(c,cid,pid,artifact,mode,goal.strip(),frozen)
     return cid
 
