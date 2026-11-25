@@ -110,8 +110,8 @@ def readiness(c,cfg,locked=False):
     return {'ready':not blockers,'blockers':blockers,'active_campaign':campaign[0] if campaign else None,
             'active_mission':mission[0] if mission else None,'pending':pending,'remaining':remaining,'locked':bool(locked)}
 
-def status(c,cfg=None):
-    p=c.execute('SELECT * FROM campaigns ORDER BY id DESC LIMIT 1').fetchone()
+def status(c,cfg=None,cid=None):
+    p=_campaign(c,cid) if cid is not None else c.execute('SELECT * FROM campaigns ORDER BY id DESC LIMIT 1').fetchone()
     if not p:return None
     d=dict(p);d['permissions']=json.loads(d['permissions'])
     d['spent']=costs(c,p['id']);d['searches']=searches(c,p['id']);d['missions']=[dict(x) for x in _missions(c,p['id'])]
@@ -312,6 +312,9 @@ def worker(s,cid):
                             if not nxt:
                                 c.execute("UPDATE campaigns SET state='terminé',reason=? WHERE id=?",(reason,cid));return
                             kind,artifact,opp=nxt
+                            planned=c.execute("SELECT kind,artifact FROM enterprise_plan_queue WHERE campaign=?",(cid,)).fetchone() if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='enterprise_plan_queue'").fetchone() else None
+                            if planned and (planned['kind']!=kind or planned['artifact']!=artifact):
+                                c.execute("UPDATE campaigns SET state='terminé',reason='Étape initiale achevée ou différente; réévaluation par le planificateur.' WHERE id=?",(cid,));return
                             if kind=='laboratory':
                                 if c.execute('SELECT 1 FROM laboratory_runs WHERE campaign=?',(cid,)).fetchone():
                                     c.execute("UPDATE campaigns SET state='terminé',reason='Une expérience locale maximum par campagne; examiner les résultats.' WHERE id=?",(cid,));return
@@ -328,6 +331,9 @@ def worker(s,cid):
                     if result['status']!='passed':
                         with s.db() as c:c.execute("UPDATE campaigns SET state='terminé',reason=? WHERE id=? AND state='actif'",('Banc d’essai '+result['status']+'; examiner le laboratoire avant toute suite.',cid))
                         return
+                    with s.db() as c:
+                        if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='enterprise_plan_queue'").fetchone() and c.execute('SELECT 1 FROM enterprise_plan_queue WHERE campaign=?',(cid,)).fetchone():
+                            c.execute("UPDATE campaigns SET state='terminé',reason='Banc d’essai unique terminé; réévaluation par le planificateur.' WHERE id=? AND state='actif'",(cid,));return
                     continue
                 s.moteur.run(s,mid)
                 with s.db() as c:portfolio.sync(c)

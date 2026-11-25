@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.3.2"
+VERSION="0.4.4"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -49,6 +49,7 @@ def init():
         improvement.init(c)
         connectors.init(c)
         commercial.init(c)
+        planner.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -209,10 +210,10 @@ def status():
     cfg=config()
     with db() as c:
         campaign=autopilot.status(c,cfg)
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
-def campaign_audit(c,cfg,cid):
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'planner':planner.status(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+def campaign_audit(c,cfg,cid,historical=False):
     # Single read snapshot. Never copy config, environment or session credentials.
-    campaign=autopilot.status(c,cfg)
+    campaign=autopilot.status(c,cfg,cid if historical else None)
     if not campaign or campaign['id']!=cid:
         raise ValueError('Campagne différente de celle affichée; actualiser puis réessayer.')
     if campaign['state']=='actif':
@@ -230,6 +231,13 @@ def campaign_audit(c,cfg,cid):
         'missions':missions,'collective_audit':collective_evidence.campaign_summary(c,campaign),
         'previous_laboratory':collective_evidence.previous_laboratory(c),'commercial':commercial.campaign(c,cid),
         'limit':'Rapports et journaux locaux potentiellement privés : vérifier avant partage. Connecteurs et intelligence : exports globaux avec limites habituelles (100/30 relevés); filtrer par mission/campagne. Événements : 100 extraits par mission. Aucun appel externe pour cet export.'}
+
+def plan_audit(c,cfg,pid):
+    status=planner.status(c);plan=status['plan']
+    if not plan or plan['id']!=pid or plan['state']=='active':raise ValueError('Plan récent non actif requis')
+    return {'schema':'aes-enterprise-plan-v1','version':VERSION,'planner':status,
+        'campaigns':[campaign_audit(c,cfg,x['campaign'],historical=True) for x in plan['queue']],
+        'limit':'Journal local potentiellement privé; vérifier avant partage. Aucun appel externe pour cet export.'}
 
 class Handler(BaseHTTPRequestHandler):
     def send(self,data,status=200,typ='application/json'):
@@ -275,6 +283,12 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send(campaign_audit(c,cfg,cid))
+            if self.route()=='/api/plan_audit' and self.headers.get('X-Session')==SESSION:
+                pid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
+                cfg=config()
+                with db() as c:
+                    c.execute('BEGIN')
+                    return self.send(plan_audit(c,cfg,pid))
             if self.route()=='/api/campaign_diagnostic' and self.headers.get('X-Session')==SESSION:
                 cfg=config()
                 with db() as c:
@@ -308,6 +322,23 @@ class Handler(BaseHTTPRequestHandler):
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n)); cfg=config()
+            route=self.route()
+            if route in ('/api/planner/start','/api/planner/stop','/api/planner/resume','/api/planner/abandon'):
+                if p.get('confirm') is not True:raise ValueError('Confirmation du plan requise')
+                if route!='/api/planner/stop' and (LOCK.locked() or planner.RUN_LOCK.locked()):raise ValueError('Moteur encore occupé')
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    if route=='/api/planner/start':pid=planner.start(c,p,cfg)
+                    else:
+                        pid=p.get('id')
+                        if set(p)!={'confirm','id'} or type(pid) is not int or not 1<=pid<=9007199254740991:raise ValueError('Plan invalide')
+                        if route=='/api/planner/stop':planner.stop(c,pid)
+                        elif route=='/api/planner/abandon':planner.abandon(c,pid)
+                        else:planner.resume(c,pid,cfg)
+                if route in ('/api/planner/start','/api/planner/resume'):
+                    threading.Thread(target=planner.worker,args=(sys.modules[__name__],pid),daemon=True).start()
+                return self.send({'plan':pid})
+            with db() as c:planner.guard_manual(c)
             if self.route()=='/api/research/diagnostic':
                 if p!={'confirm':True}:raise ValueError('Diagnostic fixe : confirmation seule requise')
                 if not LOCK.acquire(blocking=False):raise ValueError('Un moteur travaille déjà')
@@ -357,6 +388,7 @@ class Handler(BaseHTTPRequestHandler):
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
+                    planner.guard_manual(c)
                     portfolio.set_state(c,p.get('project'),p.get('state'))
                 return self.send({'ok':True})
             if self.route() in ('/api/autopilot/start','/api/autopilot/resume','/api/autopilot/stop'):
@@ -365,6 +397,7 @@ class Handler(BaseHTTPRequestHandler):
                 if route!='/api/autopilot/stop' and LOCK.locked():raise ValueError('Un moteur travaille déjà')
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
+                    planner.guard_manual(c)
                     if route=='/api/autopilot/start': cid=autopilot.start(c,p,cfg)
                     else:
                         cid=p.get('id')
@@ -391,6 +424,7 @@ class Handler(BaseHTTPRequestHandler):
                 if mode=='cloud' and (not cfg['key'] or p.get('confirm') is not True): raise ValueError('Clé OpenAI et confirmation requises.')
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
+                    planner.guard_manual(c)
                     if c.execute("SELECT COUNT(*) FROM missions WHERE state='en cours'").fetchone()[0] or LOCK.locked() or autopilot.active(c): raise ValueError('Une mission ou campagne est déjà en cours.')
                     artifact_id=p.get('artifact_id')
                     if artifact_id is not None and p.get('engine')!='dynamic': raise ValueError('Référence réservée au moteur dynamique')
@@ -402,6 +436,7 @@ class Handler(BaseHTTPRequestHandler):
                 mid=int(p['id'])
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
+                    planner.guard_manual(c)
                     m=c.execute('SELECT * FROM missions WHERE id=?',(mid,)).fetchone()
                     if not m or m['state'] not in ('bloquée','interrompue','arrêtée','prête'): raise ValueError('Mission non reprenable.')
                     if autopilot.link(c,mid):raise ValueError('Reprendre depuis Autopilote, sans contourner son enveloppe.')
@@ -422,6 +457,7 @@ class Handler(BaseHTTPRequestHandler):
                 start=None
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
+                    planner.guard_manual(c)
                     r=c.execute('SELECT r.*,m.state AS mission_state,m.mode FROM requests r JOIN missions m ON m.id=r.mission WHERE r.id=?',(int(p['id']),)).fetchone()
                     if not r or r['state']!='en attente': raise ValueError('Demande déjà traitée ou inconnue')
                     linked=autopilot.link(c,r['mission'])
