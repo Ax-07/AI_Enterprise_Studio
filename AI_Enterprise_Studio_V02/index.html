@@ -228,7 +228,7 @@ function renderIntelligence(s){
    if(r.project)n.append(btn('Voir le portefeuille',()=>go('portfolio'),'quiet'));return n
  }):[empty('Aucune évaluation structurée terminée. Les anciennes opportunités restent non classées.')]);
  fill('intel-sources',data.sources.length?data.sources.map(r=>{
-   const n=el('details',undefined,'report');n.append(el('summary','Relevé #'+r.run+' · '+r.source+' · '+r.snapshot.year+' · '+r.snapshot.countries.join(', ')),el('p','Collecte '+r.retrieved+' · '+(r.mission?'mission #'+r.mission:'test propriétaire')+' · empreinte '+(r.integrity?'cohérente':'invalide')),el('p',r.url),el('p','Dernière mise à jour fournisseur : '+(r.snapshot.last_updated||'non indiquée')));
+   const n=el('details',undefined,'report');if(!r.integrity){n.append(el('summary','Relevé #'+r.run+' · intégrité invalide'),el('p','Exclu des évaluations et comparaisons.'));return n}n.append(el('summary','Relevé #'+r.run+' · '+r.source+' · '+r.snapshot.year+' · '+r.snapshot.countries.join(', ')),el('p','Collecte '+r.retrieved+' · '+(r.mission?'mission #'+r.mission:'test propriétaire')+' · empreinte '+(r.integrity?'cohérente':'invalide')),el('p',r.url),el('p','Dernière mise à jour fournisseur : '+(r.snapshot.last_updated||'non indiquée')));
    const table=el('table'),head=el('tr');for(const k of ['Pays','Indicateur','Valeur'])head.append(el('th',k));table.append(head);
    for(const o of r.snapshot.observations){const row=el('tr');for(const x of [o.country,o.indicator,o.value==null?'Non disponible':String(o.value)+' '+o.unit])row.append(el('td',x));table.append(row)}
    n.append(table,el('small',r.snapshot.limit));return n

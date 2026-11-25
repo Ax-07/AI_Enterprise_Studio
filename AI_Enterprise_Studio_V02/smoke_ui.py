@@ -461,6 +461,42 @@ def smoke_n8n():
     finally:fixture.doCleanups()
     print('Chromium n8n: template download, scoped authorization, verified result and secret-free export (mock transport)')
 
+def smoke_intelligence():
+    import os,n8n_bridge as n,intelligence as i,connectors as x,autopilot as a
+    from test_intelligence import IntelligenceTests,TOKEN,fixture as wb_fixture
+    case=IntelligenceTests('test_request_and_parse');case.setUp()
+    try:
+        with patch.dict(os.environ,{'AES_N8N_TOKEN':TOKEN}),patch.object(s,'config',return_value=case.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')),patch.dict(x.ADAPTERS,{i.CAP:lambda value:wb_fixture(value)}),patch.object(a,'worker',return_value=None) as worker:
+            case.policy(i.CAP);case.policy(n.COMPARE)
+            x.invoke(s,i.CAP,'{"countries":["FRA","GBR"],"year":2023}')
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page(accept_downloads=True)
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base);page.locator('[data-page="opps"]').click()
+                    expect(page.locator('#intel-sources')).to_contain_text('FRA, GBR')
+                    with page.expect_download() as dl:page.locator('#intel-export').click()
+                    j=json.loads(Path(dl.value.path()).read_text());assert j['sources'][0]['integrity'] and 'raw_json' in j['sources'][0]
+                    page.locator('[data-page="home"]').click();page.locator('#auto-intelligence').click()
+                    expect(page.locator('#auto-project')).to_have_value('explore')
+                    expect(page.locator('#auto-count')).to_have_value('1')
+                    expect(page.locator('#auto-budget')).to_have_value('0.50')
+                    expect(page.locator('#auto-connector-cap')).to_have_value('3')
+                    expect(page.locator('#auto-start')).to_be_enabled()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/autopilot/start') as res:page.locator('#auto-start').click()
+                    assert res.value.ok,res.value.text()
+                    with s.db() as c:
+                        cy=res.value.json()['campaign'];assert set(x.campaign_status(c,cy)['capabilities'])=={i.CAP,n.COMPARE}
+                    worker.assert_called_once();assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:case.doCleanups()
+    print('Chromium intelligence: evidence export, dedicated preset and frozen capability selection')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
@@ -472,3 +508,4 @@ if __name__=='__main__':
     smoke_owner_console()
     smoke_connectors()
     smoke_n8n()
+    smoke_intelligence()

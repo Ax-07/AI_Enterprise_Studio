@@ -209,10 +209,14 @@ def invoke(s,cap,text,mid=None,tid=None,actor='PROPRIETAIRE'):
         with s.db() as c:c.execute('UPDATE connector_runs SET state=?,diagnostic=?,finished=CURRENT_TIMESTAMP WHERE id=?',(state,diag,rid))
         return {'connector':cap,'run':rid,'status':state,'diagnostic':diag,'note':'Tentative décomptée; aucun retry automatique.'}
     if cap==n8n.COMPARE:result={**result,'source_run':json.loads(value)['source_run'] if mid is not None else None,'payload_sha256':hashlib.sha256(payload.encode()).hexdigest(),'note':'Proxy de couverture numérique, pas demande; test propriétaire synthétique si source_run null.'}
-    with s.db() as c:
-        if cap==intel.CAP:intel.record(c,rid,result)
-        if is_n8n:c.execute('UPDATE connector_workflow_results SET execution_id=?,result=? WHERE run=?',(result['execution_id'],json.dumps(result,ensure_ascii=False),rid))
-        c.execute("UPDATE connector_runs SET state='received',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
+    try:
+        with s.db() as c:
+            if cap==intel.CAP:intel.record(c,rid,result)
+            if is_n8n:c.execute('UPDATE connector_workflow_results SET execution_id=?,result=? WHERE run=?',(result['execution_id'],json.dumps(result,ensure_ascii=False),rid))
+            c.execute("UPDATE connector_runs SET state='received',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
+    except (ValueError,TypeError,KeyError,AttributeError):
+        with s.db() as c:c.execute("UPDATE connector_runs SET state='unknown',diagnostic='Résultat local non validé',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
+        return {'connector':cap,'run':rid,'status':'unknown','diagnostic':'Résultat local non validé','note':'Tentative décomptée.'}
     if cap==intel.CAP:result={k:v for k,v in result.items() if k!='raw_json'}
     return {'connector':cap,'run':rid,'status':'received','data':result}
 

@@ -105,3 +105,36 @@ class IntelligenceTests(unittest.TestCase):
             c.execute("UPDATE market_sources SET snapshot='{}' WHERE run=1")
             with self.assertRaises(ValueError):i.source(c,1,mid)
             self.assertFalse(i.status(c)['sources'][0]['integrity'])
+
+    def test_raw_snapshot_and_optional_read_page_evidence(self):
+        self.policy(i.CAP);cid=self.start(project='explore',connector_cap=2,connector_selection=[i.CAP])
+        with s.db() as c:
+            mid=m.create(s,c,'Recherche','cloud');c.execute("INSERT INTO campaign_missions(campaign,mission,kind) VALUES(?,?,'opportunity')",(cid,mid));tid=m.add_task(c,mid,'ORION','Recherche');o=c.execute("INSERT INTO opportunities(mission,title,body,next_test) VALUES(?,'Piste','Hypothèse','Test')",(mid,)).lastrowid
+            page={'url':'https://example.org/prices','date':'2026-11-25','texte':'Tarifs publics de démonstration','partiel':False}
+            pid=c.execute("INSERT INTO fetched(mission,url,state,content) VALUES(?,?,'reçue',?)",(mid,page['url'],json.dumps(page))).lastrowid
+        with patch.dict(x.ADAPTERS,{i.CAP:MagicMock(side_effect=fixture)}):
+            r=x.invoke(s,i.CAP,SPEC,mid,tid,'ORION')
+            self.assertNotIn('raw_json',r['data'])
+        d={'price_cents':1000,'variable_cost_cents':500,'fixed_month_cents':100,'monthly_units':3,'automation_pct':40,'risk':4,'source_runs':[1],'page_refs':[pid],'rationale':'Exemple hypothétique, pas de demande validée.'}
+        with s.db() as c:
+            self.assertEqual(x.campaign_status(c,cid)['capabilities'],[i.CAP])
+            self.assertTrue(i.status(c)['sources'][0]['raw_preserved'])
+            self.assertIn('raw_json',i.status(c,full=True)['sources'][0])
+            self.assertNotIn('raw_json',i.status(c)['sources'][0])
+            with self.assertRaises(ValueError):i.assess(c,mid,'MIDAS',str(o),json.dumps({**d,'page_refs':[999]}))
+            q=i.assess(c,mid,'MIDAS',str(o),json.dumps(d))
+            self.assertEqual(q['page_count'],1);self.assertEqual(q['pages'][0]['url'],page['url'])
+            c.execute("UPDATE missions SET state='terminée' WHERE id=?",(mid,))
+            self.assertEqual(len(i.ranking(c)),1)
+            c.execute("UPDATE fetched SET content=? WHERE id=?",(json.dumps({**page,'texte':'Modifié'}),pid))
+            self.assertEqual(i.ranking(c),[])
+            c.execute("UPDATE market_source_raw SET raw_json='[]' WHERE run=1")
+            self.assertFalse(i.status(c)['sources'][0]['integrity'])
+
+    def test_explicit_selection_not_widened(self):
+        self.policy(i.CAP)
+        with self.assertRaises(ValueError):self.start(project='explore',connector_cap=2,connector_selection=[i.CAP,n.COMPARE])
+        with self.assertRaises(ValueError):self.start(project='explore',connector_cap=0,connector_selection=[i.CAP])
+        with self.assertRaises(ValueError):self.start(project='explore',connector_cap=1,connector_selection=[i.CAP,i.CAP])
+        cid=self.start(project='explore',connector_cap=1,connector_selection=[i.CAP])
+        with s.db() as c:self.assertEqual(x.campaign_status(c,cid)['capabilities'],[i.CAP])
