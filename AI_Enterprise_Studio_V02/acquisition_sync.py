@@ -55,6 +55,9 @@ def state(c,row,t):
     if row['revoked'] is not None:return 'revoked'
     if not row['starts']<=t<row['expires']:return 'inactive'
     if acquisition.state(c,acquisition._row(c,row['draft']))!='draft':return 'reference_changed'
+    if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='acquisition_test_channels'").fetchone():
+        managed=c.execute('SELECT state FROM acquisition_test_channels WHERE page=?',(row['page'],)).fetchone()
+        if managed and managed['state']!='collecting':return 'awaiting_control'
     return 'test_link'
 
 def revoke(c,b,t=None):
