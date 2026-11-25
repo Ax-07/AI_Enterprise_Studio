@@ -1,12 +1,16 @@
 """Project-scoped commercial preparation. No publisher, payment or contact connector."""
-import hashlib
+import hashlib,json
 from urllib.parse import urlsplit
 import intelligence as intel
 import portfolio
+import research
 
 LIMIT='Préparation interne uniquement. Citations vérifiées dans des extraits locaux, interprétation non certifiée. Aucun prospect contacté, aucune exposition mesurée, aucune vente ni dépense commerciale. Un protocole n’est pas un test exécuté.'
 ACTIONS={'commercial_signal':'ORION','commercial_offer':'HERMES','commercial_economics':'MIDAS','commercial_review':'SENTINEL'}
 KINDS=('buyer_problem','competitor_offer','competitor_price','alternative','constraint')
+OFFER_FIELDS=('audience','problem','offer','deliverables','price_cents','channel','metric','sample_size','success_min','duration_days','signal_ids','risks')
+OFFER_TEXT=('audience','problem','offer','deliverables','channel','risks')
+OFFER_LIMIT=800
 
 def init(c):
     c.executescript("""CREATE TABLE IF NOT EXISTS commercial_signals(
@@ -24,6 +28,7 @@ def init(c):
         CREATE TABLE IF NOT EXISTS commercial_reviews(
         id INTEGER PRIMARY KEY, offer INTEGER NOT NULL UNIQUE REFERENCES commercial_offers(id),
         mission INTEGER NOT NULL REFERENCES missions(id), review TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS commercial_recoveries(task INTEGER PRIMARY KEY REFERENCES tasks(id),mission INTEGER NOT NULL REFERENCES missions(id),created TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE INDEX IF NOT EXISTS commercial_signals_project ON commercial_signals(project,id);
         CREATE INDEX IF NOT EXISTS commercial_offers_project ON commercial_offers(project,id);""")
 
@@ -40,10 +45,12 @@ def _obj(text,fields):
     return d
 
 def _text(d,k,lo=3,hi=1200):
-    if not isinstance(d[k],str) or not lo<=len(d[k].strip())<=hi:raise ValueError('Texte invalide : '+k)
+    if not isinstance(d[k],str):raise ValueError(f'Texte invalide : {k}; chaîne JSON de {lo} à {hi} caractères requise, type reçu {type(d[k]).__name__}')
+    n=len(d[k].strip())
+    if not lo<=n<=hi:raise ValueError(f'Texte invalide : {k}; {n} caractères reçus, {lo} à {hi} requis; raccourcir sans perdre les risques essentiels')
 
 def _int(d,k,lo,hi):
-    if type(d[k]) is not int or not lo<=d[k]<=hi:raise ValueError('Valeur invalide : '+k)
+    if type(d[k]) is not int or not lo<=d[k]<=hi:raise ValueError(f'Valeur invalide : {k}; entier JSON de {lo} à {hi} requis')
 
 def _id(target):
     if not target.isascii() or not target.isdigit() or len(target)>12 or int(target)<=0:raise ValueError('ID numérique requis')
@@ -62,7 +69,8 @@ def signals(c,pid,mid=None,limit=12):
         ORDER BY s.id DESC LIMIT ?""",(pid,mid,limit)):
         try: proof=_proof(c,row)
         except (ValueError,TypeError,KeyError,AttributeError):continue
-        out.append({**{k:row[k] for k in ('id','mission','kind','quote','interpretation','created')},'proof':proof})
+        excerpt=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(row['page'],)).fetchone()[0])['texte']
+        out.append({**{k:row[k] for k in ('id','mission','kind','quote','interpretation','created')},'proof':proof,'quality':research.excerpt_quality(excerpt)})
     return out
 
 def _signal(c,pid,sid,mid):
@@ -107,8 +115,8 @@ def execute(c,t,action,target,text,detail):
         return {'signal':sid,'proof':proof,'classification':'indice documentaire, pas preuve de demande'}
     if action=='commercial_offer':
         if target:raise ValueError('Cible vide pour une offre')
-        d=_obj(text,('audience','problem','offer','deliverables','price_cents','channel','metric','sample_size','success_min','duration_days','signal_ids','risks'))
-        for k in ('audience','problem','offer','deliverables','channel','risks'):_text(d,k,5,800)
+        d=_obj(text,OFFER_FIELDS)
+        for k in OFFER_TEXT:_text(d,k,5,OFFER_LIMIT)
         _int(d,'price_cents',1,10000000);_int(d,'sample_size',1,10000);_int(d,'success_min',1,d['sample_size']);_int(d,'duration_days',1,90)
         if d['metric'] not in ('qualified_interest','consented_demo_request','paid_order_future'):raise ValueError('Métrique future invalide')
         ids=d['signal_ids']
@@ -148,7 +156,9 @@ def offer_status(c,row):
     evidence=[];invalid=[]
     for sid in plan['signal_ids']:
         try:
-            s,p=_signal(c,pid,sid,mid);evidence.append({'id':sid,'kind':s['kind'],'proof':p,'quote':s['quote'],'interpretation':s['interpretation']})
+            s,p=_signal(c,pid,sid,mid)
+            excerpt=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(s['page'],)).fetchone()[0])['texte']
+            evidence.append({'id':sid,'kind':s['kind'],'proof':p,'quote':s['quote'],'interpretation':s['interpretation'],'quality':research.excerpt_quality(excerpt)})
         except (ValueError,TypeError,KeyError,AttributeError):invalid.append(sid)
     eco=c.execute('SELECT * FROM commercial_economics WHERE offer=?',(row['id'],)).fetchone()
     review=c.execute('SELECT * FROM commercial_reviews WHERE offer=?',(row['id'],)).fetchone()
@@ -158,8 +168,9 @@ def offer_status(c,row):
         proofs=portfolio.evidence(c,art);lab=portfolio.laboratory.canonical(c,art)
     independent=any(p['agent']=='SENTINEL' and p['status']=='passed' for p in proofs) and not any(p['agent']=='SENTINEL' and p['status']=='failed' for p in proofs)
     if exact and portfolio.laboratory.supports(art):independent=independent and bool(lab and lab['status']=='passed')
-    domains={urlsplit(x['proof']['url']).hostname for x in evidence}
-    kinds={x['kind'] for x in evidence}
+    usable=[x for x in evidence if x['quality']=='text_available']
+    domains={urlsplit(x['proof']['url']).hostname for x in usable}
+    kinds={x['kind'] for x in usable}
     economics={'id':eco['id'],'assumptions':intel.decode(eco['assumptions']),'result':intel.decode(eco['result'])} if eco else None
     audit={'id':review['id'],**intel.decode(review['review'])} if review else None
     gaps=[]
@@ -193,6 +204,44 @@ def context(c,mid):
         'proofs':portfolio.evidence(c,art),'laboratory':portfolio.laboratory.canonical(c,art)} if art else None
     v['past_assessments']=[x for x in intel.ranking(c) if x['project']==pid][:3]
     return v
+
+def offer_errors(c,t):
+    rows=list(c.execute("SELECT action,ok,result FROM events WHERE mission=? AND task=? ORDER BY id DESC LIMIT 3",(t['mission'],t['id'])))
+    out=[]
+    for row in rows:
+        if row['ok'] or row['action']!='commercial_offer':break
+        try:err=json.loads(row['result']).get('erreur','')
+        except (ValueError,TypeError,AttributeError):break
+        if not isinstance(err,str) or not err.startswith(('Texte invalide : ','Valeur invalide : ','Champs requis : ','JSON commercial trop long','Métrique future invalide','Références de signaux invalides')):break
+        out.append(err)
+    return out
+
+def recovery_task(c,mid,cfg):
+    """One explicit repair of a failed offer, including legacy rollback of last event."""
+    sc=scope(c,mid)
+    if not sc or sc['state']!='bloqué' or sc['mission_state']!='bloquée' or sc['mode']!='cloud' or sc['project_state']!='active':return None
+    if not intel.decode(sc['permissions'])['market']:return None
+    m=c.execute("SELECT * FROM missions WHERE id=? AND engine='dynamic'",(mid,)).fetchone()
+    if not m:return None
+    t=c.execute("""SELECT * FROM tasks t WHERE mission=? AND state='prête' AND NOT EXISTS
+        (SELECT 1 FROM tasks ch WHERE ch.parent=t.id AND ch.state!='terminée')
+        ORDER BY CASE WHEN parent IS NULL THEN 1 ELSE 0 END,id LIMIT 1""",(mid,)).fetchone()
+    if not t or t['agent']!='HERMES' or t['turns']+1>=cfg['turn_limit']:return None
+    if m['error']!='Trois outils refusés/échoués de suite sur tâche #'+str(t['id']):return None
+    if c.execute('SELECT 1 FROM commercial_offers WHERE mission=?',(mid,)).fetchone() or c.execute('SELECT 1 FROM commercial_recoveries WHERE task=?',(t['id'],)).fetchone():return None
+    errors=offer_errors(c,t)
+    if len(errors)<2 or t['turns']<3:return None
+    if c.execute("SELECT 1 FROM tasks WHERE mission=? AND agent='ORION' AND state='terminée'",(mid,)).fetchone() is None:return None
+    if c.execute('SELECT COUNT(*) FROM events WHERE mission=?',(mid,)).fetchone()[0]>=cfg['call_limit']:return None
+    calls,spent=c.execute('SELECT COUNT(*),COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger WHERE mission=?',(mid,)).fetchone()
+    if calls>=cfg['call_limit'] or spent>=cfg['mission_budget']:return None
+    return t['id']
+
+def correction(c,t):
+    if t['agent']!='HERMES' or not scope(c,t['mission']):return []
+    if c.execute('SELECT 1 FROM commercial_offers WHERE mission=?',(t['mission'],)).fetchone():return []
+    errors=offer_errors(c,t)
+    return errors if len(errors)>=2 else []
 
 def status(c):
     return {'projects':[project_status(c,r['id']) for r in c.execute('SELECT id FROM projects ORDER BY id')],'limit':LIMIT}

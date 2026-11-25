@@ -92,6 +92,7 @@ def _missions(c,cid):
 def recovery_kind(c,mid,cfg):
     if protocol_recovery.recovery_task(c,mid,cfg):return 'protocol'
     if working_memory.recovery_task(c,mid,cfg):return 'memory'
+    if commercial.recovery_task(c,mid,cfg):return 'commercial'
     return None
 
 def readiness(c,cfg,locked=False):
@@ -116,6 +117,7 @@ def status(c,cfg=None):
     d['spent']=costs(c,p['id']);d['searches']=searches(c,p['id']);d['missions']=[dict(x) for x in _missions(c,p['id'])]
     d['recovery_kind']=recovery_kind(c,d['missions'][-1]['id'],cfg) if cfg and p['state']=='bloqué' and d['missions'] else None
     d['recoverable']=bool(d['recovery_kind'])
+    d['commercial_recoveries']=[dict(x) for x in c.execute('SELECT cr.* FROM commercial_recoveries cr JOIN campaign_missions cm ON cm.mission=cr.mission WHERE cm.campaign=? ORDER BY cr.task',(p['id'],))]
     d['connectors']=connectors.campaign_status(c,p['id'])
     d['laboratory']=[laboratory.summary_row(r) for r in c.execute('SELECT * FROM laboratory_runs WHERE campaign=?',(p['id'],))]
     scope=portfolio.scope(c,p['id'])
@@ -200,7 +202,11 @@ def resume(c,cid,cfg):
     cy=improvement.cycle(c,cid)
     if cy and (cy['state']!='pending' or improvement.pinned(c,cy['project'])['id']!=cy['baseline']):raise ValueError('Cycle remplacé ou référence modifiée')
     ms=_missions(c,cid)
-    recover=bool(p['state']=='bloqué' and ms and recovery_kind(c,ms[-1]['id'],cfg))
+    kind=recovery_kind(c,ms[-1]['id'],cfg) if p['state']=='bloqué' and ms else None
+    recover=bool(kind)
+    if kind=='commercial':
+        tid=commercial.recovery_task(c,ms[-1]['id'],cfg)
+        c.execute('INSERT INTO commercial_recoveries(task,mission) VALUES(?,?)',(tid,ms[-1]['id']))
     if p['state']=='bloqué' and not recover:raise ValueError('Blocage non récupérable sans diagnostic; aucun compteur réinitialisé')
     if ms and (recover or ms[-1]['state'] in ('interrompue','arrêtée','en attente','prête')):
         c.execute("UPDATE missions SET state='en cours',error='' WHERE id=?",(ms[-1]['id'],))

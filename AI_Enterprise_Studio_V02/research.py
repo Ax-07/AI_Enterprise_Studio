@@ -46,6 +46,12 @@ def diagnostic(fetch):
         'openssl':ssl.OPENSSL_VERSION,'trust':trust,'verify_required':ctx.verify_mode==ssl.CERT_REQUIRED,
         'hostname_check':ctx.check_hostname,'checks':checks,'limit':LIMIT}
 
+def excerpt_quality(text):
+    # Conservative heuristic, not semantic verification.
+    if len(text.strip())<120:return 'short_excerpt'
+    if 'loading...' in text.lower():return 'possible_dynamic_shell'
+    return 'text_available'
+
 def mission(c,mid,full=False):
     searches=[]
     for r in c.execute('SELECT id,query,status,result FROM searches WHERE mission=? ORDER BY id',(mid,)):
@@ -66,7 +72,7 @@ def mission(c,mid,full=False):
             import hashlib
             excerpt=d.get('texte','')
             if isinstance(excerpt,str):
-                item.update(chars=len(excerpt),excerpt_sha256=hashlib.sha256(excerpt.encode()).hexdigest(),partial=bool(d.get('partiel')))
+                item.update(chars=len(excerpt),excerpt_sha256=hashlib.sha256(excerpt.encode()).hexdigest(),partial=bool(d.get('partiel')),quality=excerpt_quality(excerpt))
                 if full:item['excerpt']=excerpt
         elif r['state']=='échec':item['failure']=d.get('failure') or {'code':'historical_unknown','message':'Ancien échec; détail éventuel dans le journal.'}
         pages.append(item)
