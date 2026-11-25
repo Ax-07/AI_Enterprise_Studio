@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.3.10"
+VERSION="0.4.0"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -47,6 +47,7 @@ def init():
         laboratory.init(c)
         portfolio.init(c)
         improvement.init(c)
+        connectors.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -206,7 +207,7 @@ def run(mid):
 def status():
     cfg=config()
     with db() as c:
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'laboratory':laboratory.status(c),'autopilot':autopilot.status(c,cfg),'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'laboratory':laboratory.status(c),'autopilot':autopilot.status(c,cfg),'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 class Handler(BaseHTTPRequestHandler):
     def send(self,data,status=200,typ='application/json'):
         b=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type',typ); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store, no-cache, must-revalidate'); self.send_header('X-Enterprise-Version',VERSION); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer'); self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"); self.end_headers(); self.wfile.write(b)
@@ -231,6 +232,8 @@ class Handler(BaseHTTPRequestHandler):
                     tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=?',(mid,))]
                     calls,cost=c.execute('SELECT COUNT(*),COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger WHERE mission=?',(mid,)).fetchone()
                 return self.send({'mission':dict(mission),'tasks':tasks,'events':events,'calls':calls,'estimated_usd':cost/1e6,'limit':'Extraits de journal local; vérifier avant partage.'})
+            if self.route()=='/api/connectors' and self.headers.get('X-Session')==SESSION:
+                with db() as c:return self.send(connectors.status(c))
             if self.route()=='/api/campaign_diagnostic' and self.headers.get('X-Session')==SESSION:
                 cfg=config()
                 with db() as c:
@@ -264,6 +267,17 @@ class Handler(BaseHTTPRequestHandler):
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n)); cfg=config()
+            if self.route() in ('/api/connectors/policy','/api/connectors/test'):
+                if p.get('confirm') is not True:raise ValueError('Confirmation requise')
+                if not LOCK.acquire(blocking=False):raise ValueError('Un moteur travaille déjà')
+                try:
+                    if self.route()=='/api/connectors/policy':
+                        with db() as c:
+                            c.execute('BEGIN IMMEDIATE')
+                            connectors.set_policy(c,p)
+                        return self.send({'ok':True})
+                    return self.send(connectors.invoke(sys.modules[__name__],connectors.PUBLIC,'octocat/Hello-World'))
+                finally:LOCK.release()
             if self.route()=='/api/laboratory/run':
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 if not LOCK.acquire(blocking=False):raise ValueError('Un moteur travaille déjà')
