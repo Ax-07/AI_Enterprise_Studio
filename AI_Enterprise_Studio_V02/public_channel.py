@@ -53,6 +53,7 @@ def init(c):
         id TEXT PRIMARY KEY, snapshot TEXT NOT NULL, manifest TEXT NOT NULL,
         starts INTEGER NOT NULL, expires INTEGER NOT NULL, revoked INTEGER,
         collection TEXT, collection_revoked INTEGER, accepted INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS channel_revoked_pages(id TEXT PRIMARY KEY, revoked INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS channel_signals(
         id TEXT PRIMARY KEY, page TEXT NOT NULL REFERENCES channel_pages(id),
         participant TEXT NOT NULL, kind TEXT NOT NULL, segment INTEGER NOT NULL,
@@ -81,6 +82,8 @@ def _publication(m,t):
 def publish(c,key,m,signature,t):
     """Separate signed publication grant, no collection permission."""
     check(key,'publication-v1',m,signature);_publication(m,t)
+    if c.execute('SELECT 1 FROM channel_revoked_pages WHERE id=?',(m['id'],)).fetchone():
+        raise ValueError('Publication revoked')
     old=c.execute('SELECT * FROM channel_pages WHERE id=?',(m['id'],)).fetchone()
     if old:
         if old['manifest']==canonical(m) and old['revoked'] is None:return m['id']
@@ -121,10 +124,14 @@ def _collection(row,t):
 def revoke(c,key,r,signature,t):
     check(key,'revocation-v1',r,signature)
     exact(r,('page','scope'))
-    row=_row(c,r['page'])
+    pid=ident(r['page'])
     if r['scope']=='publication':
+        c.execute('INSERT OR IGNORE INTO channel_revoked_pages VALUES(?,?)',(pid,t))
+        row=c.execute('SELECT * FROM channel_pages WHERE id=?',(pid,)).fetchone()
+        if not row:return pid
         c.execute('UPDATE channel_pages SET revoked=COALESCE(revoked,?),collection_revoked=COALESCE(collection_revoked,?) WHERE id=?',(t,t,row['id']))
     elif r['scope']=='collection':
+        row=_row(c,pid)
         c.execute('UPDATE channel_pages SET collection_revoked=COALESCE(collection_revoked,?) WHERE id=?',(t,row['id']))
     else:raise ValueError('Unknown scope')
     return row['id']
@@ -141,11 +148,12 @@ def inspect(c,key,page_id,nonce,t):
     """Authenticated state proof; nonce prevents reuse of a previous response."""
     ident(page_id);ident(nonce)
     row=c.execute('SELECT * FROM channel_pages WHERE id=?',(page_id,)).fetchone()
+    tombstone=bool(c.execute('SELECT 1 FROM channel_revoked_pages WHERE id=?',(page_id,)).fetchone())
     payload={'page':page_id,'nonce':nonce,'mode':'test','at':t,'exists':bool(row),
              'publication_hash':hashlib.sha256(row['manifest'].encode()).hexdigest() if row else None,
              'collection_hash':hashlib.sha256(row['collection'].encode()).hexdigest() if row and row['collection'] else None,
-             'publication_revoked':bool(row and row['revoked'] is not None),
-             'collection_revoked':bool(row and row['collection_revoked'] is not None),
+             'publication_revoked':tombstone or bool(row and row['revoked'] is not None),
+             'collection_revoked':tombstone or bool(row and row['collection_revoked'] is not None),
              'publication_open':bool(row and _active(row,t)),
              'collection_open':bool(row and _collection(row,t))}
     return {'payload':payload,'signature':sign(key,'status-v1',payload)}
