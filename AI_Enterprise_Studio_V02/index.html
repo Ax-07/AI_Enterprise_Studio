@@ -353,7 +353,7 @@ function renderAuto(s){
  text('auto-state',p?p.state:'Inactif');
  const ready=s.campaign_readiness,previousRecovery=p?.recoverable&&newInsteadOfResume!==p.id;
  const blockers=ready?[...ready.blockers]:['Actualiser avec un serveur V0.4.6 pour connaître les autorisations.'];
- if(s.version!=='0.4.5.1')blockers.push('Version serveur incompatible : '+s.version);
+ if(s.version!=='0.4.6')blockers.push('Version serveur incompatible : '+s.version);
  const cap=Number($('auto-budget').value);
  if(!Number.isFinite(cap)||cap<.01||cap>10)blockers.push('Budget de campagne entre 0,01 et 10 USD requis');
  else if(ready&&Math.round(cap*1e6)>ready.remaining)blockers.push('Enveloppe supérieure au budget global disponible ('+money(ready.remaining/1e6,4)+')');
