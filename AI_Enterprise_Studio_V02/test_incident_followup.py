@@ -145,3 +145,118 @@ class IncidentFollowupTests(unittest.TestCase):
             before=c.total_changes
             self.assertTrue(any(r['projects']==[x,y] for r in pl.related(c)))
             self.assertEqual(c.total_changes,before)
+
+    def legacy_zero_attempt(self):
+        _,mid,oid,old,new,fixed=self.seed_offer()
+        pid=self.authorize(search_cap=3,max_campaigns=1)
+        actions=[self.act('delegate','ORION','Brave est indisponible : étudier les sources locales.','Ne pas rechercher'),
+                 self.act('finish',text='Aucune recherche réalisée.'),
+                 self.act('finish',text='Complément non commencé.')]
+        def fake(url,headers,body=None):
+            self.assertIn('api.openai.com',url)
+            return self.reply(actions.pop(0))
+        # Reproduce old engine allowing premature closure; all model actions and
+        # ledger entries go through the real engine, only the new guard is bypassed.
+        with patch.object(m,'documentary_first_search',return_value=False),patch.object(s,'config',return_value=self.cfg),patch.object(s,'request',side_effect=fake):
+            pl.worker(s,pid)
+        self.assertEqual(actions,[])
+        with s.db() as c:
+            plan=pl.status(c)['plan'];self.assertEqual(plan['state'],'completed')
+            self.assertEqual(plan['searches'],0)
+            cid=plan['queue'][0]['campaign']
+            self.assertIsNone(co.followup(c,cid)['resulting_offer'])
+            self.assertEqual(pl.candidates(c,3)['ready'],[])
+            old_spent=plan['spent']
+            child=a._missions(c,cid)[0]['id']
+        return mid,oid,old,fixed,pid,cid,child,old_spent
+
+    def test_legacy_zero_attempt_migration_and_successful_retry(self):
+        mid,oid,old,fixed,old_pid,old_cid,child,old_spent=self.legacy_zero_attempt()
+        with s.db() as c:
+            original=co.project_status(c,old)['offer']
+            # Test only: restore V0.4.5 schema before upgrade.
+            c.execute('DROP TABLE commercial_followup_retries')
+        with patch.object(s,'request',side_effect=AssertionError('No provider calls during migration')) as req:
+            s.init();s.init();req.assert_not_called()
+        with s.db() as c:
+            candidate=pl.candidates(c,3)['ready'][0]
+            self.assertEqual(candidate['recovery_of'],old_cid)
+            self.assertEqual(candidate['base_offer'],oid)
+            self.assertEqual(pl.totals(c,old_pid),(old_spent,0))
+            self.assertTrue(co.followup_outcome(c,child,co.followup(c,old_cid))['legacy_retry_available'])
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM commercial_followup_retries').fetchone()[0],1)
+        pid=self.authorize(search_cap=3,max_campaigns=1)
+        urls=['https://buyer.example/need','https://vendor.example/offer']
+        quotes=['Les erreurs répétées coûtent du temps.','Forfait annoncé de cent euros.']
+        actions=[self.act('delegate','ORION','Brave est indisponible : étudier les sources locales.','Ancienne consigne volontairement incorrecte'),
+            self.act('search',text='besoins acheteurs et prix audit catalogue'),
+            self.act('read',urls[0]),self.act('commercial_signal','1',json.dumps({'kind':'buyer_problem','quote':quotes[0],'interpretation':'Indice de besoin à vérifier.'})),
+            self.act('read',urls[1]),self.act('commercial_signal','2',json.dumps({'kind':'competitor_price','quote':quotes[1],'interpretation':'Prix annoncé, pas volonté de payer.'})),
+            self.act('finish',text='Deux indices documentaires synthétiques.'),
+            self.act('delegate','SENTINEL','Revue','Compléter seulement les preuves'),
+            self.act('commercial_extend',str(oid),json.dumps({'signal_ids':[1,2],'verdict':'propose_future_test','gaps':'Indices documentaires, test futur à autoriser.','risks':'Risques de marché et conformité à vérifier.'})),
+            self.act('finish',text='Revue limitée'),self.act('finish',text='Aucun lancement')]
+        calls=[]
+        def fake(url,headers,body=None):
+            if 'api.search.brave.com' in url:return {'web':{'results':[{'title':'Source test','url':v,'description':'Extrait'} for v in urls]}}
+            self.assertIn('api.openai.com',url)
+            calls.append(body)
+            if len(calls)==1:
+                self.assertIn('ORION est autorisé à rechercher',body['input'])
+                self.assertNotIn('search',body['text']['format']['schema']['properties']['action']['enum'])
+            if len(calls)==2:
+                self.assertIn('première action obligatoire search',body['input'])
+                self.assertEqual(body['text']['format']['schema']['properties']['action']['enum'],['search'])
+            return self.reply(actions.pop(0))
+        def fetch(url):return {'url':url,'date':'2026-11-25','texte':quotes[urls.index(url)]+' '+('Document synthétique de test seulement. '*6),'partiel':False}
+        with patch.object(s,'config',return_value=self.cfg),patch.object(s,'request',side_effect=fake),patch.object(m,'fetch_page',side_effect=fetch):
+            pl.worker(s,pid)
+        self.assertEqual(actions,[])
+        with s.db() as c:
+            plan=pl.status(c)['plan'];self.assertEqual(plan['state'],'completed',plan)
+            self.assertEqual(plan['searches'],1)
+            cid=plan['queue'][0]['campaign']
+            retry=co.followup(c,cid)
+            self.assertEqual(retry['recovery_of'],old_cid)
+            self.assertIsNone(co.followup(c,old_cid)['resulting_offer'])
+            self.assertEqual(pl.totals(c,old_pid),(old_spent,0))
+            self.assertEqual(co.project_status(c,old,mid)['offer'],original)
+            enriched=co.project_status(c,old)['offer']
+            self.assertEqual(enriched['id'],retry['resulting_offer'])
+            self.assertEqual(enriched['base_offer'],oid)
+            self.assertEqual(enriched['economics']['result'],original['economics']['result'])
+            self.assertEqual(enriched['state'],'proposition_a_examiner')
+            self.assertFalse(enriched['external_authorized'])
+            self.assertEqual(pl.candidates(c,3)['ready'],[])
+            audit=s.plan_audit(c,self.cfg,pid)
+            self.assertEqual(audit['campaigns'][0]['commercial'][0]['followup']['outcome']['state'],'offre_enrichie')
+        s.init()
+        with s.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM commercial_followup_retries').fetchone()[0],1)
+
+    def test_migration_excludes_attempted_search_and_new_history(self):
+        _,_,old,_,_,cid,child,_=self.legacy_zero_attempt()
+        s.init() # New-format history is never retroactively admitted.
+        with s.db() as c:
+            self.assertEqual(pl.candidates(c,3)['ready'],[])
+            c.execute("INSERT INTO searches(mission,query,status) VALUES(?,'tentative réelle','échec')",(child,))
+            c.execute('DROP TABLE commercial_followup_retries')
+        s.init()
+        with s.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM commercial_followup_retries').fetchone()[0],0)
+            self.assertEqual(pl.candidates(c,3)['ready'],[])
+            self.assertEqual(co.followup_outcome(c,child,co.followup(c,cid))['state'],'recherche_sans_nouvelle_offre')
+
+    def test_precise_quota_diagnostic_without_calls(self):
+        self.cfg['limit']=2
+        with patch.object(s,'request',side_effect=AssertionError('No provider')) as req:
+            with self.assertRaisesRegex(ValueError,'Quota Brave insuffisant : 2 recherche'):
+                self.authorize(search_cap=3)
+            with s.db() as c:
+                res=pl.status(c,self.cfg)['resources']
+                self.assertEqual(res['plan_search_max'],2)
+                self.assertEqual(res['search_remaining'],2)
+                self.assertIsNone(pl.latest(c))
+            self.cfg['mission_search_limit']=0
+            with self.assertRaisesRegex(ValueError,'par mission égal à zéro'):
+                self.authorize(search_cap=1)
+            req.assert_not_called()

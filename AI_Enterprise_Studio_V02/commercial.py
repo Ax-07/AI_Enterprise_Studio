@@ -37,11 +37,13 @@ def init(c):
         CREATE INDEX IF NOT EXISTS commercial_offers_project ON commercial_offers(project,id);""")
 
     # Create and populate atomically. Only the pre-upgrade history can qualify.
+    c.execute('SAVEPOINT followup_upgrade')
     c.execute("""CREATE TABLE IF NOT EXISTS commercial_followup_retries(
         original_campaign INTEGER PRIMARY KEY REFERENCES commercial_followups(campaign),
         campaign INTEGER UNIQUE REFERENCES campaigns(id),resulting_offer INTEGER UNIQUE REFERENCES commercial_offers(id),
         reason TEXT NOT NULL,created TEXT DEFAULT CURRENT_TIMESTAMP)""")
     if first_recovery:capture_legacy_no_search(c)
+    c.execute('RELEASE followup_upgrade')
 
 def capture_legacy_no_search(c):
     """Recognize only the observed V0.4.5 zero-attempt delegation defect."""

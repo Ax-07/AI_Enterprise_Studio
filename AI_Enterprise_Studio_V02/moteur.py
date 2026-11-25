@@ -407,7 +407,7 @@ def research_hint(c,t,cfg,allowed,campaign):
     orion_can=remaining>0 and 'search' in orion_allowed and (not campaign or 'ORION' in autopilot.delegable(campaign,c))
     role='search' in allowed
     hint=f'RECHERCHE INTERNET : quota local disponible {remaining} (global {available}, mission {mission_left}, campagne {campaign_left}); clé configurée : '+('oui' if cfg.get('brave') else 'non')+'. Disponibilité réelle du fournisseur non vérifiée avant appel. '
-    if role:hint+='Cet agent est autorisé à utiliser search. Diversifie les requêtes par besoin acheteur, concurrence et prix; lis les pages utiles. '
+    if role:hint+='Cet agent est autorisé à utiliser search. Les autorisations du moteur priment sur les consignes de délégation et les anciens rapports. Diversifie les requêtes par besoin acheteur, concurrence et prix; lis les pages utiles. '
     elif orion_can:hint+='Cet agent ne dispose pas de search, MAIS ORION est autorisé à rechercher pour cette mission. ATLAS : délègue la recherche à ORION, ne lui indique pas que Brave est indisponible. ORION : les autorisations du moteur priment sur les consignes de délégation et les anciens rapports. '
     else:hint+='Aucune recherche supplémentaire autorisée pour cet agent; ne pas confondre absence de permission ou quota avec une panne fournisseur. '
     if 'read' in allowed:hint+='Lecture des URL obtenues autorisée même sans nouveau search. '
