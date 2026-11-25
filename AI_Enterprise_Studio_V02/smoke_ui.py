@@ -348,6 +348,19 @@ def smoke_owner_console():
                     with page.expect_download() as dl:page.locator('#auto-diagnostic').click()
                     diag=json.loads(Path(dl.value.path()).read_text())
                     assert diag['readiness']['ready'] and diag['campaign']['improvement']['state']=='retained'
+                    expect(page.locator('#auto-audit-export')).to_be_visible()
+                    with page.expect_download() as dl:page.locator('#auto-audit-export').click()
+                    assert dl.value.suggested_filename==f'dossier_campagne_{cid}.json'
+                    dossier=json.loads(Path(dl.value.path()).read_text())
+                    assert dossier['schema']=='aes-campaign-audit-v1' and dossier['campaign_id']==cid
+                    assert dossier['diagnostic_campagne']['campaign']==diag['campaign']
+                    assert {'capabilities','runs'}<=dossier['connecteurs'].keys()
+                    assert {'sources','comparisons','ranking'}<=dossier['intelligence_economique'].keys()
+                    assert [m['mission']['id'] for m in dossier['missions']]==[m['id'] for m in diag['campaign']['missions']]
+                    assert all({'reports','tasks','events'}<=m.keys() for m in dossier['missions'])
+                    assert s.SESSION not in json.dumps(dossier)
+                    assert page.request.get(base+'/api/campaign_audit?id='+str(cid)).status==404
+                    assert page.request.get(base+'/api/campaign_audit?id=0',headers={'X-Session':s.SESSION}).status==400
                     page.locator('[data-page="portfolio"]').click()
                     page.get_by_role('button',name='Préparer une amélioration').click()
                     expect(page.locator('#auto-count')).to_have_value('1')
@@ -363,6 +376,8 @@ def smoke_owner_console():
                     expect(page.locator('#auto-state')).to_have_text('actif')
                     expect(page.locator('#auto-readiness')).to_contain_text('en cours')
                     expect(page.locator('#auto-settings')).to_be_hidden()
+                    expect(page.locator('#auto-audit-export')).to_be_hidden()
+                    assert page.request.get(base+'/api/campaign_audit?id='+str(res.value.json()['campaign']),headers={'X-Session':s.SESSION}).status==400
                     with s.db() as c:
                         cid2=res.value.json()['campaign']
                         assert i.cycle(c,cid2) is None and a._campaign(c,cid2)['max_missions']==3
