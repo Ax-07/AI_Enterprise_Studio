@@ -107,19 +107,27 @@ def sources(c,mid):
     return out
 
 def compare_ref(text):
+    if not isinstance(text,str) or len(text)>200:raise ValueError('Référence trop longue')
     try:d=decode(text)
     except (ValueError,TypeError,RecursionError):raise ValueError('JSON de référence requis') from None
     if not isinstance(d,dict) or set(d)!={'source_run'} or type(d['source_run']) is not int or not 1<=d['source_run']<=9007199254740991:raise ValueError('Format {"source_run": ID du relevé Banque mondiale de cette mission}')
     return canonical(d)
 
-def compare_input(c,value,mid):
-    rid=decode(compare_ref(value))['source_run'];d=source(c,rid,mid)
+def comparable(d):
+    return len(compare_rows(d))>=2
+
+def compare_rows(d):
     v={(r['country'],r['indicator']):r['value'] for r in d['observations']}
     rows=[]
     for country in d['countries']:
         pop=v[country,'SP.POP.TOTL'];pct=v[country,'IT.NET.USER.ZS']
         if pop is not None and pct is not None:
             rows.append({'country':country,'population':int(pop),'internet_bp':int((Decimal(str(pct))*100).quantize(Decimal('1'),rounding=ROUND_HALF_UP))})
+    return rows
+
+def compare_input(c,value,mid):
+    rid=decode(compare_ref(value))['source_run'];d=source(c,rid,mid)
+    rows=compare_rows(d)
     if len(rows)<2:raise ValueError('Deux pays avec population et couverture internet de la même année requis')
     return canonical({'rows':rows})
 
@@ -162,6 +170,9 @@ def ranking(c):
         AND a.id=(SELECT MAX(b.id) FROM market_assessments b WHERE b.opportunity=a.opportunity)
         ORDER BY a.id DESC"""):
         if opportunity_hash(r)!=r['opportunity_sha256']:continue
+        try:
+            for rid in decode(r['source_runs']):source(c,rid,r['mission'])
+        except ValueError:continue
         out.append({'id':r['id'],'opportunity':r['opportunity'],'mission':r['mission'],'project':r['project'],'title':r['title'],'created':r['created'],'assumptions':decode(r['assumptions']),'result':decode(r['result'])})
     return sorted(out,key=lambda r:(-r['result']['score'],r['opportunity']))
 
@@ -170,4 +181,7 @@ def status(c):
     for r in c.execute("""SELECT s.*,r.actor,r.mission FROM market_sources s JOIN connector_runs r ON r.id=s.run WHERE r.state='received' ORDER BY s.run DESC LIMIT 30"""):
         d=decode(r['snapshot'])
         records.append({**dict(r),'snapshot':d,'integrity':digest(d)==r['snapshot_sha256']})
-    return {'sources':records,'ranking':ranking(c),'limit':LIMIT+' Classement sur hypothèses EUR, sans décision automatique de lancement.'}
+    comparisons=[]
+    for r in c.execute("""SELECT r.id,r.mission,r.actor,w.execution_id,w.result FROM connector_runs r JOIN connector_workflow_results w ON w.run=r.id WHERE r.capability='n8n.market_compare' AND r.state='received' ORDER BY r.id DESC LIMIT 30"""):
+        comparisons.append({**dict(r),'result':decode(r['result'])})
+    return {'sources':records,'comparisons':comparisons,'ranking':ranking(c),'limit':LIMIT+' Classement sur hypothèses EUR, sans décision automatique de lancement.'}

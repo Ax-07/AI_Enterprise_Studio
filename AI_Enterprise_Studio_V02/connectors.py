@@ -133,7 +133,11 @@ def check(c,cap,mid,tid,actor):
 def available(c,t):
     out=[]
     for cap in REGISTRY:
-        try:check(c,cap,t['mission'],t['id'],t['agent'])
+        try:
+            check(c,cap,t['mission'],t['id'],t['agent'])
+            if cap==n8n.COMPARE:
+                candidates=intel.sources(c,t['mission'])
+                if not any(intel.comparable(x['snapshot']) for x in candidates):continue
         except ValueError:continue
         out.append(cap)
     return out
@@ -201,11 +205,11 @@ def invoke(s,cap,text,mid=None,tid=None,actor='PROPRIETAIRE'):
         state='unknown' if is_n8n else 'failed'
         with s.db() as c:c.execute('UPDATE connector_runs SET state=?,diagnostic=?,finished=CURRENT_TIMESTAMP WHERE id=?',(state,diag,rid))
         return {'connector':cap,'run':rid,'status':state,'diagnostic':diag,'note':'Tentative décomptée; aucun retry automatique.'}
+    if cap==n8n.COMPARE:result={**result,'source_run':json.loads(value)['source_run'] if mid is not None else None,'payload_sha256':hashlib.sha256(payload.encode()).hexdigest(),'note':'Proxy de couverture numérique, pas demande; test propriétaire synthétique si source_run null.'}
     with s.db() as c:
         if cap==intel.CAP:intel.record(c,rid,result)
         if is_n8n:c.execute('UPDATE connector_workflow_results SET execution_id=?,result=? WHERE run=?',(result['execution_id'],json.dumps(result,ensure_ascii=False),rid))
         c.execute("UPDATE connector_runs SET state='received',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
-    if cap==n8n.COMPARE:result={**result,'source_run':json.loads(value)['source_run'] if mid is not None else None,'note':'Proxy de couverture numérique, pas demande; test propriétaire synthétique si source_run null.'}
     return {'connector':cap,'run':rid,'status':'received','data':result}
 
 def status(c):
