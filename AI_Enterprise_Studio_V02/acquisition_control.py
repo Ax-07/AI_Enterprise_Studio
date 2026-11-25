@@ -109,11 +109,11 @@ def request_stop(c,page,t,reason='owner_stop'):
 def confirm(c,page,p,t):
     row=_row(c,page)
     if row['stop_requested'] is not None:
-        if p['exists'] and p['publication_revoked'] and p['collection_revoked'] and not p['publication_open'] and not p['collection_open']:
+        if p['publication_revoked'] and p['collection_revoked'] and not p['publication_open'] and not p['collection_open']:
             c.execute("UPDATE acquisition_test_channels SET state='revoked',confirmed=?,last_error='' WHERE page=?",(t,page))
             log(c,page,'remote_revocation_confirmed',t)
             return 'revoked'
-        # Absence alone does not prove a delayed publication cannot arrive.
+        # Absence alone is insufficient; a signed durable revocation tombstone is required.
         return 'revocation_pending'
     if not _valid(c,row,t):
         request_stop(c,page,t,'reference_or_expiry_stop')
@@ -189,7 +189,9 @@ def maintain(server,clock=None,request=None):
         rows=list(c.execute("SELECT * FROM acquisition_test_channels WHERE state!='revoked' ORDER BY starts"))
         for row in rows:
             if row['stop_requested'] is None and (not _valid(c,row,t) or
-                    (row['state'] in ('publication_pending','collection_pending') and t-row['starts']>=60)):
+                    (row['collection'] and t>=json.loads(row['collection'])['expires']) or
+                    (row['state'] in ('publication_pending','collection_pending') and
+                     t-(json.loads(row['collection'])['starts'] if row['collection'] else row['starts'])>=60)):
                 request_stop(c,row['page'],t,'automatic_safety_stop')
         pages=[r['page'] for r in c.execute("SELECT page FROM acquisition_test_channels WHERE state='revocation_pending' ORDER BY starts")][:MAX_CHANNELS]
     return [stop_remote(server,page,request=request,clock=clock) for page in pages]
