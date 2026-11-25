@@ -3,6 +3,7 @@ import json, hashlib
 import protocol_recovery
 import working_memory
 import portfolio
+import laboratory
 from decimal import Decimal, InvalidOperation
 
 ACTIVE='actif'
@@ -86,6 +87,7 @@ def status(c,cfg=None):
     d['spent']=costs(c,p['id']);d['searches']=searches(c,p['id']);d['missions']=[dict(x) for x in _missions(c,p['id'])]
     d['recovery_kind']=recovery_kind(c,d['missions'][-1]['id'],cfg) if cfg and p['state']=='bloqué' and d['missions'] else None
     d['recoverable']=bool(d['recovery_kind'])
+    d['laboratory']=[laboratory.summary_row(r) for r in c.execute('SELECT * FROM laboratory_runs WHERE campaign=?',(p['id'],))]
     scope=portfolio.scope(c,p['id'])
     d['project']=scope['project'] if scope else None;d['scope']=scope['scope'] if scope else 'legacy'
     return d
@@ -215,7 +217,7 @@ def worker(s,cid):
     with s.LOCK:
         try:
             while True:
-                cfg=s.config()
+                cfg=s.config(); lab_artifact=None
                 with s.db() as c:
                     c.execute('BEGIN IMMEDIATE')
                     p=_campaign(c,cid)
@@ -237,10 +239,21 @@ def worker(s,cid):
                         if not nxt:
                             c.execute("UPDATE campaigns SET state='terminé',reason=? WHERE id=?",(reason,cid));return
                         kind,artifact,opp=nxt
-                        mid=s.moteur.create(s,c,title(p,kind,artifact,opp),'cloud',artifact_id=artifact)
-                        c.execute('INSERT INTO campaign_missions(campaign,mission,kind,artifact) VALUES(?,?,?,?)',(cid,mid,kind,artifact))
-                        scoped=portfolio.scope(c,cid)
-                        if scoped and scoped['project'] is not None:portfolio.attach(c,mid,scoped['project'],'campagne ciblée')
+                        if kind=='laboratory':
+                            if c.execute('SELECT 1 FROM laboratory_runs WHERE campaign=?',(cid,)).fetchone():
+                                c.execute("UPDATE campaigns SET state='terminé',reason='Une expérience locale maximum par campagne; examiner les résultats.' WHERE id=?",(cid,));return
+                            lab_artifact=artifact
+                        else:
+                            mid=s.moteur.create(s,c,title(p,kind,artifact,opp),'cloud',artifact_id=artifact)
+                            c.execute('INSERT INTO campaign_missions(campaign,mission,kind,artifact) VALUES(?,?,?,?)',(cid,mid,kind,artifact))
+                            scoped=portfolio.scope(c,cid)
+                            if scoped and scoped['project'] is not None:portfolio.attach(c,mid,scoped['project'],'campagne ciblée')
+                if lab_artifact is not None:
+                    result=laboratory.run(s,lab_artifact,laboratory.PROFILE,300,laboratory.DEFAULT_SEED,cfg,campaign=cid)
+                    if result['status']!='passed':
+                        with s.db() as c:c.execute("UPDATE campaigns SET state='terminé',reason=? WHERE id=? AND state='actif'",('Banc d’essai '+result['status']+'; examiner le laboratoire avant toute suite.',cid))
+                        return
+                    continue
                 s.moteur.run(s,mid)
                 with s.db() as c:portfolio.sync(c)
         except Exception as e:

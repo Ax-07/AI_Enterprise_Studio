@@ -30,7 +30,7 @@ def smoke():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
                 page.goto(base)
-                expect(page.locator('#connection-text')).to_have_text('Serveur V0.3.7')
+                expect(page.locator('#connection-text')).to_have_text('Serveur V0.3.8')
                 expect(page.locator('#quick-products')).to_have_text('2')
                 expect(page.locator('#pilotage-plan')).to_contain_text('Activer ou examiner le bac à sable')
                 page.locator('#pilotage-next').click()
@@ -252,9 +252,43 @@ def smoke_portfolio():
     finally:fixture.doCleanups()
     print('Chromium portefeuille: historique, sélection d’une activité, campagne ciblée sans fournisseur')
 
+def smoke_laboratory():
+    from test_laboratory import LabIntegration,observations
+    import verification as v
+    fixture=LabIntegration('test_exact_hash_and_not_json')
+    fixture.setUp()
+    try:
+        pid,aid,other=fixture.product()
+        with patch.object(s,'config',return_value={**fixture.cfg,'html_sandbox_enabled':True}),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.object(v,'browser_results',return_value=observations()) as browser_run:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page()
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base);page.locator('[data-page="laboratory"]').click()
+                    expect(page.locator('#lab-artifact')).to_have_value(str(aid))
+                    expect(page.locator('#lab-size')).to_have_value('300')
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/laboratory/run') as res:page.locator('#lab-run').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#lab-results')).to_contain_text('42 / FP 0 / FN 0')
+                    expect(page.locator('#lab-results')).to_contain_text('100 %')
+                    with page.expect_download() as dl:page.get_by_role('button',name='Exporter la preuve et les données').click()
+                    assert dl.value.suggested_filename.startswith('laboratoire_')
+                    network.assert_not_called();browser_run.assert_called_once()
+                    assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:fixture.doCleanups()
+    print('Chromium laboratoire: sélection du moteur, résultat et export, sans fournisseur')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
     smoke_autopilot()
     smoke_working_memory()
     smoke_portfolio()
+    smoke_laboratory()

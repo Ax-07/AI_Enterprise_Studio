@@ -112,7 +112,7 @@ def html_spec(spec):
         if not assertions: raise ValueError('Chaque cas doit contenir une assertion')
     return cases
 
-def docker_command(config_dir,name):
+def docker_command(config_dir,name,image=IMAGE):
     host='npipe:////./pipe/docker_engine' if os.name=='nt' else 'unix:///var/run/docker.sock'
     base=['docker','--config',config_dir,'--host',host]
     run=base+['run','--rm','--pull=never','--name',name,'--network=none','--read-only',
@@ -120,20 +120,21 @@ def docker_command(config_dir,name):
               '--pids-limit=128','--memory=768m','--memory-swap=768m','--cpus=1.5',
               '--shm-size=128m','--tmpfs=/tmp:rw,nosuid,nodev,size=192m,mode=1777',
               '--log-driver=none','--init','-i','--env=HOME=/tmp',
-              '--env=PYTHONDONTWRITEBYTECODE=1',IMAGE]
+              '--env=PYTHONDONTWRITEBYTECODE=1',image]
     return base,run
 
-def browser_results(content,cases):
+def browser_results(content,cases,image=IMAGE,mode=None):
     if not _LOCK.acquire(blocking=False): raise RuntimeError('Un test HTML est déjà en cours')
     try:
         with tempfile.TemporaryDirectory() as directory:
             name='aes-test-'+uuid.uuid4().hex
-            base,command=docker_command(directory,name)
+            base,command=docker_command(directory,name,image)
             proc=None
             output=bytearray();overflow=threading.Event()
             try:
                 proc=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-                payload=json.dumps({'html':content,'cases':cases},ensure_ascii=False).encode('utf-8')
+                payload=json.dumps({'html':content,'cases':cases,**({'mode':mode} if mode else {})},ensure_ascii=False,separators=(',',':')).encode('utf-8')
+                if len(payload)>160000:raise RuntimeError('Entrée navigateur trop volumineuse')
                 def write():
                     try:
                         proc.stdin.write(payload);proc.stdin.close()
