@@ -62,7 +62,10 @@ class WorkingMemoryTests(unittest.TestCase):
             self.assertIn('api.openai.com',url)
             if len(actions)==8:
                 self.assertIn(data,body['input'])
-                self.assertIn('Brave non disponible',body['input'])
+                self.assertIn('quota local disponible 0',body['input'])
+                self.assertIn('campagne 0)',body['input'])
+                self.assertIn('Aucune recherche supplémentaire autorisée pour cet agent',body['input'])
+                self.assertIn('Disponibilité réelle du fournisseur non vérifiée avant appel',body['input'])
                 self.assertIn('Test technique; aucune demande prouvée',body['input'])
                 self.assertEqual(body['text']['format']['schema']['properties']['action']['enum'],['finish'])
             act=actions.pop(0)
