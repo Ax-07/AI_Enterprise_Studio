@@ -1,5 +1,5 @@
 """Trusted test harness, only executed inside the restricted test container."""
-import json, sys
+import json, sys, time
 from playwright.sync_api import sync_playwright, expect
 
 def main():
@@ -17,6 +17,16 @@ def main():
             step_index=0
             try:
                 page.set_content(request['html'],wait_until='domcontentloaded',timeout=5000)
+                if request.get('mode')=='laboratory':
+                    # Fixed, trusted adapter for catalogue-v1. No arbitrary evaluate or selector from agents.
+                    page.locator('#data').fill(case['input'])
+                    start=time.perf_counter()
+                    page.locator('#run').click()
+                    output=page.locator('#out').inner_text(timeout=1600)
+                    elapsed=round((time.perf_counter()-start)*1000,3)
+                    if len(output.encode('utf8'))>24000:raise ValueError('Output too large')
+                    results.append({'name':case['name'],'passed':True,'output':output,'elapsed_ms':elapsed})
+                    continue
                 for step_index,step in enumerate(case['steps'],1):
                     loc=page.locator('css='+step['selector'])
                     op=step['op'];v=step.get('value')
