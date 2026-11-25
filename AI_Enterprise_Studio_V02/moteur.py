@@ -407,7 +407,7 @@ def context(s,t,m,cfg):
         commercial_errors=commercial.correction(c,t)
         if commercial_errors:allowed&={'commercial_offer','finish'}
         invalid=protocol_recovery.invalid_events(c,mid,t['id']) if 'test_file' in allowed else []
-        campaign_hint=('AUTOPILOTE : agents délégables '+', '.join(sorted(autopilot.delegable(campaign)))+' ; enveloppe restante estimée '+str(max(0,campaign['budget']-autopilot.costs(c,campaign['id']))/1e6)+' USD. Respecte les seuls outils affichés.' if campaign else '')
+        campaign_hint=('AUTOPILOTE : agents délégables '+', '.join(sorted(autopilot.delegable(campaign,c)))+' ; enveloppe restante estimée '+str(max(0,campaign['budget']-autopilot.costs(c,campaign['id']))/1e6)+' USD. Respecte les seuls outils affichés.' if campaign else '')
         tasks=[dict(x) for x in c.execute('SELECT id,agent,goal,criteria,state,result FROM tasks WHERE mission=? ORDER BY id',(mid,))]
         for x in tasks:
             if len(x['result'])>1600: x['result']=x['result'][:1600]+' [extrait; mémoire pour retrouver]'

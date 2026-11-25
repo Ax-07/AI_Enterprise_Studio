@@ -76,8 +76,9 @@ def permitted(c,mid,agent,base):
     if not flags['research'] or kind not in ('opportunity','market') or not connectors.campaign_status(c,p['id'])['max_calls']:allowed.discard('connector')
     return allowed,p
 
-def delegable(p):
+def delegable(p,c=None):
     agents=set(ROLES[p['kind']])
+    if c is not None and commercial.followup(c,p['id']):agents&={'ORION','SENTINEL'}
     if p['kind'] in ('opportunity','commercial') and not json.loads(p['permissions'])['tests']:agents.discard('SENTINEL')
     return agents
 
@@ -87,7 +88,7 @@ def guard(c,mid,agent,action,target,base):
     if p['state']!=ACTIVE: raise ValueError('Autopilote arrêté')
     if action not in allowed: raise ValueError('Action hors autorisations Autopilote')
     if action=='delegate' and commercial.followup(c,p['id']) and target not in ('ORION','SENTINEL'):raise ValueError('Complément documentaire : ORION et SENTINEL uniquement')
-    if action=='delegate' and target not in delegable(p): raise ValueError('Agent hors périmètre de cette mission Autopilote')
+    if action=='delegate' and target not in delegable(p,c): raise ValueError('Agent hors périmètre de cette mission Autopilote')
 
 def _campaign(c,cid):
     return c.execute('SELECT * FROM campaigns WHERE id=?',(cid,)).fetchone()

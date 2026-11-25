@@ -76,12 +76,12 @@ def related(c):
         t=unicodedata.normalize('NFKD',title.lower())
         t=''.join(x for x in t if not unicodedata.combining(x))
         words=set(re.findall(r'[a-z]{4,}',t))
-        return {w.rstrip('s') for w in words}-{'pour','avec','automatique','automatise','automatisation','controle','qualite','fichier','produit','outil'}
+        return {('commerce' if w.startswith('commerc') else w.rstrip('s')) for w in words}-{'pour','avec','automatique','automatise','automatisation','controle','qualite','fichier','produit','outil'}
     out=[]
     for i,x in enumerate(rows):
         for y in rows[i+1:]:
             a,b=terms(x['title']),terms(y['title']);shared=a&b
-            if len(shared)>=2 and len(shared)/max(1,min(len(a),len(b)))>=.5:
+            if len(shared)>=2 and (len(shared)/max(1,min(len(a),len(b)))>=.5 or {'commerce','multilingue'}.issubset(shared)):
                 out.append({'projects':[x['id'],y['id']],'titles':[x['title'],y['title']],'shared_terms':sorted(shared),'classification':'similarité lexicale à examiner; aucune équivalence démontrée'})
     return out[:30]
 
