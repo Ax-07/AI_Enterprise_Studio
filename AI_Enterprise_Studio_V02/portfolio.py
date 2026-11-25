@@ -57,9 +57,15 @@ def scope(c,cid):
 def latest(c,pid):
     ref=improvement.pinned(c,pid)
     if ref:return ref
-    return c.execute("""SELECT a.* FROM artifacts a JOIN project_missions pm ON pm.mission=a.mission
+    row=c.execute("""SELECT a.* FROM artifacts a JOIN project_missions pm ON pm.mission=a.mission
         JOIN missions m ON m.id=a.mission WHERE pm.project=? AND m.state='terminée'
         AND a.agent='NEXUS' ORDER BY a.mission DESC, CASE WHEN lower(a.name) LIKE '%.html' THEN 0 ELSE 1 END,a.id DESC LIMIT 1""",(pid,)).fetchone()
+    if row:return row
+    # Older schema can call sync before draft recovery migration.
+    if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='draft_recoveries'").fetchone():
+        import draft_recovery
+        return draft_recovery.adopted(c,pid)
+    return None
 
 def evidence(c,a):
     out=[]

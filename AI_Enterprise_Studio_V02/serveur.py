@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.6"
+VERSION="0.4.6.1"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 POST_LOCK=threading.Lock()
@@ -53,6 +53,8 @@ def init():
         incidents.init(c)
         planner.init(c)
         periodic.init(c)
+        budgeting.init(c)
+        draft_recovery.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -86,16 +88,26 @@ def call_model(mid, agent, prompt, cfg, maxout=8192, stage=None, *, schema=None,
     # Estimation conservatrice en octets UTF-8 + marge, pas un plafond fournisseur garanti.
     bound=len(json.dumps(body,ensure_ascii=False).encode())+1024
     reserve=math.ceil(bound*pi+maxout*po)
+    refused_budget=None
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
         if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': raise RuntimeError('Mission arrêtée.')
-        if used(c)+reserve>cfg['budget']: raise RuntimeError('Budget logiciel insuffisant pour réserver cet appel.')
-        if schema is not None:
-            spent,count=c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0),COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()
-            if count>=cfg['call_limit']: raise RuntimeError('Plafond des appels IA de mission atteint.')
-            if spent+reserve>cfg['mission_budget']: raise RuntimeError('Budget de mission insuffisant pour réserver cet appel.')
-        autopilot.reserve(c,mid,reserve)
-        rid=c.execute("INSERT INTO ledger(mission,model,reserved,state,agent,stage,limit_out) VALUES(?,?,?,'réservé',?,?,?)",(mid,model,reserve,agent,stage,maxout)).lastrowid
+        campaign=autopilot.link(c,mid)
+        if schema is not None and campaign:
+            periodic.guard_campaign(c,campaign['id'])
+            chosen,adapted,refused_budget=budgeting.fit(c,mid,stage,agent,body,pi,po,cfg,used(c),campaign)
+            if refused_budget is None:
+                maxout=chosen;reserve=adapted;body['max_output_tokens']=chosen
+        else:
+            if used(c)+reserve>cfg['budget']: raise RuntimeError('Budget logiciel insuffisant pour réserver cet appel.')
+            if schema is not None:
+                spent,count=c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0),COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()
+                if count>=cfg['call_limit']: raise RuntimeError('Plafond des appels IA de mission atteint.')
+                if spent+reserve>cfg['mission_budget']: raise RuntimeError('Budget de mission insuffisant pour réserver cet appel.')
+        if refused_budget is None:
+            autopilot.reserve(c,mid,reserve)
+            rid=c.execute("INSERT INTO ledger(mission,model,reserved,state,agent,stage,limit_out) VALUES(?,?,?,'réservé',?,?,?)",(mid,model,reserve,agent,stage,maxout)).lastrowid
+    if refused_budget is not None:raise RuntimeError(refused_budget)
     try: r=request('https://api.openai.com/v1/responses',{'Authorization':'Bearer '+cfg['key']},body)
     except Exception as e:
         diag='HTTP '+str(e.code) if isinstance(e,urllib.error.HTTPError) else type(e).__name__
@@ -213,7 +225,7 @@ def status():
     cfg=config()
     with db() as c:
         campaign=autopilot.status(c,cfg)
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 def campaign_audit(c,cfg,cid,historical=False):
     # Single read snapshot. Never copy config, environment or session credentials.
     campaign=autopilot.status(c,cfg,cid if historical else None)
@@ -228,12 +240,12 @@ def campaign_audit(c,cfg,cid,historical=False):
         tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=? ORDER BY id',(mid,))]
         events=[dict(r) for r in c.execute('SELECT id,task,agent,action,substr(args,1,600) AS args,substr(result,1,800) AS result,ok,created FROM events WHERE mission=? ORDER BY id DESC LIMIT 100',(mid,))]
         ledger=[dict(r) for r in c.execute('SELECT id,mission,model,agent,stage,state,reserved,actual,input_tokens,output_tokens,diagnostic FROM ledger WHERE mission=? ORDER BY id',(mid,))]
-        missions.append({'mission':m,'reports':reports,'tasks':tasks,'events':events,'ledger':ledger,'collective_evidence':collective_evidence.registry(c,mid),'research':research.mission(c,mid,full=True)})
+        missions.append({'mission':m,'reports':reports,'tasks':tasks,'events':events,'ledger':ledger,'budget_decisions':budgeting.history(c,mid),'collective_evidence':collective_evidence.registry(c,mid),'research':research.mission(c,mid,full=True)})
     return {'schema':'aes-campaign-audit-v1','version':VERSION,'campaign_id':cid,
         'diagnostic_campagne':{'version':VERSION,'readiness':autopilot.readiness(c,cfg,LOCK.locked()),'campaign':campaign},
         'connecteurs':connectors.status(c),'intelligence_economique':intelligence.status(c,full=True),
         'missions':missions,'collective_audit':collective_evidence.campaign_summary(c,campaign),
-        'previous_laboratory':collective_evidence.previous_laboratory(c),'commercial':commercial.campaign(c,cid),
+        'previous_laboratory':collective_evidence.previous_laboratory(c),'commercial':commercial.campaign(c,cid),'draft_recovery':[x for x in draft_recovery.history(c) if x['campaign']==cid or x['source_campaign']==cid],
         'limit':'Rapports et journaux locaux potentiellement privés : vérifier avant partage. Connecteurs et intelligence : exports globaux avec limites habituelles (100/30 relevés); filtrer par mission/campagne. Événements : 100 extraits par mission. Aucun appel externe pour cet export.'}
 
 def plan_audit(c,cfg,pid):
@@ -348,6 +360,13 @@ class Handler(BaseHTTPRequestHandler):
                         periodic.revoke(c,gid)
                 return self.send({'grant':gid})
             with db() as c:periodic.guard_manual(c)
+            if route=='/api/draft_recovery/start':
+                if LOCK.locked() or planner.RUN_LOCK.locked():raise ValueError('Moteur occupé')
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    cid=draft_recovery.start(c,p,cfg)
+                threading.Thread(target=autopilot.worker,args=(sys.modules[__name__],cid),daemon=True).start()
+                return self.send({'campaign':cid})
             if route in ('/api/planner/start','/api/planner/stop','/api/planner/resume','/api/planner/abandon'):
                 if p.get('confirm') is not True:raise ValueError('Confirmation du plan requise')
                 if route!='/api/planner/stop' and (LOCK.locked() or planner.RUN_LOCK.locked()):raise ValueError('Moteur encore occupé')
