@@ -37,6 +37,15 @@ def _text(value, limit=12000):
         raise ValueError('Texte de préparation invalide')
     return value.strip()
 
+def demo(payload):
+    """Fictional journey, no product execution, no observation and no stored lead."""
+    return {'classification':'synthetic_example','offer_id':payload['offer_id'],
+            'snapshot_sha256':payload['snapshot_sha256'],
+            'examples':[{'intent':'interest','qualified':False,'reason':'simple interest'},
+                        {'intent':'demo_request','qualified':True,'reason':'voluntary demo request in fictional target segment'},
+                        {'intent':'purchase_question','qualified':False,'reason':'not a paid order'}],
+            'real_observations':0,'paid_orders':0}
+
 def _page(payload):
     e = lambda v: html.escape(str(v), quote=True)
     price = payload['price_cents']
@@ -54,7 +63,7 @@ def _page(payload):
         +e(payload['offer'])+'</p><h2>Livrables envisagés</h2><p>'
         +e(payload['deliverables'])+'</p><h2>Prix indicatif non validé</h2><p>'
         +e(f'{price//100},{price%100:02d} EUR')+'</p><h2>Limites</h2><p>'
-        +e(payload['limitations'])+'</p></section><section><h2>Parcours fictif</h2>'
+        +e(payload['limitations'])+'</p><h2>Réserves de préparation</h2><p>'+e(payload['risks'])+'</p></section><section><h2>Parcours fictif</h2>'
         '<p>Exemple illustratif : un visiteur manifeste son intérêt ou demande une démonstration. '
         'Ces actions ne constituent ni commande ni preuve de demande.</p>'
         '<button disabled>Je suis intéressé</button> <button disabled>Demander une démonstration</button>'
@@ -76,14 +85,15 @@ def prepare(c, b, t=None):
                'offer':_text(p['offer']), 'deliverables':_text(p['deliverables']),
                'price_cents':business.integer(p['price_cents'],1,100000000),
                'limitations':'Prototype ou prestation en préparation. Demande, prix et performances sur données réelles non validés. Aucune garantie ni vente autorisée.',
-               'language':'fr','classification':'internal_draft','offer_id':v['id'],
+               'risks':_text(p['risks']), 'language':'fr','classification':'internal_draft','offer_id':v['id'],
                'artifact_sha256':v['artifact_sha256'],'snapshot_sha256':snap}
+    payload['demo'] = demo(payload)
     payload['html'] = _page(payload)
     old = c.execute('SELECT id,revoked FROM acquisition_drafts WHERE offer=? AND snapshot_sha256=? AND language=?',
                     (v['id'],snap,'fr')).fetchone()
     if old:
-        if old['revoked'] is not None:
-            raise ValueError('Brouillon révoqué; historique conservé')
+        if state(c,_row(c,old['id']))!='draft':
+            raise ValueError('Brouillon révoqué ou référence modifiée; historique conservé')
         return old['id']
     did = c.execute("""INSERT INTO acquisition_drafts(offer,snapshot_sha256,language,payload,payload_sha256,created)
                     VALUES(?,?,?,?,?,?)""",(v['id'],snap,'fr',business.canonical(payload),business.digest(payload),t)).lastrowid
@@ -102,7 +112,9 @@ def state(c, row):
     try:
         payload=json.loads(row['payload'])
         v=_offer(c,row['offer'])
-        if (business.digest(payload)!=row['payload_sha256'] or
+        project=c.execute('SELECT title FROM projects WHERE id=?',(v['project'],)).fetchone()
+        if (payload['title']!=_text(project['title'],1000) or
+            business.digest(payload)!=row['payload_sha256'] or
             business.digest(business.frozen(v))!=row['snapshot_sha256']):
             return 'reference_changed'
     except (ValueError,TypeError,KeyError,AttributeError):
@@ -113,7 +125,7 @@ def preview(c, did):
     row=_row(c,did)
     if state(c,row)!='draft':
         raise ValueError('Brouillon révoqué ou référence modifiée')
-    return json.loads(row['payload'])['html']
+    return json.loads(row['payload'])
 
 def revoke(c,b,t=None):
     t=business.now() if t is None else t
