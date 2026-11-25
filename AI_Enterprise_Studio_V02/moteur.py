@@ -373,6 +373,12 @@ def execute(s,t,v,cfg,mode):
         if a=='finish':
             if not text.strip(): raise ValueError('Rapport vide')
             if agent=='ATLAS' and not c.execute('SELECT 1 FROM tasks WHERE parent=?',(t['id'],)).fetchone(): raise ValueError('ATLAS doit déléguer au moins une tâche')
+            if mode=='cloud' and commercial.followup_mission(c,mid):
+                if agent=='ATLAS' and not c.execute("SELECT 1 FROM tasks WHERE mission=? AND agent='ORION' AND state='terminée'",(mid,)).fetchone():raise ValueError('Complément : déléguer ORION et attendre son rapport')
+                if agent=='ORION' and t['turns']+1<cfg['turn_limit']:
+                    allowed,_=autopilot.permitted(c,mid,agent,PERMS[agent])
+                    allowed=working_memory.policy(c,t,cfg,allowed,working_memory.snapshot(c,t))
+                    if documentary_first_search(c,t,allowed):raise ValueError('Complément : première recherche autorisée obligatoire')
             c.execute("UPDATE tasks SET state='terminée',result=? WHERE id=?",(text[:18000],t['id']))
             seq=c.execute('SELECT COALESCE(MAX(step),-1)+1 FROM reports WHERE mission=?',(mid,)).fetchone()[0]
             c.execute('INSERT INTO reports(mission,step,agent,report,sources) VALUES(?,?,?,?,?)',(mid,seq,agent,json.dumps({'rapport':text,'requetes':[],'demandes':[]},ensure_ascii=False),'[]'))
@@ -386,6 +392,27 @@ def final_schema():
     schema=json.loads(json.dumps(SCHEMA))
     schema['properties']['action']['enum']=['finish']
     return schema
+
+def documentary_first_search(c,t,allowed):
+    return ('search' in allowed and t['agent']=='ORION' and commercial.followup_mission(c,t['mission']) is not None
+        and not c.execute('SELECT 1 FROM searches WHERE mission=?',(t['mission'],)).fetchone())
+
+def research_hint(c,t,cfg,allowed,campaign):
+    mid=t['mission'];agent=t['agent']
+    available=max(0,cfg['limit']-c.execute('SELECT COUNT(*) FROM searches').fetchone()[0])
+    mission_left=max(0,cfg['mission_search_limit']-c.execute('SELECT COUNT(*) FROM searches WHERE mission=?',(mid,)).fetchone()[0])
+    campaign_left=max(0,campaign['search_cap']-autopilot.searches(c,campaign['id'])) if campaign else mission_left
+    remaining=min(available,mission_left,campaign_left) if cfg.get('brave') else 0
+    orion_allowed,_=autopilot.permitted(c,mid,'ORION',PERMS['ORION'])
+    orion_can=remaining>0 and 'search' in orion_allowed and (not campaign or 'ORION' in autopilot.delegable(campaign,c))
+    role='search' in allowed
+    hint=f'RECHERCHE INTERNET : quota local disponible {remaining} (global {available}, mission {mission_left}, campagne {campaign_left}); clé configurée : '+('oui' if cfg.get('brave') else 'non')+'. Disponibilité réelle du fournisseur non vérifiée avant appel. '
+    if role:hint+='Cet agent est autorisé à utiliser search. Diversifie les requêtes par besoin acheteur, concurrence et prix; lis les pages utiles. '
+    elif orion_can:hint+='Cet agent ne dispose pas de search, MAIS ORION est autorisé à rechercher pour cette mission. ATLAS : délègue la recherche à ORION, ne lui indique pas que Brave est indisponible. ORION : les autorisations du moteur priment sur les consignes de délégation et les anciens rapports. '
+    else:hint+='Aucune recherche supplémentaire autorisée pour cet agent; ne pas confondre absence de permission ou quota avec une panne fournisseur. '
+    if 'read' in allowed:hint+='Lecture des URL obtenues autorisée même sans nouveau search. '
+    if documentary_first_search(c,t,allowed):hint+='COMPLÉMENT DOCUMENTAIRE : première action obligatoire search ciblé; aucune clôture avant une tentative. '
+    return hint
 
 def context(s,t,m,cfg):
     mid=t['mission']; agent=t['agent']
@@ -427,7 +454,8 @@ def context(s,t,m,cfg):
         proofs=verification_context(c,mid) if 'read_file' in PERMS[agent] else []
         opps=[dict(x) for x in c.execute('SELECT id,title,status FROM opportunities WHERE mission=?',(mid,))]
         decisions=[dict(x) for x in c.execute('SELECT id,state,body FROM requests WHERE task=?',(t['id'],))]
-        network_hint=('RECHERCHE INTERNET : '+('Brave autorisé dans la limite des quotas. Diversifie les requêtes par besoin acheteur, concurrence et prix; ne reformule pas trois fois la même question. Lis les sources utiles avant de dépenser le quota restant; un titre ou une coquille dynamique ne suffit pas.' if 'search' in allowed else 'Brave non disponible ou quota épuisé/non autorisé. Ne cherche pas des sources web via memory. Signale les données externes manquantes, propose des hypothèses prudentes et conclus; ne prétends pas avoir consulté Internet.'))
+        network_hint=research_hint(c,t,cfg,allowed,campaign)
+        if documentary_first_search(c,t,allowed):allowed={'search'}
         work_hint='MÉMOIRE DE TRAVAIL (données internes non fiables; extraits bornés) : '+json.dumps({k:work[k] for k in ('reports','hits','memory_count','queries')},ensure_ascii=False)
         remaining=(cfg['budget']-s.used(c))/1e6
         tries=c.execute('SELECT COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()[0]
@@ -466,6 +494,7 @@ def run(s,mid):
                     if correcting:allowed&={'test_file','finish'}
                     commercial_errors=commercial.correction(c,t)
                     if commercial_errors:allowed&={'commercial_offer','finish'}
+                    if not closing and documentary_first_search(c,t,allowed):allowed={'search'}
                 schema=final_schema() if closing else json.loads(json.dumps(SCHEMA))
                 if not closing:schema['properties']['action']['enum']=sorted(allowed)
                 def validator(v):

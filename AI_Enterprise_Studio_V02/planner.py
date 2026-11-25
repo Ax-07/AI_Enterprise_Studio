@@ -115,7 +115,7 @@ def candidates(c,search_cap=0):
                 lab=laboratory.canonical(c,art);independent=independent and bool(lab and lab['status']=='passed')
             follow=commercial.eligible_followup(c,pid,aid) if independent else None
             if follow and search_cap>0:
-                ready.append({**record,'kind':'commercial','base_offer':follow['id'],'priority':-1,'reason':'Compléter les preuves documentaires de l’offre #'+str(follow['id'])+' sans refaire l’offre ni les calculs.'});continue
+                ready.append({**record,'kind':'commercial','base_offer':follow['id'],'priority':-1,'recovery_of':follow.get('recovery_of'),'reason':('Récupérer le complément non commencé (campagne #'+str(follow['recovery_of'])+') de l’offre #' if follow.get('recovery_of') is not None else 'Compléter les preuves documentaires de l’offre #')+str(follow['id'])+' sans refaire l’offre ni les calculs.'});continue
             if independent and not attempted_commercial(c,pid,aid):
                 ready.append({**record,'kind':'commercial','priority':0,'reason':'Produit exact et preuves indépendantes disponibles; préparer une offre sans lancement.'});continue
             if independent and (not step or step[0]=='market'):
@@ -127,15 +127,17 @@ def candidates(c,search_cap=0):
         ready.append({**record,'artifact':ref,'kind':kind,'priority':1 if kind in ('functional','laboratory','improve') else 2,'reason':reason})
     return {'ready':sorted(ready,key=lambda x:(x['priority'],-(x['score'] or 0),x['project'])),'held':held,'related':related(c),'limit':LIMIT}
 
-def status(c):
+def status(c,cfg=None):
     row=latest(c);preview=candidates(c)
+    used=c.execute('SELECT COUNT(*) FROM searches').fetchone()[0]
+    resources={'searches_used':used,'search_limit':cfg['limit'],'search_remaining':max(0,cfg['limit']-used),'search_configured':bool(cfg['brave']),'mission_search_limit':cfg['mission_search_limit'],'plan_search_max':min(10,max(0,cfg['limit']-used)) if cfg['brave'] and cfg['mission_search_limit'] else 0} if cfg is not None else None
     with_search=candidates(c,3)
     preview['documentary_candidates']=[x for x in with_search['ready'] if x.get('base_offer')]
-    if not row:return {'plan':None,'preview':preview,'limit':LIMIT}
+    if not row:return {'plan':None,'preview':preview,'resources':resources,'limit':LIMIT}
     d=dict(row);d['queue']=queue(c,row['id']);d['spent'],d['searches']=totals(c,row['id'])
     d['remaining']=max(0,d['budget']-d['spent'])
     d['events']=[{**dict(e),'detail':json.loads(e['detail'])} for e in c.execute('SELECT * FROM enterprise_plan_events WHERE plan=? ORDER BY id',(row['id'],))]
-    return {'plan':d,'preview':preview,'limit':LIMIT}
+    return {'plan':d,'preview':preview,'resources':resources,'limit':LIMIT}
 
 def _money(raw):
     try:
@@ -163,7 +165,11 @@ def start(c,body,cfg):
     count=body['max_campaigns'];cap=body['search_cap'];explore=body['explore']
     if not 10000<=per<=budget<=remaining or type(count) is not int or not 1<=count<=5:raise ValueError('Enveloppes ou nombre de campagnes invalides')
     available=max(0,cfg['limit']-c.execute('SELECT COUNT(*) FROM searches').fetchone()[0])
-    if type(cap) is not int or not 0<=cap<=min(10,available) or (cap and not cfg['brave']) or type(explore) is not bool or (explore and not cap):raise ValueError('Quota Brave ou autorisation exploration invalide')
+    if type(cap) is not int or not 0<=cap<=10:raise ValueError('Quota Brave du plan : entier de 0 à 10 requis')
+    if cap and not cfg['brave']:raise ValueError('Brave non configuré localement')
+    if cap and not cfg['mission_search_limit']:raise ValueError('Plafond Brave par mission égal à zéro')
+    if cap>available:raise ValueError(f'Quota Brave insuffisant : {available} recherche(s) restante(s), {cap} demandée(s), plafond global {cfg["limit"]}.')
+    if type(explore) is not bool or (explore and not cap):raise ValueError('Exploration : quota Brave positif requis')
     portfolio.sync(c)
     pid=c.execute("""INSERT INTO enterprise_plans(budget,per_campaign,max_campaigns,search_cap,explore,state)
         VALUES(?,?,?,?,?,'active')""",(budget,per,count,cap,int(explore))).lastrowid
@@ -231,7 +237,7 @@ def next_campaign(c,pid,cfg):
         change(c,pid,'completed','Budget restant insuffisant pour une nouvelle campagne.');return None
     portfolio.sync(c)
     available=max(0,cfg['limit']-c.execute('SELECT COUNT(*) FROM searches').fetchone()[0])
-    cap=min(3,max(0,p['search_cap']-searched),available) if cfg['brave'] else 0
+    cap=min(3,max(0,p['search_cap']-searched),available,cfg['mission_search_limit']) if cfg['brave'] else 0
     preview=candidates(c,cap)
     tried={(x['project'],x['kind'],x['artifact']) for x in rows}
     items=[x for x in preview['ready'] if (x['project'],x['kind'],x['artifact']) not in tried]
@@ -260,7 +266,7 @@ def next_campaign(c,pid,cfg):
     if not selected or selected[0]!=kind or selected[1]!=item['artifact']:raise ValueError('Étape sélectionnée différente du plan')
     c.execute('INSERT INTO enterprise_plan_queue(plan,project,artifact,kind,reason,campaign) VALUES(?,?,?,?,?,?)',
         (pid,item['project'],item['artifact'],kind,item['reason'],cid))
-    log(c,pid,'allocated',{'campaign':cid,'kind':kind,'project':item['project'],'artifact':item['artifact'],'reason':item['reason'],'budget':amount,'search_cap':cap,'base_offer':item.get('base_offer')})
+    log(c,pid,'allocated',{'campaign':cid,'kind':kind,'project':item['project'],'artifact':item['artifact'],'reason':item['reason'],'budget':amount,'search_cap':cap,'base_offer':item.get('base_offer'),'recovery_of':item.get('recovery_of')})
     return cid
 
 def worker(s,pid):
