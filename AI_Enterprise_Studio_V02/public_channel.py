@@ -97,7 +97,7 @@ def authorize_collection(c,key,g,signature,t):
     check(key,'collection-v1',g,signature)
     exact(g,('page','snapshot','publication_hash','mode','starts','expires','quota','notice'))
     row=_row(c,g['page'])
-    if not _active(row,t) or g['mode']!='test' or g['snapshot']!=row['snapshot']:
+    if not _active(row,t) or row['collection_revoked'] is not None or g['mode']!='test' or g['snapshot']!=row['snapshot']:
         raise ValueError('Publication not ready')
     if g['publication_hash']!=hashlib.sha256(row['manifest'].encode()).hexdigest():
         raise ValueError('Publication content changed')
