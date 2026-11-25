@@ -573,6 +573,37 @@ def smoke_periodic():
     finally:case.doCleanups()
     print('Chromium périodique : contrôle des enveloppes, autorisation, révocation, export, sans fournisseur')
 
+def smoke_draft_recovery():
+    from test_budget_draft import BudgetDraftTests
+    import draft_recovery as dr,autopilot as a
+    case=BudgetDraftTests('test_recovery_real_engine_preserves_original_and_adopts_exact_proof');case.setUp()
+    try:
+        cid,mid,tid,project,aid,opp=case.fixture();case.block(cid,mid)
+        with patch.object(s,'config',return_value=case.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.object(a,'worker',return_value=None) as worker:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page()
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base);expect(page.locator('#draft-list')).to_contain_text('draft.csv')
+                    page.locator('#draft-budget').fill('9')
+                    expect(page.get_by_role('button',name='Autoriser l’audit exact')).to_be_disabled()
+                    page.locator('#draft-budget').fill('0.25')
+                    expect(page.get_by_role('button',name='Autoriser l’audit exact')).to_be_enabled()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/draft_recovery/start') as res:page.get_by_role('button',name='Autoriser l’audit exact').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#draft-list')).to_contain_text('en cours')
+                    with s.db() as c:
+                        assert dr.history(c)[0]['artifact']==aid and a._campaign(c,cid)['state']=='bloqué'
+                    network.assert_not_called();worker.assert_called_once();assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:case.doCleanups()
+    print('Chromium brouillon : référence exacte, contrôle enveloppe et audit séparé')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
@@ -586,3 +617,4 @@ if __name__=='__main__':
     smoke_n8n()
     smoke_intelligence()
     smoke_periodic()
+    smoke_draft_recovery()
