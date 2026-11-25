@@ -226,7 +226,7 @@ function renderConnectors(s){
    const form=el('details'),su=el('summary','Configurer les autorisations');form.append(su);
    const enabled=el('input');enabled.type='checkbox';enabled.checked=p.enabled;
    const en=el('label');en.append(enabled,document.createTextNode(' Activer ce connecteur'));form.append(en);
-   const quota=el('input');quota.type='number';quota.min='0';quota.max='1000';quota.value=String(p.max_calls||20);quota.style.width='100%';
+   const quota=el('input');quota.type='number';quota.min='0';quota.max='1000';quota.value=String(p.enabled?p.max_calls:(p.max_calls||20));quota.style.width='100%';
    const q=el('label','Quota total de tentatives (cumulatif)');q.append(quota);form.append(q);
    const roles=el('div'),checks=[];roles.append(el('p','Agents autorisés (uniquement dans les campagnes de recherche avec quota connecteurs explicite).'));
    for(const name of x.roles){const check=el('input');check.type='checkbox';check.checked=p.agents.includes(name);checks.push([name,check]);const l=el('label');l.style.display='block';l.append(check,document.createTextNode(' '+name));roles.append(l)}

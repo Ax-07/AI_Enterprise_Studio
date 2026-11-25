@@ -75,18 +75,20 @@ def authorize_campaign(c,cid,body):
         return
     if 'project' not in body or not body['permissions']['research'] or 'improvement' in body:
         raise ValueError('Connecteurs : campagne ciblée de recherche (hors amélioration) requise')
-    caps=[]
+    caps={}
     for cap,spec in REGISTRY.items():
         p=policy(c,cap);t=totals(c,'WHERE capability=?',(cap,))
         if p['enabled'] and p['agents'] and spec['available'] and spec['risk']=='public_read' and spec['cost_usd_micro'] is not None and t['calls']<p['max_calls'] and t['reserved']+spec['cost_usd_micro']<=p['budget'] and spec['cost_usd_micro']<=budget:
-            caps.append(cap)
+            caps[cap]={'agents':p['agents'],'cost':spec['cost_usd_micro']}
     if not caps:raise ValueError('Aucun connecteur autorisé avec quota et budget disponibles')
     c.execute('INSERT INTO connector_campaigns(campaign,max_calls,budget,capabilities) VALUES(?,?,?,?)',
         (cid,count,budget,json.dumps(caps)))
 
 def campaign_status(c,cid):
     r=c.execute('SELECT * FROM connector_campaigns WHERE campaign=?',(cid,)).fetchone()
-    return {**dict(r),'capabilities':json.loads(r['capabilities']),**totals(c,'WHERE campaign=?',(cid,))} if r else {'max_calls':0,'budget':0,'calls':0,'reserved':0,'capabilities':[]}
+    if not r:return {'max_calls':0,'budget':0,'calls':0,'reserved':0,'capabilities':[],'grants':{}}
+    grants=json.loads(r['capabilities'])
+    return {**dict(r),'capabilities':list(grants),'grants':grants,**totals(c,'WHERE campaign=?',(cid,))}
 
 def check(c,cap,mid,tid,actor):
     spec=REGISTRY.get(cap)
@@ -108,7 +110,8 @@ def check(c,cap,mid,tid,actor):
     if not cy or cy['state']!='actif' or cy['kind'] not in ('opportunity','market') or not json.loads(cy['permissions'])['research']:
         raise ValueError('Campagne de recherche explicitement autorisée requise')
     cc=campaign_status(c,cy['id'])
-    if cap not in cc['capabilities'] or cc['calls']>=cc['max_calls'] or cc['reserved']+cost>cc['budget']:
+    grant=cc['grants'].get(cap)
+    if not grant or actor not in grant['agents'] or cost!=grant['cost'] or cc['calls']>=cc['max_calls'] or cc['reserved']+cost>cc['budget']:
         raise ValueError('Quota ou budget de campagne connecteurs atteint')
     if totals(c,'WHERE mission=?',(mid,))['calls']>=3:raise ValueError('Plafond de trois appels connecteurs par mission')
     return cy['id'],cost

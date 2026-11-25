@@ -374,6 +374,55 @@ def smoke_owner_console():
     finally:fixture.doCleanups()
     print('Chromium console propriétaire: campagne retenue clôturée, diagnostic exporté, paramètres réinitialisés, nouvelle campagne')
 
+def smoke_connectors():
+    import connectors as x,autopilot as a
+    from test_connectors import ConnectorTests
+    fixture=ConnectorTests('test_default_deny_no_secret_and_migration')
+    fixture.setUp()
+    try:
+        with patch.object(s,'config',return_value=fixture.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.dict(x.ADAPTERS,{x.PUBLIC:lambda name:{'repository':name,'stars':12}}),patch.object(a,'worker',return_value=None) as worker:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page(accept_downloads=True)
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base);page.locator('#nav-expert > summary').click();page.locator('[data-page="tools"]').click()
+                    expect(page.locator('#connector-list')).to_contain_text('Préparé — indisponible')
+                    card=page.locator('#connector-list article').filter(has_text='GitHub')
+                    expect(card.get_by_role('button',name='Tester la connexion publique')).to_be_disabled()
+                    card.locator('summary').click()
+                    card.get_by_label('Activer ce connecteur').check()
+                    card.get_by_label('ORION',exact=True).check()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/connectors/policy') as res:
+                        card.get_by_role('button',name='Enregistrer les autorisations').click()
+                    assert res.value.ok,res.value.text()
+                    expect(card.get_by_role('button',name='Tester la connexion publique')).to_be_enabled()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/connectors/test') as res:
+                        card.get_by_role('button',name='Tester la connexion publique').click()
+                    assert res.value.json()['status']=='received'
+                    expect(page.locator('#connector-runs')).to_contain_text('received')
+                    with page.expect_download() as dl:page.locator('#connector-export').click()
+                    j=json.loads(Path(dl.value.path()).read_text());assert j['total']['calls']==1
+                    page.locator('[data-page="home"]').click()
+                    page.locator('#auto-project').select_option('explore')
+                    page.locator('#auto-advanced > summary').click()
+                    page.locator('#auto-connector-cap').fill('2')
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/autopilot/start') as res:page.locator('#auto-start').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#auto-info')).to_contain_text('Connecteurs : 0/2')
+                    network.assert_not_called();worker.assert_called_once()
+                    assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:fixture.doCleanups()
+    print('Chromium connecteurs: activation, permissions, test public simulé, export et autorisation de campagne')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
@@ -383,3 +432,4 @@ if __name__=='__main__':
     smoke_laboratory()
     smoke_improvement()
     smoke_owner_console()
+    smoke_connectors()
