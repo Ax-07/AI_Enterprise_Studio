@@ -57,7 +57,12 @@ class IntelligenceTests(unittest.TestCase):
             def fake(url,headers,body=None):
                 action=actions.pop(0);self.assertIn(action['action'],body['text']['format']['schema']['properties']['action']['enum'])
                 self.assertNotIn(TOKEN,json.dumps(body))
-                if action['action']=='assess_opportunity':self.assertIn('SOURCES MACRO OFFICIELLES REÇUES',body['input'])
+                if action['action']=='assess_opportunity':
+                    self.assertIn('SOURCES MACRO OFFICIELLES REÇUES',body['input'])
+                    self.assertIn('REGISTRE COLLECTIF FACTUEL',body['input'])
+                    self.assertIn('"execution_id": "22"',body['input'])
+                if action['action']=='finish' and not actions:
+                    self.assertIn('"assessed_count": 2',body['input'])
                 return self.reply(action)
             def bridge(cap,value,rid):
                 self.assertEqual(cap,n.COMPARE)

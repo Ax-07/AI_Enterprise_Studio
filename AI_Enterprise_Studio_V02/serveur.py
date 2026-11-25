@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.2"
+VERSION="0.4.2.1"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -207,7 +207,8 @@ def run(mid):
 def status():
     cfg=config()
     with db() as c:
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'laboratory':laboratory.status(c),'autopilot':autopilot.status(c,cfg),'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        campaign=autopilot.status(c,cfg)
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 def campaign_audit(c,cfg,cid):
     # Single read snapshot. Never copy config, environment or session credentials.
     campaign=autopilot.status(c,cfg)
@@ -221,11 +222,12 @@ def campaign_audit(c,cfg,cid):
         reports=[dict(r) for r in c.execute('SELECT * FROM reports WHERE mission=? ORDER BY id',(mid,))]
         tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=? ORDER BY id',(mid,))]
         events=[dict(r) for r in c.execute('SELECT id,task,agent,action,substr(args,1,600) AS args,substr(result,1,800) AS result,ok,created FROM events WHERE mission=? ORDER BY id DESC LIMIT 100',(mid,))]
-        missions.append({'mission':m,'reports':reports,'tasks':tasks,'events':events})
+        missions.append({'mission':m,'reports':reports,'tasks':tasks,'events':events,'collective_evidence':collective_evidence.registry(c,mid)})
     return {'schema':'aes-campaign-audit-v1','version':VERSION,'campaign_id':cid,
         'diagnostic_campagne':{'version':VERSION,'readiness':autopilot.readiness(c,cfg,LOCK.locked()),'campaign':campaign},
         'connecteurs':connectors.status(c),'intelligence_economique':intelligence.status(c,full=True),
-        'missions':missions,
+        'missions':missions,'collective_audit':collective_evidence.campaign_summary(c,campaign),
+        'previous_laboratory':collective_evidence.previous_laboratory(c),
         'limit':'Rapports et journaux locaux potentiellement privés : vérifier avant partage. Connecteurs et intelligence : exports globaux avec limites habituelles (100/30 relevés); filtrer par mission/campagne. Événements : 100 extraits par mission. Aucun appel externe pour cet export.'}
 
 class Handler(BaseHTTPRequestHandler):
