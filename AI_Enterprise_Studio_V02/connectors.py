@@ -188,6 +188,7 @@ def invoke(s,cap,text,mid=None,tid=None,actor='PROPRIETAIRE'):
         # No exception messages, response bodies, headers, or secrets are logged.
         diag=type(e).__name__
         if isinstance(e,RuntimeError) and re.fullmatch(r'HTTP [1-5][0-9]{2}',str(e)):diag=str(e)
+        elif isinstance(e,n8n.Unconfirmed) and str(e) in ('Réponse trop volumineuse','Contrat de réponse invalide','Résultat incohérent','TimeoutError','ConnectionRefusedError','RemoteDisconnected','ConnectionResetError'):diag=str(e)
         state='unknown' if is_n8n else 'failed'
         with s.db() as c:c.execute('UPDATE connector_runs SET state=?,diagnostic=?,finished=CURRENT_TIMESTAMP WHERE id=?',(state,diag,rid))
         return {'connector':cap,'run':rid,'status':state,'diagnostic':diag,'note':'Tentative décomptée; aucun retry automatique.'}

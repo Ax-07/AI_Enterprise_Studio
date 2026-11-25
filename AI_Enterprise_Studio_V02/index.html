@@ -218,11 +218,11 @@ let connectorSig='';
 function renderConnectors(s){
  const data=s.connectors||{capabilities:[],runs:[]},active=s.campaign_readiness?.locked||!!s.campaign_readiness?.active_campaign||!!s.campaign_readiness?.active_mission;
  const sig=JSON.stringify([data,active,busy]);if(sig===connectorSig)return;connectorSig=sig;
- const nodes=data.capabilities.map(x=>{
+ const nodes=data.capabilities.filter(x=>x.id!=='n8n.workflow').map(x=>{
    const n=el('article',undefined,'request'),p=x.policy;
    n.append(el('h3',x.label),badge(!x.available?'Préparé — indisponible':p.enabled?'Activé':'Désactivé'),el('p',x.description));
    const local=x.id==='n8n.health'||x.id==='n8n.metrics';
-   if(local){n.append(btn('Télécharger le workflow JSON',async()=>{try{const j=await api('n8n_template?capability='+encodeURIComponent(x.id));downloadText(x.id.replace('.','_')+'.json',JSON.stringify(j,null,2),'application/json')}catch(e){text('message',e.message)}},'quiet'));n.append(el('p',x.credential_present?'Identifiant local présent. Connexion à vérifier après publication.':'Configurer n8n local et le jeton via Configurer_n8n.ps1; aucun secret dans cette interface.','muted'))}
+   if(local){n.append(btn('Télécharger le workflow JSON',async()=>{try{const j=await api('n8n_template?capability='+encodeURIComponent(x.id));downloadText(x.id.replace('.','_')+'.json',JSON.stringify(j,null,2),'application/json')}catch(e){text('message',e.message)}},'quiet'));n.append(el('p',x.available?'Identifiant local présent. Connexion à vérifier après publication.':'Configurer n8n local et le jeton via Configurer_n8n.ps1; aucun secret dans cette interface.','muted'))}
    if(!x.available){n.append(el('p','Aucun appel possible tant que la capacité est indisponible.','muted'));return n}
    n.append(el('p',x.calls+' / '+p.max_calls+' tentatives cumulées · '+money(x.reserved/1e6,4)+' réservés · '+(local?'traitement local authentifié.':'accès public sans clé.')));
    const form=el('details'),su=el('summary','Configurer les autorisations');form.append(su);
@@ -236,7 +236,9 @@ function renderConnectors(s){
    const save=btn('Enregistrer les autorisations',()=>{if(confirm(local?'Autoriser ce workflow local borné ? Aucun droit commercial.':'Autoriser uniquement les lectures publiques GitHub dans les limites définies ? Aucun accès au compte.'))action('connectors/policy',{capability:x.id,enabled:enabled.checked,agents:checks.filter(y=>y[1].checked).map(y=>y[0]),max_calls:Number(quota.value),budget:'0',confirm:true})});
    save.disabled=busy||active;form.append(save);n.append(form);
    const test=btn(local?'Tester le workflow local':'Tester la connexion publique',()=>{if(confirm(local?'Exécuter le cas synthétique local ? Une tentative sera consommée.':'Lire les métadonnées de octocat/Hello-World ? Une tentative du quota sera consommée, aucun coût API GitHub facturable.'))action('connectors/test',{capability:x.id,confirm:true})},'quiet');
-   test.disabled=busy||active||!p.enabled||x.calls>=p.max_calls;n.append(test);return n
+   test.disabled=busy||active||!p.enabled||x.calls>=p.max_calls;n.append(test);
+   if(local){const last=data.runs.find(r=>r.capability===x.id);if(last){n.append(el('p','Dernier test/appel : '+last.state+(last.execution_id?' · n8n #'+last.execution_id:'')+(last.diagnostic?' · '+last.diagnostic:'')));if(last.workflow_result){try{const r=JSON.parse(last.workflow_result);n.append(el('pre',JSON.stringify(r.result,null,2)))}catch(e){}}}}
+   return n
  });
  fill('connector-list',nodes.length?nodes:[empty('Registre indisponible.')]);
  fill('connector-runs',data.runs.length?data.runs.map(r=>row('#'+r.id+' · '+r.capability+' · '+r.actor,r.state+(r.execution_id?' · exécution n8n #'+r.execution_id:'')+(r.diagnostic?' · '+r.diagnostic:'')+' · '+(r.mission?'mission #'+r.mission:'test propriétaire')+' · '+money(r.reserved/1e6,4),null,badge(r.state))):[empty('Aucune tentative enregistrée.')]);

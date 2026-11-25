@@ -10,7 +10,7 @@ if (-not (Test-Path -LiteralPath $file)) {
     $token = [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
     ConvertTo-SecureString $token -AsPlainText -Force | ConvertFrom-SecureString | Set-Content -LiteralPath $file -Encoding ascii
 } else {
-    $secret = Get-Content -LiteralPath $file -Raw | ConvertTo-SecureString
+    $secret = (Get-Content -LiteralPath $file -Raw).Trim() | ConvertTo-SecureString
     $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
     try { $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
 }

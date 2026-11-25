@@ -1,6 +1,6 @@
 V0.4.1 — Installer n8n local (une seule fois)
 
-Pré-requis : instance n8n locale déjà disponible sur http://127.0.0.1:5678, non exposée à Internet ou au LAN. Ne pas modifier une instance existante sans sauvegarde. Si aucune instance locale, voir https://docs.n8n.io/hosting/installation/docker/ (utiliser un port publié 127.0.0.1:5678:5678 et un volume persistant; ne pas utiliser un tunnel). Ne pas utiliser n8n Cloud avec cette version.
+Pré-requis : instance n8n locale déjà disponible sur http://127.0.0.1:5678, non exposée à Internet ou au LAN. Ne pas modifier une instance existante sans sauvegarde. Si aucune instance locale : démarrer Docker Desktop puis, dans V02, exécuter docker compose -f n8n/compose.yaml up -d. Ce fichier crée une instance distincte avec un volume persistant et un port loopback; ne l'utilise pas si une instance occupe déjà le port 5678. Créer le compte propriétaire local lors de la première ouverture. Ne pas utiliser un tunnel. Ne pas utiliser n8n Cloud avec cette version.
 
 1. Arrêter AES. Dans PowerShell, dans le dossier V02 : powershell -NoProfile -ExecutionPolicy Bypass -File .\Configurer_n8n.ps1
    Le script génère un jeton aléatoire (ou relit le jeton existant), protégé par DPAPI du compte Windows, et le copie dans le presse-papiers local. Ne jamais transmettre ce jeton. Le presse-papiers peut être lu par d'autres applications : désactiver historique/synchronisation et effacer après usage.
