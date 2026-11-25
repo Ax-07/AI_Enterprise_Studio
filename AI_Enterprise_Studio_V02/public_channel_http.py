@@ -5,7 +5,7 @@ import hmac
 import os
 import re
 import time
-from http.cookies import SimpleCookie
+from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server, WSGIRequestHandler
 from contextlib import closing
@@ -41,10 +41,14 @@ def application(path,key,clock=None):
             return {k:v[0] for k,v in d.items()}
         def cookie_token():
             jar=SimpleCookie()
-            jar.load(env.get('HTTP_COOKIE',''))
+            try:jar.load(env.get('HTTP_COOKIE',''))
+            except CookieError:return ''
             return jar['aes_test_participant'].value if 'aes_test_participant' in jar else ''
         e=lambda x:html.escape(str(x),quote=True)
         route=env.get('PATH_INFO','');method=env.get('REQUEST_METHOD','')
+        host=env.get('HTTP_HOST','')
+        if not re.fullmatch(r'(?:127\.0\.0\.1|localhost)(?::[0-9]{1,5})?',host):return fail('403 Forbidden')
+        if method=='POST' and env.get('HTTP_ORIGIN') not in (None,'http://'+host):return fail('403 Forbidden')
         t=int(clock())
         try:
             with closing(ch.connect(path)) as c:
@@ -78,7 +82,7 @@ def application(path,key,clock=None):
                         except ValueError:token=ch.participant_token(key,pid)
                         body='<!doctype html><html lang="fr"><meta charset="utf-8"><title>Test interne</title><h1>'+e(p['title'])+'</h1><p>MODE TEST — aucune vente, aucun suivi commercial réel.</p><p>'+e(p['description'])+'</p><p>'+e(p['limitations'])+'</p><p>Prix indicatif : '+e(f"{p['price_cents']/100:.2f} EUR")+'</p>'
                         if p['collection_open']:
-                            body+='<form method="post"><input type="hidden" name="token" value="'+e(token)+'"><label>Intention <select name="kind"><option value="interest">Intérêt</option><option value="demo_request">Démonstration</option><option value="purchase_question">Question achat</option></select></label><p><label><input type="checkbox" name="segment" value="yes">Je corresponds à la cible présentée</label></p><p><label><input type="checkbox" name="consent" value="yes" required>Je consens à ce test fictif sans coordonnées. Signal pseudonymisé conservé au maximum 7 jours et effaçable avec le code fourni.</label></p><button>Envoyer un signal de test</button></form>'
+                            body+='<form method="post"><input type="hidden" name="token" value="'+e(token)+'"><label>Intention <select name="kind"><option value="interest">Intérêt</option><option value="demo_request">Démonstration</option><option value="purchase_question">Question achat</option></select></label><p><label><input type="checkbox" name="segment" value="yes">Je corresponds à la cible présentée</label></p><p><label><input type="checkbox" name="consent" value="yes" required>Je consens à ce test fictif sans coordonnées. Signal pseudonymisé effaçable avec le code fourni, purgé au prochain traitement après 7 jours.</label></p><button>Envoyer un signal de test</button></form>'
                         else:body+='<p>Collecte désactivée.</p>'
                         c.commit()
                         return send('200 OK',body,'text/html; charset=utf-8',
