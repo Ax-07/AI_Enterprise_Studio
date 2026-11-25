@@ -625,6 +625,8 @@ def smoke_business():
                     with page.expect_response(lambda r:r.url==base+'/api/business/authorize') as res:page.get_by_role('button',name='Autoriser les observations').click()
                     assert res.value.ok,res.value.text()
                     expect(page.locator('#business-trials')).to_contain_text('Ouvert')
+                    expect(page.locator('#page-business')).to_be_visible()
+                    expect(page.get_by_role('button',name='Clore / révoquer')).to_be_visible()
                     page.once('dialog',lambda d:d.accept())
                     with page.expect_response(lambda r:r.url==base+'/api/business/close') as res:page.get_by_role('button',name='Clore / révoquer').click()
                     assert res.value.ok,res.value.text()
