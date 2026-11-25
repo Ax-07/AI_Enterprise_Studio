@@ -78,7 +78,7 @@ def fetch(value):
     d=decode(request_spec(value));url=url_for(d)
     conn=http.client.HTTPSConnection('api.worldbank.org',443,timeout=12,context=ssl.create_default_context())
     try:
-        conn.request('GET',url.split('api.worldbank.org',1)[1],headers={'Accept':'application/json','User-Agent':'AI-Enterprise-Studio/0.4.2','Connection':'close'})
+        conn.request('GET',url.split('api.worldbank.org',1)[1],headers={'Accept':'application/json','User-Agent':'AI-Enterprise-Studio/0.4.2.1','Connection':'close'})
         response=conn.getresponse()
         if response.status!=200:raise RuntimeError('HTTP '+str(response.status))
         raw=response.read(MAX_BYTES+1)

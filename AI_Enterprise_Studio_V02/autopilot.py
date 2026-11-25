@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 
 ACTIVE='actif'
 FLAGS=('research','production','tests','market')
-ROLES={'opportunity':{'ORION','MIDAS'},'create':{'NEXUS'},'improve':{'NEXUS'},
+ROLES={'opportunity':{'ORION','MIDAS','SENTINEL'},'create':{'NEXUS'},'improve':{'NEXUS'},
        'functional':{'SENTINEL'},'market':{'HERMES','MIDAS'}}
 
 def init(c):
@@ -64,12 +64,17 @@ def permitted(c,mid,agent,base):
     if not flags['research'] or kind not in ('opportunity','market') or not connectors.campaign_status(c,p['id'])['max_calls']:allowed.discard('connector')
     return allowed,p
 
+def delegable(p):
+    agents=set(ROLES[p['kind']])
+    if p['kind']=='opportunity' and not json.loads(p['permissions'])['tests']:agents.discard('SENTINEL')
+    return agents
+
 def guard(c,mid,agent,action,target,base):
     allowed,p=permitted(c,mid,agent,base)
     if not p:return
     if p['state']!=ACTIVE: raise ValueError('Autopilote arrêté')
     if action not in allowed: raise ValueError('Action hors autorisations Autopilote')
-    if action=='delegate' and target not in ROLES[p['kind']]: raise ValueError('Agent hors périmètre de cette mission Autopilote')
+    if action=='delegate' and target not in delegable(p): raise ValueError('Agent hors périmètre de cette mission Autopilote')
 
 def _campaign(c,cid):
     return c.execute('SELECT * FROM campaigns WHERE id=?',(cid,)).fetchone()
@@ -240,7 +245,7 @@ def choose(c,p):
 
 def title(p,kind,artifact,opp):
     tasks={
-      'opportunity':"ORION puis MIDAS : explore des secteurs légaux diversifiés. Si autorisés, worldbank.market compare 2–3 pays (population, internet, PIB/hab.), n8n.market_compare exploite le relevé de la mission. ORION enregistre des opportunités via opportunity; MIDAS évalue les hypothèses en EUR via assess_opportunity sur leurs ID. Macro ≠ demande; concurrence et coûts non prouvés restent hypothèses. Aucun achat.",
+      'opportunity':"ORION puis MIDAS : explore des secteurs légaux diversifiés. Si autorisés, worldbank.market compare 2–3 pays (population, internet, PIB/hab.), n8n.market_compare exploite le relevé de la mission. ORION enregistre des opportunités via opportunity; MIDAS évalue chaque ID via assess_opportunity en EUR ou explique les omissions. ATLAS s’appuie sur le registre collectif; SENTINEL si anomalies, tests autorisés et budget suffisant. Macro ≠ demande; concurrence et coûts non prouvés restent hypothèses. Aucun achat.",
       'create':"NEXUS : à partir de l’opportunité #"+str((opp or {}).get('id','?'))+" ("+str((opp or {}).get('title',''))[:160]+"), crée un petit livrable autonome interne, testable en HTML/CSV/JSON. Utilise la mémoire pour les éléments disponibles. Expérience proposée : "+str((opp or {}).get('next_test',''))[:300]+". Produis un livrable et des données synthétiques avec résultats attendus; ne prétends pas que la demande est validée.",
       'improve':"NEXUS : corrige uniquement les défauts observés dans la preuve du fichier ref:"+str(artifact)+", produis un fichier distinct, ne modifie pas l’original.",
       'functional':"SENTINEL : lis ref:"+str(artifact)+", examine les preuves antérieures, définis des assertions indépendantes sur les lacunes et exécute test_file sur ce fichier exact. Ne répète pas les tests déjà passés sans nécessité. Adapte les tests au produit et à ses critères enregistrés; distingue assertions synthétiques, performance mesurée et critères non couverts.",

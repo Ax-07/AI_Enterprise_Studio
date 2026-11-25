@@ -30,7 +30,7 @@ def smoke():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
                 page.goto(base)
-                expect(page.locator('#connection-text')).to_have_text('Serveur V0.4.2')
+                expect(page.locator('#connection-text')).to_have_text('Serveur V0.4.2.1')
                 expect(page.locator('#quick-products')).to_have_text('2')
                 expect(page.locator('#pilotage-plan')).to_contain_text('Activer ou examiner le bac à sable')
                 page.locator('#pilotage-next').click()
@@ -357,7 +357,8 @@ def smoke_owner_console():
                     assert {'capabilities','runs'}<=dossier['connecteurs'].keys()
                     assert {'sources','comparisons','ranking'}<=dossier['intelligence_economique'].keys()
                     assert [m['mission']['id'] for m in dossier['missions']]==[m['id'] for m in diag['campaign']['missions']]
-                    assert all({'reports','tasks','events'}<=m.keys() for m in dossier['missions'])
+                    assert all({'reports','tasks','events','collective_evidence'}<=m.keys() for m in dossier['missions'])
+                    assert 'collective_audit' in dossier and 'previous_laboratory' in dossier
                     assert s.SESSION not in json.dumps(dossier)
                     assert page.request.get(base+'/api/campaign_audit?id='+str(cid)).status==404
                     assert page.request.get(base+'/api/campaign_audit?id=0',headers={'X-Session':s.SESSION}).status==400
