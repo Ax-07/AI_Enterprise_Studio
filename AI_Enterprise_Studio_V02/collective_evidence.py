@@ -127,7 +127,7 @@ def campaign_summary(c,campaign):
     if not campaign:return None
     rows=[]
     for m in campaign['missions']:
-        if m['kind'] not in ('opportunity','market'):continue
+        if m['kind'] not in ('opportunity','market','commercial'):continue
         v=registry(c,m['id'])
         rows.append({k:v[k] for k in ('mission','connector_count','opportunity_count','assessed_count',
             'finding_count','review_required','sentinel_tasks')})
