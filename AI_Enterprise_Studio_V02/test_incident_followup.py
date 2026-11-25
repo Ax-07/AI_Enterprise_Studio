@@ -87,21 +87,34 @@ class IncidentFollowupTests(unittest.TestCase):
     def test_transient_recovery_same_campaign_no_duplicate_reservation(self):
         *_,old,new=self.historical();pid=self.authorize(max_campaigns=1)
         calls=[]
+        actions=[self.act('delegate','ORION','Étude interne','Aucune recherche autorisée'),
+                 self.act('finish',text='Sources manquantes, étude partielle.'),
+                 self.act('finish',text='Rapport partiel, aucun lancement.')]
         def fake(url,headers,body=None):
-            calls.append(url)
+            self.assertIn('api.openai.com',url)
+            calls.append(body['input'])
             if len(calls)==1:raise urllib.error.HTTPError(url,503,'Unavailable',{},None)
-            return self.reply(self.act('finish',text='Rapport partiel, aucun lancement.'))
+            return self.reply(actions.pop(0))
         with patch.object(s,'config',return_value=self.cfg),patch.object(s,'request',side_effect=fake):pl.worker(s,pid)
-        self.assertEqual(len(calls),2)
+        self.assertEqual(len(calls),4)
+        self.assertEqual(actions,[])
+        self.assertIn('RÔLE: ATLAS',calls[0])
+        self.assertIn('RÔLE: ATLAS',calls[1])
+        self.assertIn('RÔLE: ORION',calls[2])
+        self.assertIn('RÔLE: ATLAS',calls[3])
         with s.db() as c:
             d=pl.status(c)['plan'];self.assertEqual(d['state'],'completed',d)
             self.assertEqual(len(d['queue']),1)
             self.assertEqual(sum(e['event']=='recovered' for e in d['events']),1)
             cid=d['queue'][0]['campaign'];history=incidents.history(c,cid);self.assertEqual(len(history),1)
             ledger=list(c.execute('SELECT * FROM ledger WHERE mission=? ORDER BY id',(history[0]['mission'],)))
-            self.assertEqual(len(ledger),2);self.assertIsNone(ledger[0]['actual'])
+            self.assertEqual(len(ledger),4);self.assertIsNone(ledger[0]['actual'])
             self.assertEqual(ledger[0]['state'],'à rapprocher')
-            self.assertEqual(d['spent'],ledger[0]['reserved']+ledger[1]['actual'])
+            self.assertEqual(ledger[0]['stage'],ledger[1]['stage'])
+            self.assertTrue(all(row['actual'] is not None and row['state']=='mesuré' for row in ledger[1:]))
+            self.assertEqual(d['spent'],ledger[0]['reserved']+sum(row['actual'] for row in ledger[1:]))
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM campaign_missions WHERE campaign=?',(cid,)).fetchone()[0],1)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM tasks WHERE mission=? AND state='terminée'",(history[0]['mission'],)).fetchone()[0],2)
 
     def _failure(self,exc,wanted):
         self.historical();pid=self.authorize(max_campaigns=1)
