@@ -81,6 +81,21 @@ def recovery_kind(c,mid,cfg):
     if working_memory.recovery_task(c,mid,cfg):return 'memory'
     return None
 
+def readiness(c,cfg,locked=False):
+    campaign=c.execute("SELECT id FROM campaigns WHERE state='actif'").fetchone()
+    mission=c.execute("SELECT id FROM missions WHERE state='en cours' ORDER BY id LIMIT 1").fetchone()
+    pending=c.execute("SELECT COUNT(*) FROM requests WHERE state='en attente'").fetchone()[0]
+    remaining=max(0,cfg['budget']-c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0])
+    blockers=[]
+    if campaign:blockers.append('Campagne #'+str(campaign[0])+' en cours')
+    if mission:blockers.append('Mission #'+str(mission[0])+' en cours')
+    if locked and not campaign and not mission:blockers.append('Moteur local occupé (comparaison, test ou finalisation)')
+    if pending:blockers.append(str(pending)+' décision(s) en attente')
+    if not cfg['key']:blockers.append('Clé OpenAI non configurée')
+    if remaining<10000:blockers.append('Budget global restant inférieur à 0,01 USD')
+    return {'ready':not blockers,'blockers':blockers,'active_campaign':campaign[0] if campaign else None,
+            'active_mission':mission[0] if mission else None,'pending':pending,'remaining':remaining,'locked':bool(locked)}
+
 def status(c,cfg=None):
     p=c.execute('SELECT * FROM campaigns ORDER BY id DESC LIMIT 1').fetchone()
     if not p:return None
