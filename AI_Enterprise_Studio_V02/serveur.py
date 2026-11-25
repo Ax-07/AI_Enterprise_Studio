@@ -2,7 +2,7 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
@@ -57,6 +57,8 @@ def init():
         draft_recovery.init(c)
         business.init(c)
         acquisition.init(c)
+        acquisition_sync.init(c)
+        acquisition_sync.purge(c,business.now())
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -227,7 +229,7 @@ def status():
     cfg=config()
     with db() as c:
         campaign=autopilot.status(c,cfg)
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'business':business.status(c),'acquisition':acquisition.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'business':business.status(c),'acquisition':acquisition.status(c),'acquisition_sync':acquisition_sync.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 def campaign_audit(c,cfg,cid,historical=False):
     # Single read snapshot. Never copy config, environment or session credentials.
     campaign=autopilot.status(c,cfg,cid if historical else None)
@@ -294,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.route()=='/api/acquisition_audit' and self.headers.get('X-Session')==SESSION:
                 with db() as c:
                     c.execute('BEGIN')
-                    return self.send({'schema':'aes-acquisition-audit-v1','version':VERSION,'acquisition':acquisition.status(c)})
+                    return self.send({'schema':'aes-acquisition-audit-v1','version':VERSION,'acquisition':acquisition.status(c),'sync':acquisition_sync.status(c)})
             if self.route()=='/api/business_audit' and self.headers.get('X-Session')==SESSION:
                 with db() as c:
                     c.execute('BEGIN')
@@ -365,10 +367,28 @@ class Handler(BaseHTTPRequestHandler):
             route=self.route()
             business_routes={'/api/business/authorize':business.authorize,'/api/business/observe':business.observe,
                 '/api/business/close':business.close,'/api/business/receipt':business.receipt}
+            if route in ('/api/acquisition/test_bind','/api/acquisition/test_unbind'):
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    page=(acquisition_sync.bind if route.endswith('/test_bind') else acquisition_sync.revoke)(c,p)
+                return self.send({'page':page})
+            if route=='/api/acquisition/test_sync':
+                business.fields(p,('page',))
+                with db() as c:
+                    row=acquisition_sync.link(c,p['page'])
+                    if acquisition_sync.state(c,row,business.now())!='test_link':raise ValueError('Liaison TEST inactive')
+                key=acquisition_sync.key()
+                envelope=acquisition_sync.fetch(p['page'],key)
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    result=acquisition_sync.ingest(c,key,p['page'],envelope)
+                    acquisition_sync.purge(c,business.now())
+                return self.send(result)
             if route in ('/api/acquisition/prepare','/api/acquisition/revoke'):
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
                     oid=(acquisition.prepare if route.endswith('/prepare') else acquisition.revoke)(c,p)
+                    acquisition_sync.purge(c,business.now())
                 return self.send({'id':oid})
             if route in business_routes:
                 # Local recordkeeping only, no worker, connector, or budget mutation.
