@@ -577,6 +577,7 @@ if __name__=='__main__':
     if '--no-browser' not in __import__('sys').argv: threading.Timer(0.5,lambda:webbrowser.open(f'http://127.0.0.1:{PORT}')).start()
     shutdown=threading.Event()
     threading.Thread(target=periodic.loop,args=(sys.modules[__name__],shutdown),daemon=True).start()
+    threading.Thread(target=acquisition_sync.loop,args=(sys.modules[__name__],shutdown),daemon=True).start()
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: shutdown.set();server.server_close()
