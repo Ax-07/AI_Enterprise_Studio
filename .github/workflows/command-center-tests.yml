@@ -42,5 +42,16 @@ jobs:
       - name: Laboratory real browser benchmark
         run: python smoke_laboratory.py
 
+  n8n-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: AI_Enterprise_Studio_V02
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: n8n isolated real workflow integration
         run: python smoke_n8n_real.py

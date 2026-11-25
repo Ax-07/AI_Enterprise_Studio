@@ -32,17 +32,37 @@ def main():
             def cli(*args):docker('run','--rm','--network','none',*env,*mounts,IMAGE,*args)
             cli('import:credentials','--input=/aes-import/credentials.json')
             cli('import:workflow','--input=/aes-import/workflows.json')
-            for wid in workflow_ids:cli('publish:workflow','--id='+wid)
         docker('run','-d','--name',name,*env,'-v',vol+':/home/node/.n8n','-p','127.0.0.1:5678:5678',IMAGE)
         for _ in range(60):
             conn=http.client.HTTPConnection('127.0.0.1',5678,timeout=2)
             try:
-                conn.request('GET','/healthz');resp=conn.getresponse();resp.read()
+                conn.request('GET','/healthz/readiness');resp=conn.getresponse();resp.read()
                 if resp.status==200:break
             except OSError:pass
             finally:conn.close()
             time.sleep(1)
         else:raise RuntimeError('n8n not ready')
+        for wid in workflow_ids:
+            pub=docker('exec','-u','node',name,'n8n','publish:workflow','--id='+wid)
+            print(pub.stdout.replace(token,'[REDACTED]')[-1200:])
+        # Startup health only describes DB readiness. The publication service registers routes asynchronously.
+        # Probe with an intentionally incorrect secret, never replay a valid execution.
+        for cap in (n.HEALTH,n.METRICS):
+            registered=False
+            for _ in range(40):
+                conn=http.client.HTTPConnection('127.0.0.1',5678,timeout=2)
+                try:
+                    conn.request('POST',n.PATHS[cap],body='{}',headers={'Content-Type':'application/json','X-AES-Token':'invalid-ci-token'})
+                    response=conn.getresponse();response.read(8193)
+                    if response.status in (401,403):registered=True;break
+                    if response.status!=404:raise RuntimeError('Unexpected unauthenticated webhook HTTP '+str(response.status))
+                except OSError:pass
+                finally:conn.close()
+                time.sleep(1)
+            if not registered:
+                logs=docker('logs','--tail','35',name,check=False).stdout.replace(token,'[REDACTED]')
+                print(logs[-6000:])
+                raise RuntimeError('Published webhook not registered: '+cap)
         os.environ['AES_N8N_TOKEN']=token
         result=n.call(n.HEALTH,'{}',secrets.token_hex(16));assert result['result']=={'ready':True}
         result=n.call(n.METRICS,'{"values":[10,-3,7]}',secrets.token_hex(16));assert result['result']=={'count':3,'sum':14,'min':-3,'max':10}
