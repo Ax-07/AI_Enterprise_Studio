@@ -137,6 +137,19 @@ def page(c,page_id,t):
             'limitations':m['limitations'],'price_cents':m['price_cents'],
             'collection_open':bool(_collection(row,t)),'notice':NOTICE_VERSION}
 
+def inspect(c,key,page_id,nonce,t):
+    """Authenticated state proof; nonce prevents reuse of a previous response."""
+    ident(page_id);ident(nonce)
+    row=c.execute('SELECT * FROM channel_pages WHERE id=?',(page_id,)).fetchone()
+    payload={'page':page_id,'nonce':nonce,'mode':'test','at':t,'exists':bool(row),
+             'publication_hash':hashlib.sha256(row['manifest'].encode()).hexdigest() if row else None,
+             'collection_hash':hashlib.sha256(row['collection'].encode()).hexdigest() if row and row['collection'] else None,
+             'publication_revoked':bool(row and row['revoked'] is not None),
+             'collection_revoked':bool(row and row['collection_revoked'] is not None),
+             'publication_open':bool(row and _active(row,t)),
+             'collection_open':bool(row and _collection(row,t))}
+    return {'payload':payload,'signature':sign(key,'status-v1',payload)}
+
 def participant_token(key,page_id,nonce=None):
     ident(page_id)
     nonce=secrets.token_hex(16) if nonce is None else ident(nonce)
