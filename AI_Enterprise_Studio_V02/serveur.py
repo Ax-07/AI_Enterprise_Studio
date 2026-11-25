@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.4"
+VERSION="0.4.5"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -49,6 +49,7 @@ def init():
         improvement.init(c)
         connectors.init(c)
         commercial.init(c)
+        incidents.init(c)
         planner.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
@@ -224,7 +225,8 @@ def campaign_audit(c,cfg,cid,historical=False):
         reports=[dict(r) for r in c.execute('SELECT * FROM reports WHERE mission=? ORDER BY id',(mid,))]
         tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=? ORDER BY id',(mid,))]
         events=[dict(r) for r in c.execute('SELECT id,task,agent,action,substr(args,1,600) AS args,substr(result,1,800) AS result,ok,created FROM events WHERE mission=? ORDER BY id DESC LIMIT 100',(mid,))]
-        missions.append({'mission':m,'reports':reports,'tasks':tasks,'events':events,'collective_evidence':collective_evidence.registry(c,mid),'research':research.mission(c,mid,full=True)})
+        ledger=[dict(r) for r in c.execute('SELECT id,mission,model,agent,stage,state,reserved,actual,input_tokens,output_tokens,diagnostic FROM ledger WHERE mission=? ORDER BY id',(mid,))]
+        missions.append({'mission':m,'reports':reports,'tasks':tasks,'events':events,'ledger':ledger,'collective_evidence':collective_evidence.registry(c,mid),'research':research.mission(c,mid,full=True)})
     return {'schema':'aes-campaign-audit-v1','version':VERSION,'campaign_id':cid,
         'diagnostic_campagne':{'version':VERSION,'readiness':autopilot.readiness(c,cfg,LOCK.locked()),'campaign':campaign},
         'connecteurs':connectors.status(c),'intelligence_economique':intelligence.status(c,full=True),

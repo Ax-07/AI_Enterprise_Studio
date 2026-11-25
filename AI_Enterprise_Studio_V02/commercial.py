@@ -6,7 +6,7 @@ import portfolio
 import research
 
 LIMIT='Préparation interne uniquement. Citations vérifiées dans des extraits locaux, interprétation non certifiée. Aucun prospect contacté, aucune exposition mesurée, aucune vente ni dépense commerciale. Un protocole n’est pas un test exécuté.'
-ACTIONS={'commercial_signal':'ORION','commercial_offer':'HERMES','commercial_economics':'MIDAS','commercial_review':'SENTINEL'}
+ACTIONS={'commercial_signal':'ORION','commercial_offer':'HERMES','commercial_economics':'MIDAS','commercial_review':'SENTINEL','commercial_extend':'SENTINEL'}
 KINDS=('buyer_problem','competitor_offer','competitor_price','alternative','constraint')
 OFFER_FIELDS=('audience','problem','offer','deliverables','price_cents','channel','metric','sample_size','success_min','duration_days','signal_ids','risks')
 OFFER_TEXT=('audience','problem','offer','deliverables','channel','risks')
@@ -29,8 +29,34 @@ def init(c):
         id INTEGER PRIMARY KEY, offer INTEGER NOT NULL UNIQUE REFERENCES commercial_offers(id),
         mission INTEGER NOT NULL REFERENCES missions(id), review TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS commercial_recoveries(task INTEGER PRIMARY KEY REFERENCES tasks(id),mission INTEGER NOT NULL REFERENCES missions(id),created TEXT DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS commercial_followups(
+        campaign INTEGER PRIMARY KEY REFERENCES campaigns(id),base_offer INTEGER NOT NULL UNIQUE REFERENCES commercial_offers(id),
+        resulting_offer INTEGER UNIQUE REFERENCES commercial_offers(id),created TEXT DEFAULT CURRENT_TIMESTAMP);
         CREATE INDEX IF NOT EXISTS commercial_signals_project ON commercial_signals(project,id);
         CREATE INDEX IF NOT EXISTS commercial_offers_project ON commercial_offers(project,id);""")
+
+def followup(c,cid):
+    return c.execute('SELECT * FROM commercial_followups WHERE campaign=?',(cid,)).fetchone()
+
+def followup_mission(c,mid):
+    return c.execute('SELECT f.* FROM commercial_followups f JOIN campaign_missions cm ON cm.campaign=f.campaign WHERE cm.mission=?',(mid,)).fetchone()
+
+def eligible_followup(c,pid,aid):
+    if not aid:return None
+    offer=project_status(c,pid)['offer']
+    if not offer or offer['artifact']!=aid or offer['state']!='preparation_incomplete':return None
+    if set(offer['gaps'])!={'indices_documentaires_insuffisants','revue_independante_manquante_ou_reserves'}:return None
+    if not offer['review'] or offer['review']['verdict']!='study_further':return None
+    if not offer['economics'] or offer['economics']['result']['monthly_result_cents']<=0:return None
+    # Only one automatic documentary complement per product version, including if unsuccessful.
+    if c.execute("""SELECT 1 FROM commercial_followups f JOIN commercial_offers o ON o.id=f.base_offer
+        WHERE o.project=? AND o.artifact=?""",(pid,aid)).fetchone():return None
+    return offer
+
+def authorize_followup(c,cid,pid,aid,oid):
+    offer=eligible_followup(c,pid,aid)
+    if type(oid) is not int or not offer or offer['id']!=oid:raise ValueError('Offre à compléter non admissible ou modifiée')
+    c.execute('INSERT INTO commercial_followups(campaign,base_offer) VALUES(?,?)',(cid,oid))
 
 def scope(c,mid):
     return c.execute("""SELECT cp.project,ca.source,ca.state,ca.permissions,m.mode,m.state AS mission_state,p.state AS project_state
@@ -65,8 +91,8 @@ def _proof(c,row):
 def signals(c,pid,mid=None,limit=12):
     out=[]
     for row in c.execute("""SELECT s.* FROM commercial_signals s JOIN missions m ON m.id=s.mission
-        WHERE s.project=? AND m.mode='cloud' AND (m.state='terminée' OR s.mission=?)
-        ORDER BY s.id DESC LIMIT ?""",(pid,mid,limit)):
+        WHERE s.project=? AND m.mode='cloud' AND (m.state='terminée' OR s.mission=?) AND (? IS NULL OR s.mission<=?)
+        ORDER BY s.id DESC LIMIT ?""",(pid,mid,mid,mid,limit)):
         try: proof=_proof(c,row)
         except (ValueError,TypeError,KeyError,AttributeError):continue
         excerpt=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(row['page'],)).fetchone()[0])['texte']
@@ -100,7 +126,41 @@ def execute(c,t,action,target,text,detail):
     flags=intel.decode(sc['permissions'])
     if not flags['market'] or (action=='commercial_signal' and not flags['research']) or (action=='commercial_review' and not flags['tests']):
         raise ValueError('Autorisation manquante')
-    pid=sc['project']
+    pid=sc['project'];follow=followup_mission(c,mid)
+    if follow and action not in ('commercial_signal','commercial_extend'):raise ValueError('Complément documentaire : offre et économie historiques immuables')
+    if action=='commercial_extend':
+        if not follow or not flags['tests'] or follow['resulting_offer'] is not None or _id(target)!=follow['base_offer']:raise ValueError('Complément non autorisé')
+        d=_obj(text,('signal_ids','verdict','gaps','risks'))
+        _text(d,'gaps',10,1600);_text(d,'risks',5,800)
+        if d['verdict'] not in ('revise','study_further','propose_future_test'):raise ValueError('Verdict non autorisé')
+        if not c.execute("SELECT 1 FROM tasks WHERE mission=? AND agent='ORION' AND state='terminée'",(mid,)).fetchone():raise ValueError('Recherche ORION terminée requise')
+        base=c.execute('SELECT * FROM commercial_offers WHERE id=? AND project=?',(follow['base_offer'],pid)).fetchone()
+        if not base or base['artifact']!=sc['source']:raise ValueError('Référence d’origine modifiée')
+        art=portfolio.latest(c,pid)
+        if not art or art['id']!=base['artifact'] or hashlib.sha256(art['content'].encode()).hexdigest()!=base['artifact_sha256']:raise ValueError('Empreinte d’origine modifiée')
+        old=offer_status(c,base)
+        if set(old['gaps'])!={'indices_documentaires_insuffisants','revue_independante_manquante_ou_reserves'}:raise ValueError('Offre d’origine non admissible')
+        ids=d['signal_ids']
+        if not isinstance(ids,list) or not 1<=len(ids)<=10 or any(type(x) is not int or x<=0 or x>9007199254740991 for x in ids) or len(set(ids))!=len(ids):raise ValueError('IDs de signaux invalides')
+        new=False
+        for sid in ids:
+            signal,proof=_signal(c,pid,sid,mid)
+            if signal['mission']==mid:
+                raw=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(signal['page'],)).fetchone()[0])
+                if research.excerpt_quality(raw['texte'])=='text_available' and not c.execute("""SELECT 1 FROM commercial_signals s JOIN fetched f ON f.id=s.page
+                    WHERE s.project=? AND s.mission<>? AND s.kind=? AND s.quote=? AND f.url=?""",(pid,mid,signal['kind'],signal['quote'],proof['url'])).fetchone():new=True
+        if not new:raise ValueError('Au moins un nouvel indice documentaire exploitable requis')
+        plan=intel.decode(base['plan'])
+        if not set(plan['signal_ids']).issubset(ids):raise ValueError('Conserver les signaux historiques de l’offre')
+        eco=old['economics'];plan['signal_ids']=ids;plan['risks']=d['risks']
+        oid=c.execute('INSERT INTO commercial_offers(project,mission,artifact,artifact_sha256,plan) VALUES(?,?,?,?,?)',
+            (pid,mid,base['artifact'],base['artifact_sha256'],intel.canonical(plan))).lastrowid
+        eid=c.execute('INSERT INTO commercial_economics(offer,mission,assumptions,result) VALUES(?,?,?,?)',
+            (oid,mid,intel.canonical(eco['assumptions']),intel.canonical(eco['result']))).lastrowid
+        rid=c.execute('INSERT INTO commercial_reviews(offer,mission,review) VALUES(?,?,?)',
+            (oid,mid,intel.canonical({'verdict':d['verdict'],'gaps':d['gaps']}))).lastrowid
+        c.execute('UPDATE commercial_followups SET resulting_offer=? WHERE campaign=?',(oid,follow['campaign']))
+        return {'offer':oid,'base_offer':base['id'],'economics':eid,'economics_reused_from':eco['id'],'review':rid,'verdict':d['verdict'],'external_authorized':False,'limit':LIMIT}
     if action=='commercial_signal':
         d=_obj(text,('kind','quote','interpretation'));page=_id(target)
         if d['kind'] not in KINDS:raise ValueError('Catégorie de signal invalide')
@@ -174,7 +234,7 @@ def offer_status(c,row):
     economics={'id':eco['id'],'assumptions':intel.decode(eco['assumptions']),'result':intel.decode(eco['result'])} if eco else None
     if economics:
         d=economics['assumptions'];v=(d['variable_cost_cents']*120+99)//100;units=max(1,d['monthly_units']//2)
-        economics['adverse_parameters']={'price_cents':plan['price_cents'],'variable_cost_cents':v,'monthly_units':units,'fixed_month_cents':d['fixed_month_cents'],'rule':'Volume divisé par deux (arrondi inférieur, minimum 1); coût variable +20 % (arrondi supérieur au centime); prix et fixes inchangés.'}
+        economics['adverse_parameters']={'price_cents':plan['price_cents'],'variable_cost_cents':v,'monthly_units':units,'fixed_month_cents':d['fixed_month_cents'],'breakeven_units':(d['fixed_month_cents']+plan['price_cents']-v-1)//(plan['price_cents']-v) if plan['price_cents']>v else None,'rule':'Volume divisé par deux (arrondi inférieur, minimum 1); coût variable +20 % (arrondi supérieur au centime); prix et fixes inchangés.'}
     audit={'id':review['id'],**intel.decode(review['review'])} if review else None
     gaps=[]
     if not independent:gaps.append('preuve_technique_independante_manquante')
@@ -184,7 +244,8 @@ def offer_status(c,row):
     if not audit or audit['verdict']!='propose_future_test':gaps.append('revue_independante_manquante_ou_reserves')
     m=c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()
     if m['state']!='terminée':gaps.append('mission_non_terminee')
-    return {'id':row['id'],'project':pid,'mission':mid,'artifact':row['artifact'],'artifact_sha256':row['artifact_sha256'],
+    origin=c.execute('SELECT base_offer FROM commercial_followups WHERE resulting_offer=?',(row['id'],)).fetchone()
+    return {'id':row['id'],'base_offer':origin['base_offer'] if origin else None,'project':pid,'mission':mid,'artifact':row['artifact'],'artifact_sha256':row['artifact_sha256'],
         'plan':plan,'evidence':evidence,'invalid_signal_ids':invalid,'economics':economics,'review':audit,
         'technical_proofs':proofs,'laboratory':lab,'gaps':gaps,
         'state':'proposition_a_examiner' if not gaps else 'preparation_incomplete',
@@ -192,7 +253,7 @@ def offer_status(c,row):
 
 def project_status(c,pid,mid=None):
     row=c.execute("""SELECT o.* FROM commercial_offers o JOIN missions m ON m.id=o.mission WHERE o.project=?
-        AND (m.state='terminée' OR o.mission=?) ORDER BY o.id DESC LIMIT 1""",(pid,mid)).fetchone()
+        AND (m.state='terminée' OR o.mission=?) AND (? IS NULL OR o.mission<=?) ORDER BY o.id DESC LIMIT 1""",(pid,mid,mid,mid)).fetchone()
     return {'project':pid,'signals':signals(c,pid,mid),'offer':offer_status(c,row) if row else None,'limit':LIMIT}
 
 def context(c,mid):
@@ -202,6 +263,8 @@ def context(c,mid):
     opp=c.execute('SELECT id,title,body,next_test FROM opportunities WHERE id=?',(p['opportunity'],)).fetchone()
     art=portfolio.latest(c,pid)
     v=project_status(c,pid,mid)
+    follow=followup_mission(c,mid)
+    if follow:v['followup']={**dict(follow),'limit':'Prix, offre, protocole et hypothèses économiques conservés; risques et revue actualisés uniquement si nouvel indice. Aucun lancement.'}
     v['activity']={'id':pid,'title':p['title'],'opportunity':dict(opp) if opp else None}
     v['reference']={'id':art['id'],'name':art['name'],'version':art['version'],
         'proofs':portfolio.evidence(c,art),'laboratory':portfolio.laboratory.canonical(c,art)} if art else None

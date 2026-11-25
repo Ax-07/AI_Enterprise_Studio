@@ -1,5 +1,5 @@
 """Persistent bounded orchestration, reuses the existing campaign engine."""
-import json,hashlib,threading
+import json,hashlib,threading,re,unicodedata
 from decimal import Decimal,InvalidOperation
 import autopilot,portfolio,commercial,collective_evidence,laboratory
 
@@ -69,7 +69,23 @@ def attempted_commercial(c,pid,aid):
     return c.execute("""SELECT 1 FROM campaign_projects cp JOIN campaigns ca ON ca.id=cp.campaign
         WHERE cp.project=? AND cp.scope='commercial' AND ca.source IS ? LIMIT 1""",(pid,aid)).fetchone() is not None
 
-def candidates(c):
+def related(c):
+    """Conservative lexical suggestions only. No merged IDs or evidence transfer."""
+    rows=[dict(x) for x in c.execute("SELECT id,title FROM projects WHERE state='active' ORDER BY id")]
+    def terms(title):
+        t=unicodedata.normalize('NFKD',title.lower())
+        t=''.join(x for x in t if not unicodedata.combining(x))
+        words=set(re.findall(r'[a-z]{4,}',t))
+        return {('commerce' if w.startswith('commerc') else w.rstrip('s')) for w in words}-{'pour','avec','automatique','automatise','automatisation','controle','qualite','fichier','produit','outil'}
+    out=[]
+    for i,x in enumerate(rows):
+        for y in rows[i+1:]:
+            a,b=terms(x['title']),terms(y['title']);shared=a&b
+            if len(shared)>=2 and (len(shared)/max(1,min(len(a),len(b)))>=.5 or {'commerce','multilingue'}.issubset(shared)):
+                out.append({'projects':[x['id'],y['id']],'titles':[x['title'],y['title']],'shared_terms':sorted(shared),'classification':'similarité lexicale à examiner; aucune équivalence démontrée'})
+    return out[:30]
+
+def candidates(c,search_cap=0):
     """Read only, exact portfolio lineage, deterministic ordering, never infer product equivalence."""
     ready=[];held=[]
     for p in c.execute('SELECT * FROM projects ORDER BY id'):
@@ -97,19 +113,24 @@ def candidates(c):
             independent=any(x['agent']=='SENTINEL' and x['status']=='passed' for x in proofs) and not any(x['agent']=='SENTINEL' and x['status']=='failed' for x in proofs)
             if laboratory.supports(art):
                 lab=laboratory.canonical(c,art);independent=independent and bool(lab and lab['status']=='passed')
+            follow=commercial.eligible_followup(c,pid,aid) if independent else None
+            if follow and search_cap>0:
+                ready.append({**record,'kind':'commercial','base_offer':follow['id'],'priority':-1,'reason':'Compléter les preuves documentaires de l’offre #'+str(follow['id'])+' sans refaire l’offre ni les calculs.'});continue
             if independent and not attempted_commercial(c,pid,aid):
                 ready.append({**record,'kind':'commercial','priority':0,'reason':'Produit exact et preuves indépendantes disponibles; préparer une offre sans lancement.'});continue
             if independent and (not step or step[0]=='market'):
-                hold('Préparation commerciale déjà autorisée sur cette référence; aucun nouveau signal justifiant une répétition.');continue
+                hold('Complément possible avec quota Brave positif.' if follow else 'Préparation commerciale déjà autorisée sur cette référence; aucun nouveau signal justifiant une répétition.');continue
         if not step:hold(reason);continue
         kind,ref,_=step
         if kind not in ('create','improve','functional','laboratory'):
             hold('Étape non retenue par le planificateur.');continue
         ready.append({**record,'artifact':ref,'kind':kind,'priority':1 if kind in ('functional','laboratory','improve') else 2,'reason':reason})
-    return {'ready':sorted(ready,key=lambda x:(x['priority'],-(x['score'] or 0),x['project'])),'held':held,'limit':LIMIT}
+    return {'ready':sorted(ready,key=lambda x:(x['priority'],-(x['score'] or 0),x['project'])),'held':held,'related':related(c),'limit':LIMIT}
 
 def status(c):
     row=latest(c);preview=candidates(c)
+    with_search=candidates(c,3)
+    preview['documentary_candidates']=[x for x in with_search['ready'] if x.get('base_offer')]
     if not row:return {'plan':None,'preview':preview,'limit':LIMIT}
     d=dict(row);d['queue']=queue(c,row['id']);d['spent'],d['searches']=totals(c,row['id'])
     d['remaining']=max(0,d['budget']-d['spent'])
@@ -183,7 +204,22 @@ def next_campaign(c,pid,cfg):
     rows=queue(c,pid)
     if rows and rows[-1]['state']=='actif':return rows[-1]['campaign']
     if rows and rows[-1]['state']!='terminé':
-        change(c,pid,'blocked','Campagne #'+str(rows[-1]['campaign'])+' : '+rows[-1]['campaign_reason']);return None
+        child=rows[-1];cid=child['campaign']
+        # Only one automatic recovery per linked campaign; no quota renewal.
+        st=autopilot.status(c,cfg,cid)
+        prior=any(json.loads(e[0]).get('campaign')==cid for e in c.execute("SELECT detail FROM enterprise_plan_events WHERE plan=? AND event='recovered'",(pid,)))
+        if child['state']=='bloqué' and not prior and st['recovery_kind'] in ('transient','commercial') and autopilot.readiness(c,cfg)['ready']:
+            spent,_=totals(c,pid)
+            if child['campaign_budget']-autopilot.costs(c,cid)<=p['budget']-spent:
+                c.execute('SAVEPOINT recovery_attempt')
+                try:
+                    autopilot.resume(c,cid,cfg)
+                    log(c,pid,'recovered',{'campaign':cid,'kind':st['recovery_kind'],'spent_before':spent})
+                except ValueError:
+                    c.execute('ROLLBACK TO recovery_attempt');c.execute('RELEASE recovery_attempt')
+                else:
+                    c.execute('RELEASE recovery_attempt');return cid
+        change(c,pid,'blocked','Campagne #'+str(cid)+' : '+child['campaign_reason']);return None
     if len(rows)>=p['max_campaigns']:
         change(c,pid,'completed','Nombre maximal de campagnes atteint.');return None
     ready=autopilot.readiness(c,cfg)
@@ -194,11 +230,11 @@ def next_campaign(c,pid,cfg):
     if amount<10000:
         change(c,pid,'completed','Budget restant insuffisant pour une nouvelle campagne.');return None
     portfolio.sync(c)
-    preview=candidates(c)
-    tried={(x['project'],x['kind'],x['artifact']) for x in rows}
-    items=[x for x in preview['ready'] if (x['project'],x['kind'],x['artifact']) not in tried]
     available=max(0,cfg['limit']-c.execute('SELECT COUNT(*) FROM searches').fetchone()[0])
     cap=min(3,max(0,p['search_cap']-searched),available) if cfg['brave'] else 0
+    preview=candidates(c,cap)
+    tried={(x['project'],x['kind'],x['artifact']) for x in rows}
+    items=[x for x in preview['ready'] if (x['project'],x['kind'],x['artifact']) not in tried]
     item=items[0] if items else None
     if not item and p['explore'] and cap and not any(x['kind']=='opportunity' for x in rows):
         recent=c.execute("""SELECT 1 FROM campaign_missions cm JOIN missions m ON m.id=cm.mission
@@ -215,14 +251,16 @@ def next_campaign(c,pid,cfg):
         'permissions':flags,'search_cap':cap,'connector_cap':0,'connector_budget':'0',
         'project':item['project'] if item['project'] is not None else 'explore',
         'campaign_mode':'commercial' if kind=='commercial' else 'explore' if kind=='opportunity' else 'progression'}
-    if kind=='commercial':body['commercial']=True
+    if kind=='commercial':
+        body['commercial']=True
+        if item.get('base_offer'):body['commercial_followup']=item['base_offer']
     cid=autopilot.start(c,body,cfg)
     # Verify exact selection before committing. Rollback whole allocation on drift.
     selected=autopilot.choose(c,autopilot._campaign(c,cid))[0]
     if not selected or selected[0]!=kind or selected[1]!=item['artifact']:raise ValueError('Étape sélectionnée différente du plan')
     c.execute('INSERT INTO enterprise_plan_queue(plan,project,artifact,kind,reason,campaign) VALUES(?,?,?,?,?,?)',
         (pid,item['project'],item['artifact'],kind,item['reason'],cid))
-    log(c,pid,'allocated',{'campaign':cid,'kind':kind,'project':item['project'],'artifact':item['artifact'],'reason':item['reason'],'budget':amount,'search_cap':cap})
+    log(c,pid,'allocated',{'campaign':cid,'kind':kind,'project':item['project'],'artifact':item['artifact'],'reason':item['reason'],'budget':amount,'search_cap':cap,'base_offer':item.get('base_offer')})
     return cid
 
 def worker(s,pid):

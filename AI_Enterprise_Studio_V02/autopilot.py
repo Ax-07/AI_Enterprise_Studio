@@ -4,6 +4,7 @@ import protocol_recovery
 import working_memory
 import portfolio
 import commercial
+import incidents
 import laboratory
 import improvement
 import connectors
@@ -60,7 +61,12 @@ def permitted(c,mid,agent,base):
     else:
         if not flags['market']:allowed-=set(commercial.ACTIONS)
         if not flags['research']:allowed.discard('commercial_signal')
-        if not flags['tests']:allowed.discard('commercial_review')
+        if not flags['tests']:allowed-={'commercial_review','commercial_extend'}
+        follow=commercial.followup(c,p['id'])
+        if follow:
+            allowed&={'finish','delegate','search','read','commercial_signal','commercial_extend'}
+            if agent!='ORION':allowed-={'search','read','commercial_signal'}
+        else:allowed.discard('commercial_extend')
     if not flags['research'] or p['search_cap']==0: allowed-={'search','read'}
     elif searches(c,p['id'])>=p['search_cap']:allowed.discard('search')
     if not flags['production'] or kind not in ('create','improve'): allowed.discard('write_file')
@@ -70,8 +76,9 @@ def permitted(c,mid,agent,base):
     if not flags['research'] or kind not in ('opportunity','market') or not connectors.campaign_status(c,p['id'])['max_calls']:allowed.discard('connector')
     return allowed,p
 
-def delegable(p):
+def delegable(p,c=None):
     agents=set(ROLES[p['kind']])
+    if c is not None and commercial.followup(c,p['id']):agents&={'ORION','SENTINEL'}
     if p['kind'] in ('opportunity','commercial') and not json.loads(p['permissions'])['tests']:agents.discard('SENTINEL')
     return agents
 
@@ -80,7 +87,8 @@ def guard(c,mid,agent,action,target,base):
     if not p:return
     if p['state']!=ACTIVE: raise ValueError('Autopilote arrêté')
     if action not in allowed: raise ValueError('Action hors autorisations Autopilote')
-    if action=='delegate' and target not in delegable(p): raise ValueError('Agent hors périmètre de cette mission Autopilote')
+    if action=='delegate' and commercial.followup(c,p['id']) and target not in ('ORION','SENTINEL'):raise ValueError('Complément documentaire : ORION et SENTINEL uniquement')
+    if action=='delegate' and target not in delegable(p,c): raise ValueError('Agent hors périmètre de cette mission Autopilote')
 
 def _campaign(c,cid):
     return c.execute('SELECT * FROM campaigns WHERE id=?',(cid,)).fetchone()
@@ -93,6 +101,7 @@ def recovery_kind(c,mid,cfg):
     if protocol_recovery.recovery_task(c,mid,cfg):return 'protocol'
     if working_memory.recovery_task(c,mid,cfg):return 'memory'
     if commercial.recovery_task(c,mid,cfg):return 'commercial'
+    if incidents.eligible(c,mid,cfg):return 'transient'
     return None
 
 def readiness(c,cfg,locked=False):
@@ -117,6 +126,7 @@ def status(c,cfg=None,cid=None):
     d['spent']=costs(c,p['id']);d['searches']=searches(c,p['id']);d['missions']=[dict(x) for x in _missions(c,p['id'])]
     d['recovery_kind']=recovery_kind(c,d['missions'][-1]['id'],cfg) if cfg and p['state']=='bloqué' and d['missions'] else None
     d['recoverable']=bool(d['recovery_kind'])
+    d['incident_recoveries']=incidents.history(c,p['id'])
     d['commercial_recoveries']=[dict(x) for x in c.execute('SELECT cr.* FROM commercial_recoveries cr JOIN campaign_missions cm ON cm.mission=cr.mission WHERE cm.campaign=? ORDER BY cr.task',(p['id'],))]
     d['connectors']=connectors.campaign_status(c,p['id'])
     d['laboratory']=[laboratory.summary_row(r) for r in c.execute('SELECT * FROM laboratory_runs WHERE campaign=?',(p['id'],))]
@@ -180,6 +190,9 @@ def start(c,body,cfg):
     cid=c.execute("""INSERT INTO campaigns(goal,budget,max_missions,permissions,search_cap,source,state)
         VALUES(?,?,?,?,?,?,'actif')""",(goal.strip(),budget,count,json.dumps(flags),cap,source)).lastrowid
     if 'project' in body:c.execute('INSERT INTO campaign_projects(campaign,project,scope) VALUES(?,?,?)',(cid,pid,scope))
+    if 'commercial_followup' in body:
+        if scope!='commercial' or not cap or not flags['research'] or not flags['tests']:raise ValueError('Complément : recherche et revue autorisées, quota Brave positif requis')
+        commercial.authorize_followup(c,cid,pid,source,body['commercial_followup'])
     connectors.authorize_campaign(c,cid,body)
     if frozen is not None:improvement.begin(c,cid,pid,artifact,mode,goal.strip(),frozen)
     return cid
@@ -204,6 +217,7 @@ def resume(c,cid,cfg):
     ms=_missions(c,cid)
     kind=recovery_kind(c,ms[-1]['id'],cfg) if p['state']=='bloqué' and ms else None
     recover=bool(kind)
+    if kind=='transient':incidents.record(c,ms[-1]['id'],cfg)
     if kind=='commercial':
         tid=commercial.recovery_task(c,ms[-1]['id'],cfg)
         c.execute('INSERT INTO commercial_recoveries(task,mission) VALUES(?,?)',(tid,ms[-1]['id']))
@@ -320,7 +334,10 @@ def worker(s,cid):
                                     c.execute("UPDATE campaigns SET state='terminé',reason='Une expérience locale maximum par campagne; examiner les résultats.' WHERE id=?",(cid,));return
                                 lab_artifact=artifact
                             else:
-                                mid=s.moteur.create(s,c,improvement.production_title(cy,improvement.row(c,artifact)) if cy else title(p,kind,artifact,opp),'cloud',artifact_id=artifact)
+                                follow=commercial.followup(c,cid) if kind=='commercial' else None
+                                mission_title=improvement.production_title(cy,improvement.row(c,artifact)) if cy else title(p,kind,artifact,opp)
+                                if follow:mission_title=("COMPLÉMENT DOCUMENTAIRE — offre #"+str(follow['base_offer'])+" ; ATLAS délègue ORION pour rechercher les besoins acheteurs et alternatives/prix, lire les pages et enregistrer de nouveaux commercial_signal. Puis SENTINEL seulement pour commercial_extend sur l’offre historique : conserver les signaux précédents, ajouter les nouveaux indices exploitables, réviser risques et revue. Aucun nouveau prix, protocole, calcul MIDAS ou offre HERMES. Si aucun nouvel indice exploitable, terminer sans nouvelle offre. Aucun lancement externe.")
+                                mid=s.moteur.create(s,c,mission_title,'cloud',artifact_id=artifact)
                                 c.execute('INSERT INTO campaign_missions(campaign,mission,kind,artifact) VALUES(?,?,?,?)',(cid,mid,kind,artifact))
                                 scoped=portfolio.scope(c,cid)
                                 if scoped and scoped['project'] is not None:portfolio.attach(c,mid,scoped['project'],'campagne ciblée')

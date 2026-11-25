@@ -13,11 +13,11 @@ class Diagnostic(unittest.TestCase):
                 with patch.object(s,'PORT',port):
                     base=f'http://127.0.0.1:{port}'
                     with urllib.request.urlopen(base+'/api/health') as r:
-                        self.assertEqual(r.headers['X-Enterprise-Version'],'0.4.4');self.assertFalse(json.load(r)['paid_call'])
+                        self.assertEqual(r.headers['X-Enterprise-Version'],'0.4.5');self.assertFalse(json.load(r)['paid_call'])
                     with urllib.request.urlopen(urllib.request.Request(base+'/api/status',headers={'X-Session':s.SESSION})) as r:
-                        v=json.load(r);self.assertEqual(v['version'],'0.4.4');self.assertTrue(v['resume_supported'])
+                        v=json.load(r);self.assertEqual(v['version'],'0.4.5');self.assertTrue(v['resume_supported'])
                     with urllib.request.urlopen(base+'/?refresh=1') as r:
-                        html=r.read().decode();self.assertIn('V0.4.4',html);self.assertIn(s.SESSION,html)
+                        html=r.read().decode();self.assertIn('V0.4.5',html);self.assertIn(s.SESSION,html)
                     with self.assertRaises(urllib.error.HTTPError) as ctx: urllib.request.urlopen(base+'/api/unknown')
                     self.assertEqual(ctx.exception.code,404); self.assertIn('GET /api/unknown',json.load(ctx.exception)['error'])
                     with s.db() as c:self.assertEqual(s.used(c),0)
