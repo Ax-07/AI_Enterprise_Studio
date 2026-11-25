@@ -172,6 +172,9 @@ def offer_status(c,row):
     domains={urlsplit(x['proof']['url']).hostname for x in usable}
     kinds={x['kind'] for x in usable}
     economics={'id':eco['id'],'assumptions':intel.decode(eco['assumptions']),'result':intel.decode(eco['result'])} if eco else None
+    if economics:
+        d=economics['assumptions'];v=(d['variable_cost_cents']*120+99)//100;units=max(1,d['monthly_units']//2)
+        economics['adverse_parameters']={'price_cents':plan['price_cents'],'variable_cost_cents':v,'monthly_units':units,'fixed_month_cents':d['fixed_month_cents'],'rule':'Volume divisé par deux (arrondi inférieur, minimum 1); coût variable +20 % (arrondi supérieur au centime); prix et fixes inchangés.'}
     audit={'id':review['id'],**intel.decode(review['review'])} if review else None
     gaps=[]
     if not independent:gaps.append('preuve_technique_independante_manquante')

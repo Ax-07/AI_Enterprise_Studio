@@ -1,9 +1,10 @@
 """Persistent bounded orchestration, reuses the existing campaign engine."""
-import json,hashlib
+import json,hashlib,threading
 from decimal import Decimal,InvalidOperation
 import autopilot,portfolio,commercial,collective_evidence,laboratory
 
 LIMIT='Plan interne borné, aucun achat, contact, publication ou vente. Score économique hypothétique. Aucun démarrage automatique au redémarrage. Les budgets et quotas existants restent applicables.'
+RUN_LOCK=threading.Lock()
 FLAGS={'research':True,'production':True,'tests':True,'market':True}
 GOAL='Faire progresser une activité interne avec preuves exactes, sans répéter les expériences ni lancer une vente.'
 
@@ -225,6 +226,9 @@ def next_campaign(c,pid,cfg):
     return cid
 
 def worker(s,pid):
+    with RUN_LOCK:_worker(s,pid)
+
+def _worker(s,pid):
     # Reuse the existing engine lock; never hold it while calling autopilot.worker.
     try:
         while True:
