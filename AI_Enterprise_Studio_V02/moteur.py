@@ -270,7 +270,10 @@ def demo_action(s,t):
 def execute(s,t,v,cfg,mode):
     mid=t['mission']; a=v['action']; target=v['target'].strip(); text=v['text']; detail=v['detail']; agent=t['agent']
     if a not in PERMS[agent]: raise ValueError('Outil interdit à '+agent)
-    with s.db() as c: autopilot.guard(c,mid,agent,a,target,PERMS[agent])
+    with s.db() as c:
+        import periodic
+        periodic.guard_mission(c,mid)
+        autopilot.guard(c,mid,agent,a,target,PERMS[agent])
     if max(len(target),len(text),len(detail))>24000: raise ValueError('Paramètre trop long')
     if a=='connector':
         if mode!='cloud' or detail:raise ValueError('Connecteur Cloud, detail vide requis')
@@ -421,6 +424,9 @@ def context(s,t,m,cfg):
         source_context=intel.sources(c,mid) if m['mode']=='cloud' else []
         page_context=intel.page_refs(c,mid) if m['mode']=='cloud' else []
         research_context=research.mission(c,mid) if m['mode']=='cloud' else None
+        if research_context and agent=='ORION' and 'commercial_signal' in allowed:
+            research_context['exact_candidates']=research.exact_candidates(c,mid)
+            research_context['citation_instruction']='Fragments exacts locaux, non certifiés et non classifiés. Copier le champ quote sans reformuler ni remplacer les espaces ou retours ligne; choisir un fragment pertinent, ou aucun. Un tarif concurrent ne prouve pas la demande.'
         collective=collective_evidence.registry(c,mid,compact=True) if m['mode']=='cloud' else None
         commercial_context=commercial.context(c,mid) if m['mode']=='cloud' and campaign and campaign['kind']=='commercial' else None
         historical=collective_evidence.previous_laboratory(c) if collective and (campaign and campaign['kind']=='opportunity') else []

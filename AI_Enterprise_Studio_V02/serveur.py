@@ -2,14 +2,15 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.5.1"
+VERSION="0.4.6"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
+POST_LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
 DEFAULT={'ATLAS':'gpt-6.2-sol','ORION':'gpt-6-luna','MIDAS':'gpt-6.1-terra','SENTINEL':'gpt-6.1-terra','NEXUS':'gpt-6.1-terra','HERMES':'gpt-6-luna','PROMETHEUS':'gpt-6-luna','MNEMOS':'gpt-6-luna'}
 AGENTS={'ATLAS':'Direction générale','ORION':'Intelligence économique','MIDAS':'Finance','NEXUS':'Technologie','HERMES':'Commerce','SENTINEL':'Audit indépendant','PROMETHEUS':'Amélioration continue','MNEMOS':'Mémoire'}
@@ -51,6 +52,7 @@ def init():
         commercial.init(c)
         incidents.init(c)
         planner.init(c)
+        periodic.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -211,7 +213,7 @@ def status():
     cfg=config()
     with db() as c:
         campaign=autopilot.status(c,cfg)
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'planner':planner.status(c,cfg),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 def campaign_audit(c,cfg,cid,historical=False):
     # Single read snapshot. Never copy config, environment or session credentials.
     campaign=autopilot.status(c,cfg,cid if historical else None)
@@ -235,8 +237,8 @@ def campaign_audit(c,cfg,cid,historical=False):
         'limit':'Rapports et journaux locaux potentiellement privés : vérifier avant partage. Connecteurs et intelligence : exports globaux avec limites habituelles (100/30 relevés); filtrer par mission/campagne. Événements : 100 extraits par mission. Aucun appel externe pour cet export.'}
 
 def plan_audit(c,cfg,pid):
-    status=planner.status(c,cfg);plan=status['plan']
-    if not plan or plan['id']!=pid or plan['state']=='active':raise ValueError('Plan récent non actif requis')
+    status=planner.status(c,cfg,pid);plan=status['plan']
+    if not plan or plan['state']=='active':raise ValueError('Plan non actif requis')
     return {'schema':'aes-enterprise-plan-v1','version':VERSION,'planner':status,
         'campaigns':[campaign_audit(c,cfg,x['campaign'],historical=True) for x in plan['queue']],
         'limit':'Journal local potentiellement privé; vérifier avant partage. Aucun appel externe pour cet export.'}
@@ -285,6 +287,13 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send(campaign_audit(c,cfg,cid))
+            if self.route()=='/api/periodic_audit' and self.headers.get('X-Session')==SESSION:
+                gid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
+                with db() as c:
+                    c.execute('BEGIN')
+                    st=periodic.status(c,config(),gid)
+                    if not st['grant']:raise ValueError('Autorisation absente')
+                    return self.send({'schema':'aes-periodic-audit-v1','version':VERSION,'periodic':st})
             if self.route()=='/api/plan_audit' and self.headers.get('X-Session')==SESSION:
                 pid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 cfg=config()
@@ -319,12 +328,26 @@ class Handler(BaseHTTPRequestHandler):
             return self.missing()
         except Exception as e: self.send({'error':str(e)[:300]},400)
     def do_POST(self):
+        with POST_LOCK:self._post()
+    def _post(self):
         if not self.local() or self.headers.get('X-Session')!=SESSION or self.headers.get('Origin') not in (None,f'http://127.0.0.1:{PORT}',f'http://localhost:{PORT}'): return self.send({'error':'Accès refusé'},403)
         try:
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n)); cfg=config()
             route=self.route()
+            if route in ('/api/periodic/authorize','/api/periodic/revoke'):
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    if route=='/api/periodic/authorize':
+                        if LOCK.locked() or planner.RUN_LOCK.locked():raise ValueError('Moteur occupé')
+                        gid=periodic.authorize(c,p,cfg)
+                    else:
+                        gid=p.get('id')
+                        if set(p)!={'confirm','id'} or p['confirm'] is not True or type(gid) is not int:raise ValueError('Révocation invalide')
+                        periodic.revoke(c,gid)
+                return self.send({'grant':gid})
+            with db() as c:periodic.guard_manual(c)
             if route in ('/api/planner/start','/api/planner/stop','/api/planner/resume','/api/planner/abandon'):
                 if p.get('confirm') is not True:raise ValueError('Confirmation du plan requise')
                 if route!='/api/planner/stop' and (LOCK.locked() or planner.RUN_LOCK.locked()):raise ValueError('Moteur encore occupé')
@@ -336,7 +359,9 @@ class Handler(BaseHTTPRequestHandler):
                         if set(p)!={'confirm','id'} or type(pid) is not int or not 1<=pid<=9007199254740991:raise ValueError('Plan invalide')
                         if route=='/api/planner/stop':planner.stop(c,pid)
                         elif route=='/api/planner/abandon':planner.abandon(c,pid)
-                        else:planner.resume(c,pid,cfg)
+                        else:
+                            periodic.deny_manual_plan_resume(c,pid)
+                            planner.resume(c,pid,cfg)
                 if route in ('/api/planner/start','/api/planner/resume'):
                     threading.Thread(target=planner.worker,args=(sys.modules[__name__],pid),daemon=True).start()
                 return self.send({'plan':pid})
@@ -405,7 +430,9 @@ class Handler(BaseHTTPRequestHandler):
                         cid=p.get('id')
                         if type(cid) is not int or not 1<=cid<=9007199254740991:raise ValueError('Campagne invalide')
                         if route=='/api/autopilot/stop':autopilot.stop(c,cid)
-                        else:autopilot.resume(c,cid,cfg)
+                        else:
+                            periodic.deny_manual_campaign_resume(c,cid)
+                            autopilot.resume(c,cid,cfg)
                 if route!='/api/autopilot/stop':threading.Thread(target=autopilot.worker,args=(sys.modules[__name__],cid),daemon=True).start()
                 return self.send({'campaign':cid})
             if self.route()=='/api/close_audit':
@@ -481,6 +508,8 @@ if __name__=='__main__':
     except OSError as e: print(f'Port {PORT} indisponible : ferme l’ancien serveur avant de redémarrer. {e}');sys.exit(1)
     init(); print(f'AI Enterprise Studio V{VERSION} : http://127.0.0.1:{PORT}'); print('Ctrl+C pour arrêter. Aucun appel au démarrage.'); print(f'Diagnostic gratuit : http://127.0.0.1:{PORT}/api/health',flush=True)
     if '--no-browser' not in __import__('sys').argv: threading.Timer(0.5,lambda:webbrowser.open(f'http://127.0.0.1:{PORT}')).start()
+    shutdown=threading.Event()
+    threading.Thread(target=periodic.loop,args=(sys.modules[__name__],shutdown),daemon=True).start()
     try: server.serve_forever()
     except KeyboardInterrupt: pass
-    finally: server.server_close()
+    finally: shutdown.set();server.server_close()

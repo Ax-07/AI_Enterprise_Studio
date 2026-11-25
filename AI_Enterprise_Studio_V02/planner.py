@@ -127,10 +127,10 @@ def candidates(c,search_cap=0):
         ready.append({**record,'artifact':ref,'kind':kind,'priority':1 if kind in ('functional','laboratory','improve') else 2,'reason':reason})
     return {'ready':sorted(ready,key=lambda x:(x['priority'],-(x['score'] or 0),x['project'])),'held':held,'related':related(c),'limit':LIMIT}
 
-def status(c,cfg=None):
-    row=latest(c);preview=candidates(c)
+def status(c,cfg=None,pid=None):
+    row=latest(c) if pid is None else get(c,pid);preview=candidates(c)
     used=c.execute('SELECT COUNT(*) FROM searches').fetchone()[0]
-    resources={'searches_used':used,'search_limit':cfg['limit'],'search_remaining':max(0,cfg['limit']-used),'search_configured':bool(cfg['brave']),'mission_search_limit':cfg['mission_search_limit'],'plan_search_max':min(10,max(0,cfg['limit']-used)) if cfg['brave'] and cfg['mission_search_limit'] else 0} if cfg is not None else None
+    resources={'global_remaining':autopilot.readiness(c,cfg)['remaining'],'searches_used':used,'search_limit':cfg['limit'],'search_remaining':max(0,cfg['limit']-used),'search_configured':bool(cfg['brave']),'mission_search_limit':cfg['mission_search_limit'],'plan_search_max':min(10,max(0,cfg['limit']-used)) if cfg['brave'] and cfg['mission_search_limit'] else 0} if cfg is not None else None
     with_search=candidates(c,3)
     preview['documentary_candidates']=[x for x in with_search['ready'] if x.get('base_offer')]
     if not row:return {'plan':None,'preview':preview,'resources':resources,'limit':LIMIT}
@@ -163,7 +163,9 @@ def start(c,body,cfg):
     if last and last['recoverable']:raise ValueError('Une campagne récupérable existe; la traiter avant un nouveau plan')
     budget=_money(body['budget']);per=_money(body['per_campaign'])
     count=body['max_campaigns'];cap=body['search_cap'];explore=body['explore']
-    if not 10000<=per<=budget<=remaining or type(count) is not int or not 1<=count<=5:raise ValueError('Enveloppes ou nombre de campagnes invalides')
+    if per>budget:raise ValueError('Maximum par campagne supérieur au budget total')
+    if budget>remaining:raise ValueError(f'Budget total {budget/1e6:.6f} USD supérieur au solde global {remaining/1e6:.6f} USD')
+    if type(count) is not int or not 1<=count<=5:raise ValueError('Nombre de campagnes : entier de 1 à 5 requis')
     available=max(0,cfg['limit']-c.execute('SELECT COUNT(*) FROM searches').fetchone()[0])
     if type(cap) is not int or not 0<=cap<=10:raise ValueError('Quota Brave du plan : entier de 0 à 10 requis')
     if cap and not cfg['brave']:raise ValueError('Brave non configuré localement')
@@ -207,6 +209,8 @@ def next_campaign(c,pid,cfg):
     """Called under BEGIN IMMEDIATE. Return an existing or newly allocated campaign ID."""
     p=get(c,pid)
     if not p or p['state']!='active':return None
+    import periodic
+    periodic.guard_plan(c,pid)
     rows=queue(c,pid)
     if rows and rows[-1]['state']=='actif':return rows[-1]['campaign']
     if rows and rows[-1]['state']!='terminé':
@@ -239,10 +243,10 @@ def next_campaign(c,pid,cfg):
     available=max(0,cfg['limit']-c.execute('SELECT COUNT(*) FROM searches').fetchone()[0])
     cap=min(3,max(0,p['search_cap']-searched),available,cfg['mission_search_limit']) if cfg['brave'] else 0
     preview=candidates(c,cap)
-    tried={(x['project'],x['kind'],x['artifact']) for x in rows}
+    tried={(x['project'],x['kind'],x['artifact']) for x in rows}|periodic.previous_steps(c,pid)
     items=[x for x in preview['ready'] if (x['project'],x['kind'],x['artifact']) not in tried]
     item=items[0] if items else None
-    if not item and p['explore'] and cap and not any(x['kind']=='opportunity' for x in rows):
+    if not item and p['explore'] and cap and (None,'opportunity',None) not in tried:
         recent=c.execute("""SELECT 1 FROM campaign_missions cm JOIN missions m ON m.id=cm.mission
             WHERE cm.kind='opportunity' AND m.created>=datetime('now','-1 day')""").fetchone()
         if not recent:item={'project':None,'artifact':None,'kind':'opportunity','reason':'Exploration explicitement autorisée, une fois au maximum.'}

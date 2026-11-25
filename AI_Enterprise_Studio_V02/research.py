@@ -78,3 +78,25 @@ def mission(c,mid,full=False):
         pages.append(item)
     return {'searches':searches,'pages':pages,'searches_received':sum(x['status']=='reçue' for x in searches),
         'pages_received':sum(x['state']=='reçue' for x in pages),'limit':'Extraits Brave non vérifiés; une page lue ne prouve pas la demande.'}
+
+def exact_candidates(c,mid):
+    """Local, exact substrings, no semantic classification or new network calls."""
+    import re,hashlib
+    out=[]
+    patterns=(r'[$€£]\s*\d',r'\b(?:USD|EUR|GBP|pricing|per month|par mois)\b',
+              r'\b(?:error|errors|erreur|errors|manual|manually|time.sav|saves? time|hours|problème|difficult|reviews?|avis)\b')
+    for row in c.execute("SELECT id,url,content FROM fetched WHERE mission=? AND state='reçue' ORDER BY id DESC LIMIT 3",(mid,)):
+        try:d=json.loads(row['content']);raw=d['texte']
+        except (ValueError,KeyError,TypeError):continue
+        if not isinstance(raw,str) or excerpt_quality(raw)!='text_available':continue
+        candidates=[]
+        for pattern in patterns:
+            for match in re.finditer(pattern,raw,re.I):
+                start=max(0,match.start()-65);end=min(len(raw),match.end()+100)
+                if any(abs(start-x['offset'])<80 for x in candidates):continue
+                quote=raw[start:end]
+                if len(quote)>=12:candidates.append({'offset':start,'quote':quote})
+                if len(candidates)>=4:break
+            if len(candidates)>=4:break
+        if candidates:out.append({'page':row['id'],'url':row['url'],'sha256':hashlib.sha256(raw.encode()).hexdigest(),'candidates':candidates})
+    return out
