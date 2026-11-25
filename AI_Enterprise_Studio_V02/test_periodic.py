@@ -11,10 +11,10 @@ class PeriodicTests(unittest.TestCase):
     act=test_planner.PlannerTests.act
     reply=test_planner.PlannerTests.reply
     T=1800000000
-    def body(self,**kw):
+    def grant_body(self,**kw):
         return {'confirm':True,'cadence':'daily','periods':3,'total_budget':'0.50','period_budget':'0.25','per_campaign':'0.25','max_campaigns':1,'total_search':0,'period_search':0,'explore':False,**kw}
     def authorize(self,**kw):
-        with s.db() as c:return pe.authorize(c,self.body(**kw),self.cfg,self.T)
+        with s.db() as c:return pe.authorize(c,self.grant_body(**kw),self.cfg,self.T)
     def tick(self,t=None,locked=False):
         with s.db() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -158,9 +158,9 @@ class PeriodicTests(unittest.TestCase):
                 with urllib.request.urlopen(urllib.request.Request(url+'/api/'+path,data=json.dumps(body).encode(),headers=h)) as r:return json.load(r)
             try:
                 with patch.object(s,'PORT',port):
-                    with self.assertRaises(urllib.error.HTTPError) as err:post('periodic/authorize',self.body(),False)
+                    with self.assertRaises(urllib.error.HTTPError) as err:post('periodic/authorize',self.grant_body(),False)
                     self.assertEqual(err.exception.code,403)
-                    gid=post('periodic/authorize',self.body())['grant']
+                    gid=post('periodic/authorize',self.grant_body())['grant']
                     with self.assertRaises(urllib.error.HTTPError) as err:post('start',{'mode':'demo','title':'Interdit pendant autorisation'})
                     self.assertEqual(err.exception.code,400)
                     with urllib.request.urlopen(urllib.request.Request(url+f'/api/periodic_audit?id={gid}',headers={'X-Session':s.SESSION})) as r:
