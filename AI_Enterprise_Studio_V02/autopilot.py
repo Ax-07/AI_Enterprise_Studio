@@ -312,6 +312,9 @@ def worker(s,cid):
                             if not nxt:
                                 c.execute("UPDATE campaigns SET state='terminé',reason=? WHERE id=?",(reason,cid));return
                             kind,artifact,opp=nxt
+                            planned=c.execute("SELECT kind,artifact FROM enterprise_plan_queue WHERE campaign=?",(cid,)).fetchone() if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='enterprise_plan_queue'").fetchone() else None
+                            if planned and (planned['kind']!=kind or planned['artifact']!=artifact):
+                                c.execute("UPDATE campaigns SET state='terminé',reason='Étape initiale achevée ou différente; réévaluation par le planificateur.' WHERE id=?",(cid,));return
                             if kind=='laboratory':
                                 if c.execute('SELECT 1 FROM laboratory_runs WHERE campaign=?',(cid,)).fetchone():
                                     c.execute("UPDATE campaigns SET state='terminé',reason='Une expérience locale maximum par campagne; examiner les résultats.' WHERE id=?",(cid,));return
