@@ -125,13 +125,14 @@ def key():
     if not configured():raise ValueError('Clé de canal TEST non configurée')
     return bytes.fromhex(os.environ['AES_CHANNEL_TEST_KEY_HEX'])
 
-def fetch(page,k):
+def request_admin(operation,body,k):
     """Fixed loopback transport, no redirect, no n8n or paid provider credentials."""
-    ch.ident(page)
+    if operation not in ('export','status','publish','collect','revoke'):
+        raise ValueError('Opération TEST interdite')
     auth=ch.sign(k,'admin-bearer-v1',{'service':'test-only'})
     conn=http.client.HTTPConnection('127.0.0.1',8765,timeout=5)
     try:
-        conn.request('POST','/admin/export',body=ch.canonical({'page':page}).encode(),
+        conn.request('POST','/admin/'+operation,body=ch.canonical(body).encode(),
                      headers={'Authorization':'Bearer '+auth,'Content-Type':'application/json','Connection':'close'})
         res=conn.getresponse()
         if res.status!=200:raise ValueError('Canal TEST indisponible')
@@ -141,6 +142,10 @@ def fetch(page,k):
     except (OSError,http.client.HTTPException,UnicodeError,RecursionError):
         raise ValueError('Transport TEST indisponible') from None
     finally:conn.close()
+
+def fetch(page,k):
+    ch.ident(page)
+    return request_admin('export',{'page':page},k)
 
 def run_once(server,t=None,transport=None):
     """Bounded test-only polling, no work if owner has not bound an active page."""
