@@ -322,6 +322,58 @@ def smoke_improvement():
     finally:fixture.doCleanups()
     print('Chromium amélioration: sélection du profil, une mission, référence protégée')
 
+def smoke_owner_console():
+    from test_owner_console import OwnerConsoleTests,CANDIDATE
+    import autopilot as a,improvement as i
+    fixture=OwnerConsoleTests('test_completed_cycle_allows_new_campaign_without_mutation')
+    fixture.setUp()
+    try:
+        pid,aid=fixture.prepared()
+        cid=fixture.start(project=pid,improvement=i.CSV_PROFILE,max_missions=1)
+        fixture.produce(cid,CANDIDATE)
+        with patch.object(s,'config',return_value=fixture.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.object(a,'worker',return_value=None) as worker:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page(viewport={'width':1280,'height':800})
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base)
+                    expect(page.locator('#auto-state')).to_have_text('terminé')
+                    expect(page.locator('#auto-state-label')).to_contain_text('nouvelle campagne possible')
+                    expect(page.locator('#auto-settings')).to_be_visible()
+                    expect(page.locator('#nav-expert')).not_to_have_attribute('open','')
+                    with page.expect_download() as dl:page.locator('#auto-diagnostic').click()
+                    diag=json.loads(Path(dl.value.path()).read_text())
+                    assert diag['readiness']['ready'] and diag['campaign']['improvement']['state']=='retained'
+                    page.locator('[data-page="portfolio"]').click()
+                    page.get_by_role('button',name='Préparer une amélioration').click()
+                    expect(page.locator('#auto-count')).to_have_value('1')
+                    page.locator('[data-page="portfolio"]').click()
+                    page.get_by_role('button',name='Préparer la campagne',exact=True).click()
+                    expect(page.locator('#auto-improvement')).to_have_value('')
+                    expect(page.locator('#auto-count')).to_have_value('3')
+                    expect(page.locator('#auto-budget')).to_have_value('0.50')
+                    expect(page.locator('#auto-start')).to_be_enabled()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/autopilot/start') as res:page.locator('#auto-start').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#auto-state')).to_have_text('actif')
+                    expect(page.locator('#auto-readiness')).to_contain_text('en cours')
+                    expect(page.locator('#auto-settings')).to_be_hidden()
+                    with s.db() as c:
+                        cid2=res.value.json()['campaign']
+                        assert i.cycle(c,cid2) is None and a._campaign(c,cid2)['max_missions']==3
+                        assert a._campaign(c,cid)['state']=='terminé'
+                    network.assert_not_called();worker.assert_called_once()
+                    assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:fixture.doCleanups()
+    print('Chromium console propriétaire: campagne retenue clôturée, diagnostic exporté, paramètres réinitialisés, nouvelle campagne')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
@@ -330,3 +382,4 @@ if __name__=='__main__':
     smoke_portfolio()
     smoke_laboratory()
     smoke_improvement()
+    smoke_owner_console()

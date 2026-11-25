@@ -182,7 +182,7 @@ $('auto-project').onchange=()=>{if(snapshot){renderPortfolio(snapshot);renderAut
 $('auto-budget').oninput=()=>{if(snapshot)renderAuto(snapshot)};
 let newInsteadOfResume=null;
 $('auto-new').onclick=()=>{newInsteadOfResume=snapshot?.autopilot?.id;prepareProgression();};
-function prepareImprovement(){if($('auto-improvement').value){$('auto-count').value='1';$('auto-search-cap').value='0';$('auto-production').checked=true;$('auto-tests').checked=true;$('auto-goal').value=$('auto-improvement').value==='catalogue-csv-v1'?'Ajouter l’import CSV local sans régression du moteur JSON.':'Améliorer le produit existant sans régression; préciser le gain attendu.'}if(snapshot)renderPortfolio(snapshot)}
+function prepareImprovement(){if($('auto-improvement').value){$('auto-count').value='1';$('auto-search-cap').value='0';$('auto-production').checked=true;$('auto-tests').checked=true;$('auto-goal').value=$('auto-improvement').value==='catalogue-csv-v1'?'Ajouter l’import CSV local sans régression du moteur JSON.':'Améliorer le produit existant sans régression; préciser le gain attendu.'}if(snapshot){renderPortfolio(snapshot);renderAuto(snapshot)}}
 $('auto-improvement').onchange=()=>{if($('auto-improvement').value)prepareImprovement();else prepareProgression();if(snapshot)renderAuto(snapshot)};
 
 function pctLab(v){return typeof v==='number'?(v*100).toLocaleString('fr-FR',{maximumFractionDigits:2})+' %':'Non mesuré'}
@@ -225,7 +225,7 @@ function renderAuto(s){
  const chosen=s.portfolio?.projects?.find(x=>String(x.id)===$('auto-project').value);
  if(chosen&&!$('auto-improvement').value&&!chosen.next_kind)blockers.push('Aucune prochaine étape proposée pour cette activité. Choisir une autre activité ou une amélioration.');
  const finalState=p?.state==='terminé';
- text('auto-state-label',active?'Campagne #'+p.id+' en cours':finalState?'Campagne #'+p.id+' terminée — nouvelle campagne possible':p?'Dernière campagne #'+p.id+' : '+p.state:'Aucune campagne lancée');
+ text('auto-state-label',active?'Campagne #'+p.id+' en cours':finalState?'Campagne #'+p.id+' terminée'+(ready?.ready?' — nouvelle campagne possible':' — voir les autorisations ci-dessous'):p?'Dernière campagne #'+p.id+' : '+p.state:'Aucune campagne lancée');
  const notice=$('auto-readiness');notice.className=blockers.length?'blocked':'ready';
  notice.textContent=blockers.length?blockers.join(' · '):previousRecovery?'Reprise disponible. Tu peux reprendre ou préparer une nouvelle campagne.':'Prêt : configure et autorise une campagne.';
  $('auto-settings').hidden=!!active||!!previousRecovery;$('auto-start').hidden=!!active||!!previousRecovery;
@@ -236,7 +236,7 @@ function renderAuto(s){
  $('auto-stop').hidden=!active;$('auto-stop').disabled=busy||!active;
  $('auto-resume').hidden=!p||(!p.recoverable&&!['interrompu','arrêté','en attente'].includes(p.state));
  $('auto-resume').textContent=p?.recovery_kind==='protocol'?'Reprendre le protocole de test':p?.recovery_kind==='memory'?'Reprendre avec mémoire de travail':'Reprendre la campagne';
- $('auto-resume').disabled=busy||running||!!active||!ready?.ready;
+ $('auto-resume').disabled=busy||running||!!active||!s.key||!!ready?.locked||!!ready?.pending||!ready||ready.remaining<=0;
  if(p){
    const items=[el('b','Campagne #'+p.id+' · '+p.goal),el('small',p.project?'Activité #'+p.project:p.scope==='explore'?'Exploration du portefeuille':'Campagne historique'),el('p',money(p.spent/1e6,4)+' / '+money(p.budget/1e6,2)+' engagés (estimation) · '+p.missions.length+' / '+p.max_missions+' missions · Brave '+p.searches+'/'+p.search_cap),el('p',p.reason||'Enchaînement supervisé, une seule mission à la fois.')];
    if(p.improvement){const state={retained:'Candidate retenue',review:'Examen requis',rejected:'Candidate refusée',pending:'Comparaison à effectuer',retained_manual:'Candidate retenue manuellement',abandoned:'Cycle remplacé'}[p.improvement.state]||p.improvement.state;items.push(row('Cycle d’amélioration #'+p.improvement.id,state+' · référence initiale #'+p.improvement.baseline+(p.improvement.candidate?' · candidate #'+p.improvement.candidate:''),null,btn('Voir le résultat',()=>go('portfolio'),'quiet')))}
