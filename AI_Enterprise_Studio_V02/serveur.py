@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.6.1"
+VERSION="0.5.0"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 POST_LOCK=threading.Lock()
@@ -55,6 +55,7 @@ def init():
         periodic.init(c)
         budgeting.init(c)
         draft_recovery.init(c)
+        business.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -225,7 +226,7 @@ def status():
     cfg=config()
     with db() as c:
         campaign=autopilot.status(c,cfg)
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'business':business.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 def campaign_audit(c,cfg,cid,historical=False):
     # Single read snapshot. Never copy config, environment or session credentials.
     campaign=autopilot.status(c,cfg,cid if historical else None)
@@ -284,6 +285,10 @@ class Handler(BaseHTTPRequestHandler):
                 files={n8n_bridge.HEALTH:'aes_health.json',n8n_bridge.METRICS:'aes_metrics.json',n8n_bridge.COMPARE:'aes_market_compare.json'}
                 if cap not in files:raise ValueError('Workflow inconnu')
                 return self.send(json.loads((ROOT/'n8n'/files[cap]).read_text(encoding='utf8')))
+            if self.route()=='/api/business_audit' and self.headers.get('X-Session')==SESSION:
+                with db() as c:
+                    c.execute('BEGIN')
+                    return self.send({'schema':'aes-business-audit-v1','version':VERSION,'business':business.status(c)})
             if self.route()=='/api/commercial' and self.headers.get('X-Session')==SESSION:
                 pid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['project'][0])
                 with db() as c:
@@ -348,6 +353,14 @@ class Handler(BaseHTTPRequestHandler):
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n)); cfg=config()
             route=self.route()
+            business_routes={'/api/business/authorize':business.authorize,'/api/business/observe':business.observe,
+                '/api/business/close':business.close,'/api/business/receipt':business.receipt}
+            if route in business_routes:
+                # Local recordkeeping only, no worker, connector, or budget mutation.
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    oid=business_routes[route](c,p)
+                return self.send({'id':oid})
             if route in ('/api/periodic/authorize','/api/periodic/revoke'):
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
