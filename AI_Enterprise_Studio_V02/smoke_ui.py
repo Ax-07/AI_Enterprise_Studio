@@ -604,6 +604,40 @@ def smoke_draft_recovery():
     finally:case.doCleanups()
     print('Chromium brouillon : référence exacte, contrôle enveloppe et audit séparé')
 
+def smoke_business():
+    from test_business import BusinessTests
+    import business as b
+    case=BusinessTests('test_http_owner_session_no_worker_or_provider');case.setUp()
+    try:
+        oid,aid,pid=case.fixture()
+        with patch.object(s,'config',return_value=case.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page(accept_downloads=True)
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base);page.locator('[data-page="business"]').click()
+                    expect(page.locator('#business-catalog')).to_contain_text('Offre #'+str(oid))
+                    expect(page.locator('#business-home-revenue')).to_have_text('0.00 €')
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/business/authorize') as res:page.get_by_role('button',name='Autoriser les observations').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#business-trials')).to_contain_text('Ouvert')
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/business/close') as res:page.get_by_role('button',name='Clore / révoquer').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#business-trials')).to_contain_text('Clos')
+                    with page.expect_download() as dl:page.locator('#business-export').click()
+                    audit=json.loads(Path(dl.value.path()).read_text());assert audit['business']['verified_live_cents']==0
+                    assert audit['business']['trials'][0]['effective_state']=='closed'
+                    network.assert_not_called();assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:case.doCleanups()
+    print('Chromium commercial : catalogue, autorisation, clôture et export sans fournisseur')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
@@ -618,3 +652,4 @@ if __name__=='__main__':
     smoke_intelligence()
     smoke_periodic()
     smoke_draft_recovery()
+    smoke_business()
