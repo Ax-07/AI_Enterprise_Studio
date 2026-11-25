@@ -13,7 +13,7 @@ class AcquisitionTests(unittest.TestCase):
     fixture=tb.BusinessTests.fixture
     T=tb.BusinessTests.T
 
-    def body(self,c,oid,**kw):
+    def draft_body(self,c,oid,**kw):
         o=next(x for x in b.status(c,self.T)['catalog'] if x['offer']==oid)
         return {'confirm':True,'offer':oid,'snapshot_sha256':o['snapshot_sha256'],'language':'fr',**kw}
 
@@ -23,7 +23,7 @@ class AcquisitionTests(unittest.TestCase):
             s.init();s.init()
             with s.db() as c:
                 old=b.status(c,self.T)
-                body=self.body(c,oid)
+                body=self.draft_body(c,oid)
                 did=ac.prepare(c,body,self.T)
                 self.assertEqual(ac.prepare(c,body,self.T+1),did)
                 payload=ac.preview(c,did)
@@ -53,8 +53,8 @@ class AcquisitionTests(unittest.TestCase):
         oid,aid,pid=self.fixture()
         with s.db() as c:
             for kw in ({'confirm':False},{'language':'en'},{'snapshot_sha256':'wrong'},{'extra':True}):
-                with self.assertRaises(ValueError):ac.prepare(c,self.body(c,oid,**kw),self.T)
-            body=self.body(c,oid)
+                with self.assertRaises(ValueError):ac.prepare(c,self.draft_body(c,oid,**kw),self.T)
+            body=self.draft_body(c,oid)
             did=ac.prepare(c,body,self.T)
             ac.revoke(c,{'confirm':True,'draft':did},self.T+1)
             self.assertEqual(ac.status(c)['drafts'][0]['state'],'revoked')
@@ -67,7 +67,7 @@ class AcquisitionTests(unittest.TestCase):
         oid,aid,pid=self.fixture()
         with s.db() as c:
             c.execute("UPDATE projects SET title=? WHERE id=?",('<script>alert(1)</script>',pid))
-            body=self.body(c,oid)
+            body=self.draft_body(c,oid)
             did=ac.prepare(c,body,self.T)
             self.assertIn('&lt;script&gt;',ac.preview(c,did)['html'])
             self.assertNotIn('<script>',ac.preview(c,did)['html'])
@@ -79,12 +79,12 @@ class AcquisitionTests(unittest.TestCase):
     def test_review_gate(self):
         oid,aid,pid=self.fixture(review='revise')
         with s.db() as c:
-            with self.assertRaises(ValueError):ac.prepare(c,self.body(c,oid),self.T)
+            with self.assertRaises(ValueError):ac.prepare(c,self.draft_body(c,oid),self.T)
             self.assertEqual(ac.status(c)['drafts'],[])
 
     def test_http_owner_only_no_provider(self):
         oid,aid,pid=self.fixture()
-        with s.db() as c:body=self.body(c,oid)
+        with s.db() as c:body=self.draft_body(c,oid)
         with patch.object(s,'config',return_value=self.cfg),patch.object(s,'request',side_effect=AssertionError('No provider')) as req:
             server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
             port=server.server_address[1]
