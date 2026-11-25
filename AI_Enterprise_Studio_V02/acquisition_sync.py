@@ -12,6 +12,8 @@ import n8n_bridge
 
 MAX_BYTES=512*1024
 FRESHNESS=120
+POLL_SECONDS=60
+MAX_ACTIVE_LINKS=3
 LIMIT='Signaux TEST uniquement; intentions autodéclarées, aucune commande, aucun prospect réel ni observation commerciale.'
 
 def init(c):
@@ -35,6 +37,9 @@ def bind(c,b,t=None):
     page=ch.ident(b['page'])
     duration=business.integer(b['duration_seconds'],1,ch.MAX_LIFETIME)
     quota=business.integer(b['quota'],1,1000)
+    active=[x for x in c.execute('SELECT * FROM acquisition_test_links') if state(c,x,t)=='test_link']
+    if len(active)>=MAX_ACTIVE_LINKS or any(x['draft']==row['id'] for x in active):
+        raise ValueError('Liaisons TEST actives limitées; une par brouillon')
     if c.execute('SELECT 1 FROM acquisition_test_links WHERE page=?',(page,)).fetchone():
         raise ValueError('Canal de test déjà lié; historique conservé')
     c.execute('INSERT INTO acquisition_test_links(page,draft,snapshot,starts,expires,quota) VALUES(?,?,?,?,?,?)',
@@ -137,6 +142,38 @@ def fetch(page,k):
         raise ValueError('Transport TEST indisponible') from None
     finally:conn.close()
 
+def run_once(server,t=None,transport=None):
+    """Bounded test-only polling, no work if owner has not bound an active page."""
+    t=business.now() if t is None else t
+    transport=fetch if transport is None else transport
+    with server.db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        purge(c,t)
+        pages=[r['page'] for r in c.execute('SELECT * FROM acquisition_test_links ORDER BY starts,page')
+               if state(c,r,t)=='test_link' and
+               (r['last_export'] is None or t-r['last_export']>=POLL_SECONDS)][:MAX_ACTIVE_LINKS]
+    if not configured():return []
+    k=key()
+    results=[]
+    for page in pages:
+        try:
+            envelope=transport(page,k)
+            with server.db() as c:
+                c.execute('BEGIN IMMEDIATE')
+                result=ingest(c,k,page,envelope,business.now())
+            results.append({'page':page,'ok':True,**result})
+        except (ValueError,TypeError,KeyError,AttributeError,RecursionError):
+            results.append({'page':page,'ok':False})
+    return results
+
+def loop(server,shutdown):
+    # Never call at startup. Explicit link authorizes TEST polling only.
+    while not shutdown.wait(POLL_SECONDS):
+        try:run_once(server)
+        except Exception as exc:
+            # Log class only: never payload, credentials or participant data.
+            print('[ACQUISITION TEST] '+type(exc).__name__,flush=True)
+
 def status(c,t=None):
     t=business.now() if t is None else t
     links=[]
@@ -150,5 +187,5 @@ def status(c,t=None):
         links.append({**{k:row[k] for k in ('page','draft','snapshot','starts','expires','quota','last_export','accepted_total')},
                       'state':active,'fresh':fresh,'test_signals':len(rows),'intents':counts,
                       'qualified_test':sum(qualify(x['kind'],bool(x['segment'])) for x in rows)})
-    return {'mode':'test','configured':configured(),'links':links,'qualification_rule':'hermes-test-v1',
+    return {'mode':'test','configured':configured(),'links':links,'qualification_rule':'hermes-test-v1','poll_seconds':POLL_SECONDS,
             'real_prospects':0,'paid_orders':0,'external_spend_cents':0,'limit':LIMIT}
