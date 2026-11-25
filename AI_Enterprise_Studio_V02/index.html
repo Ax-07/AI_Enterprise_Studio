@@ -136,6 +136,7 @@ function renderPortfolio(s){
      if(cy.baseline_metrics&&cy.candidate_metrics)c.append(el('p','Détection '+pctLab(cy.baseline_metrics.recall)+' → '+pctLab(cy.candidate_metrics.recall)+' · fausses alertes '+pctLab(cy.baseline_metrics.false_alert_share)+' → '+pctLab(cy.candidate_metrics.false_alert_share)));
      if(cy.feature_after)c.append(el('p','Import CSV : '+cy.feature_before+' → '+cy.feature_after));
      if(cy.reason)c.append(el('p',cy.reason));
+     if(cy.state==='review'&&p.versions.reference===cy.baseline){const b=btn('Retenir après examen',()=>{if(confirm('Retenir cette candidate ? Le gain n’est pas démontré automatiquement; tu confirmes ta décision technique.'))action('improvement/retain',{id:cy.id,confirm:true})},'quiet');b.disabled=busy||active;c.append(b)}
      c.append(btn('Exporter la comparaison',async()=>{try{const x=await api('improvement?id='+cy.id);downloadText('amelioration_'+cy.id+'.json',JSON.stringify(x,null,2),'application/json')}catch(e){text('message',e.message)}},'quiet'));n.append(c)
    }
    const previous=[...new Set((p.versions?.history||[]).map(x=>x.artifact))].filter(x=>x!==p.versions.reference);

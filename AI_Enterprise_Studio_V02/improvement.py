@@ -82,7 +82,7 @@ def feature_spec():
             'P1 | CHAMP_REQUIS | ligne 1 | SKU X7 | locale fr-FR | title\nP1 | DOUBLON | ligne 2 | SKU X7 | locale fr-FR | première ligne 1\nP2 | LOCALE_MANQUANTE | SKU X7 | locale en-GB\nTOTAL | P1 2 | P2 1')]}
 
 def production_title(cy,a):
-    instruction=('Ajoute import CSV local via input type=file #csv-file et bouton #import-csv; colonnes sku,locale,title, virgule, UTF-8; locales attendues fr-FR et en-GB. Conserve #data, #run, #out, le comportement JSON et les règles. Aucun réseau. '
+    instruction=('Ajoute import CSV local via input type=file #csv-file et bouton #import-csv; colonnes sku,locale,title, virgule, UTF-8; locales attendues fr-FR et en-GB. Désactive #run pendant la lecture asynchrone du CSV, puis réactive-le après mise à jour JSON. Conserve #data, #run, #out, le comportement JSON et les règles. Aucun réseau. '
                  if cy['profile']==CSV_PROFILE else '')
     return ('AMÉLIORATION — ATLAS délègue à NEXUS. Lis le fichier exact ref:'+str(a['id'])+
         '. Objectif : '+cy['goal']+' . '+instruction+'Produis une seule nouvelle version complète avec le même nom '+a['name']+
@@ -160,6 +160,18 @@ def complete(s,cid,mid,cfg):
             'retained':'Candidate retenue sur critères techniques; aucune validation commerciale.',
             'review':'Non-régression réussie; gain non démontré automatiquement, référence conservée.',
             'rejected':'Candidate non retenue; référence intacte.'}[state],cid))
+
+def retain_review(c,rid):
+    if type(rid) is not int:raise ValueError('Cycle invalide')
+    if c.execute("SELECT 1 FROM campaigns WHERE state='actif'").fetchone() or c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone():raise ValueError('Travail en cours')
+    cy=c.execute("SELECT * FROM improvement_cycles WHERE id=? AND state='review'",(rid,)).fetchone()
+    if not cy:raise ValueError('Comparaison réussie en attente de décision requise')
+    ref=pinned(c,cy['project']);a=row(c,cy['candidate'])
+    if ref['id']!=cy['baseline'] or sha(ref)!=cy['baseline_sha'] or not a or sha(a)!=cy['candidate_sha']:
+        raise ValueError('Référence ou candidate modifiée')
+    pin(c,cy['project'],a,'Sélection explicite après comparaison technique',rid)
+    c.execute("UPDATE improvement_cycles SET state='retained_manual' WHERE id=?",(rid,))
+    c.execute("UPDATE improvement_cycles SET state='abandoned' WHERE project=? AND state='pending'",(cy['project'],))
 
 def restore(c,pid,aid):
     if type(pid) is not int or type(aid) is not int:raise ValueError('Identifiants invalides')

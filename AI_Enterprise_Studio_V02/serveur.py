@@ -268,6 +268,13 @@ class Handler(BaseHTTPRequestHandler):
                     result=laboratory.run(sys.modules[__name__],p.get('artifact'),p.get('profile'),p.get('size'),p.get('seed'),cfg)
                     return self.send({'experiment':result['id'],'status':result['status']})
                 finally:LOCK.release()
+            if self.route()=='/api/improvement/retain':
+                if p.get('confirm') is not True:raise ValueError('Confirmation requise')
+                if LOCK.locked():raise ValueError('Travail en cours')
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    improvement.retain_review(c,p.get('id'))
+                return self.send({'ok':True})
             if self.route()=='/api/improvement/restore':
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 if LOCK.locked():raise ValueError('Travail en cours')
