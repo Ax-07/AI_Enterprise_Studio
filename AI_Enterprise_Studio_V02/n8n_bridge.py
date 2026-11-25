@@ -3,8 +3,10 @@ import http.client,json,os,re,secrets
 
 HEALTH='n8n.health'
 METRICS='n8n.metrics'
+COMPARE='n8n.market_compare'
+SAMPLE_COMPARE='{"rows":[{"country":"FRA","population":1000,"internet_bp":8000},{"country":"GBR","population":900,"internet_bp":9000}]}'
 PROTOCOL='aes-n8n-v1'
-PATHS={HEALTH:'/webhook/aes-v1-health',METRICS:'/webhook/aes-v1-metrics'}
+PATHS={HEALTH:'/webhook/aes-v1-health',METRICS:'/webhook/aes-v1-metrics',COMPARE:'/webhook/aes-v1-market-compare'}
 MAX_BYTES=8192
 ROLES=('ATLAS','ORION','MIDAS','HERMES','SENTINEL','NEXUS','PROMETHEUS')
 class Unconfirmed(RuntimeError):pass
@@ -31,10 +33,17 @@ def validate(cap,text):
         a=d['values']
         if isinstance(a,list) and 1<=len(a)<=100 and all(type(v) is int and -100000000<=v<=100000000 for v in a):
             return json.dumps(d,separators=(',',':'))
+    if cap==COMPARE and isinstance(d,dict) and set(d)=={'rows'}:
+        rows=d['rows']
+        if isinstance(rows,list) and 2<=len(rows)<=3 and all(isinstance(r,dict) and set(r)=={'country','population','internet_bp'} and isinstance(r['country'],str) and re.fullmatch(r'[A-Z]{3}',r['country']) and type(r['population']) is int and 0<=r['population']<=2000000000 and type(r['internet_bp']) is int and 0<=r['internet_bp']<=10000 for r in rows) and len({r['country'] for r in rows})==len(rows):
+            return json.dumps(d,sort_keys=True,separators=(',',':'))
     raise ValueError('Contrat n8n : {} pour health; {"values":[1,2,3]} pour metrics (1 à 100 entiers bornés)')
 
 def expected(cap,value):
     if cap==HEALTH:return {'ready':True}
+    if cap==COMPARE:
+        rows=[{'country':r['country'],'estimated_users':r['population']*r['internet_bp']//10000} for r in json.loads(value)['rows']]
+        return {'markets':sorted(rows,key=lambda r:(-r['estimated_users'],r['country']))}
     a=json.loads(value)['values']
     return {'count':len(a),'sum':sum(a),'min':min(a),'max':max(a)}
 
@@ -57,7 +66,7 @@ def call(cap,value,request_id):
             raise Unconfirmed('Contrat de réponse invalide')
         exp=expected(cap,value)
         r=d['result']
-        if not isinstance(r,dict) or set(r)!=set(exp) or any(type(r[k]) is not type(v) or r[k]!=v for k,v in exp.items()):
+        if not isinstance(r,dict) or json.dumps(r,sort_keys=True,separators=(',',':'))!=json.dumps(exp,sort_keys=True,separators=(',',':')):
             raise Unconfirmed('Résultat incohérent')
         # Return trusted projection, never headers, raw response or credentials.
         return {'request_id':request_id,'execution_id':d['execution_id'],'result':exp,'protocol':PROTOCOL}
