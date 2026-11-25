@@ -45,9 +45,9 @@ def prepare(c,body,t):
     if ac.state(c,row)!='draft' or row['snapshot_sha256']!=body['snapshot_sha256']:
         raise ValueError('Brouillon périmé')
     duration=b.integer(body['duration_seconds'],60,MAX_DURATION)
-    active=[x for x in c.execute('SELECT * FROM acquisition_test_channels') if x['expires']>t and x['state']!='revoked']
+    active=[x for x in c.execute('SELECT * FROM acquisition_test_channels') if x['state']!='revoked']
     if len(active)>=MAX_CHANNELS or any(x['draft']==row['id'] for x in active):
-        raise ValueError('Un canal par brouillon et trois canaux TEST maximum')
+        raise ValueError('Un canal non révoqué par brouillon et trois canaux TEST non révoqués maximum')
     payload=ac.preview(c,row['id'])
     page=secrets.token_hex(16)
     # No private notes or raw artifacts leave the enterprise, even on loopback.
