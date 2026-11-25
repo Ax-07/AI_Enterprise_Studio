@@ -62,7 +62,10 @@ def application(path,key,clock=None):
                     if method!='POST' or env.get('CONTENT_TYPE','').split(';')[0]!='application/json':
                         raise ValueError('Invalid admin request')
                     body=json.loads(read())
-                    if route=='/admin/export':
+                    if route=='/admin/status':
+                        ch.exact(body,('page','nonce'))
+                        result=ch.inspect(c,key,body['page'],body['nonce'],t)
+                    elif route=='/admin/export':
                         ch.exact(body,('page',))
                         result=ch.export(c,key,body['page'],t)
                     else:
