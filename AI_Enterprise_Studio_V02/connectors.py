@@ -1,5 +1,6 @@
 """Trusted capability registry. Default deny, bounded public read-only adapters."""
-import hashlib,http.client,json,os,re,ssl
+import hashlib,http.client,json,os,re,ssl,secrets
+import n8n_bridge as n8n
 from decimal import Decimal,InvalidOperation
 
 AGENTS=('ATLAS','ORION','MIDAS','NEXUS','HERMES','SENTINEL','PROMETHEUS','MNEMOS')
@@ -13,6 +14,8 @@ REGISTRY={
  'n8n.workflow':{'label':'n8n — workflow autorisé','description':'Contrat préparé; aucun endpoint, webhook ou workflow exécutable dans cette version.',
          'provider':'n8n','available':False,'risk':'not_enabled','method':None,'cost_usd_micro':None,
          'roles':(),'secret_env':'AES_N8N_TOKEN'},
+ n8n.HEALTH:{'label':'n8n — Test de communication','description':'Vérifie le contrat du webhook local authentifié; aucun effet commercial.', 'provider':'n8n','available':True,'risk':'local_compute','method':'POST','cost_usd_micro':0,'roles':n8n.ROLES,'secret_env':'AES_N8N_TOKEN','revision':1},
+ n8n.METRICS:{'label':'n8n — Statistiques numériques','description':'Compte, somme, minimum, maximum de 1 à 100 entiers. Aucun appel fournisseur ni donnée client.', 'provider':'n8n','available':True,'risk':'local_compute','method':'POST','cost_usd_micro':0,'roles':n8n.ROLES,'secret_env':'AES_N8N_TOKEN','revision':1},
 }
 
 def init(c):
@@ -30,7 +33,10 @@ def init(c):
         finished TEXT);
         CREATE INDEX IF NOT EXISTS connector_runs_cap ON connector_runs(capability,id);
         CREATE INDEX IF NOT EXISTS connector_runs_campaign ON connector_runs(campaign,id);
-        CREATE INDEX IF NOT EXISTS connector_runs_mission ON connector_runs(mission,id);""")
+        CREATE INDEX IF NOT EXISTS connector_runs_mission ON connector_runs(mission,id);
+        CREATE TABLE IF NOT EXISTS connector_workflow_results(
+          run INTEGER PRIMARY KEY REFERENCES connector_runs(id), request_id TEXT NOT NULL UNIQUE,
+          execution_id TEXT, result TEXT);""")
     for cap in REGISTRY:c.execute('INSERT OR IGNORE INTO connector_policies(capability) VALUES(?)',(cap,))
     # A crash after reservation never releases a potentially consumed quota.
     c.execute("UPDATE connector_runs SET state='unknown',diagnostic='Interruption; réservation conservée' WHERE state='reserved'")
@@ -52,6 +58,10 @@ def policy(c,cap):
     if not r:raise ValueError('Capacité inconnue')
     return {**dict(r),'agents':json.loads(r['agents']),'enabled':bool(r['enabled'])}
 
+def usable(cap):
+    spec=REGISTRY[cap]
+    return spec['available'] and (cap not in n8n.PATHS or n8n.configured())
+
 def set_policy(c,body):
     cap=body.get('capability')
     if not isinstance(cap,str) or cap not in REGISTRY:raise ValueError('Capacité inconnue')
@@ -60,7 +70,7 @@ def set_policy(c,body):
     if type(enabled) is not bool or not isinstance(roles,list) or any(not isinstance(x,str) or x not in spec['roles'] for x in roles) or len(set(roles))!=len(roles):
         raise ValueError('Permissions invalides')
     if type(count) is not int or not 0<=count<=1000:raise ValueError('Quota de 0 à 1000 tentatives')
-    if enabled and (not spec['available'] or spec['cost_usd_micro'] is None or count==0 or budget<spec['cost_usd_micro']):
+    if enabled and (not usable(cap) or spec['cost_usd_micro'] is None or count==0 or budget<spec['cost_usd_micro']):
         raise ValueError('Capacité indisponible ou sans tarif/quota approuvé')
     if c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone() or c.execute("SELECT 1 FROM campaigns WHERE state='actif'").fetchone():
         raise ValueError('Arrêter le travail actif avant de modifier les permissions')
@@ -78,8 +88,8 @@ def authorize_campaign(c,cid,body):
     caps={}
     for cap,spec in REGISTRY.items():
         p=policy(c,cap);t=totals(c,'WHERE capability=?',(cap,))
-        if p['enabled'] and p['agents'] and spec['available'] and spec['risk']=='public_read' and spec['cost_usd_micro'] is not None and t['calls']<p['max_calls'] and t['reserved']+spec['cost_usd_micro']<=p['budget'] and spec['cost_usd_micro']<=budget:
-            caps[cap]={'agents':p['agents'],'cost':spec['cost_usd_micro']}
+        if p['enabled'] and p['agents'] and usable(cap) and spec['risk'] in ('public_read','local_compute') and spec['cost_usd_micro'] is not None and t['calls']<p['max_calls'] and t['reserved']+spec['cost_usd_micro']<=p['budget'] and spec['cost_usd_micro']<=budget:
+            caps[cap]={'agents':p['agents'],'cost':spec['cost_usd_micro'],'revision':spec.get('revision',1)}
     if not caps:raise ValueError('Aucun connecteur autorisé avec quota et budget disponibles')
     c.execute('INSERT INTO connector_campaigns(campaign,max_calls,budget,capabilities) VALUES(?,?,?,?)',
         (cid,count,budget,json.dumps(caps)))
@@ -92,7 +102,7 @@ def campaign_status(c,cid):
 
 def check(c,cap,mid,tid,actor):
     spec=REGISTRY.get(cap)
-    if not spec or not spec['available'] or spec['risk']!='public_read' or type(spec['cost_usd_micro']) is not int or spec['cost_usd_micro']<0:
+    if not spec or not usable(cap) or spec['risk'] not in ('public_read','local_compute') or type(spec['cost_usd_micro']) is not int or spec['cost_usd_micro']<0:
         raise ValueError('Capacité non disponible ou tarif non approuvé')
     p=policy(c,cap);t=totals(c,'WHERE capability=?',(cap,));cost=spec['cost_usd_micro']
     if not p['enabled']:raise ValueError('Connecteur désactivé')
@@ -111,7 +121,7 @@ def check(c,cap,mid,tid,actor):
         raise ValueError('Campagne de recherche explicitement autorisée requise')
     cc=campaign_status(c,cy['id'])
     grant=cc['grants'].get(cap)
-    if not grant or actor not in grant['agents'] or cost!=grant['cost'] or cc['calls']>=cc['max_calls'] or cc['reserved']+cost>cc['budget']:
+    if not grant or actor not in grant['agents'] or cost!=grant['cost'] or grant.get('revision',1)!=spec.get('revision',1) or cc['calls']>=cc['max_calls'] or cc['reserved']+cost>cc['budget']:
         raise ValueError('Quota ou budget de campagne connecteurs atteint')
     if totals(c,'WHERE mission=?',(mid,))['calls']>=3:raise ValueError('Plafond de trois appels connecteurs par mission')
     return cy['id'],cost
@@ -156,24 +166,34 @@ def github_repo(name):
 
 ADAPTERS={PUBLIC:github_repo}
 
+def validate_input(cap,text):
+    if cap==PUBLIC:return slug(text)
+    if cap in n8n.PATHS:return n8n.validate(cap,text)
+    raise ValueError('Connecteur non exécutable')
+
 def invoke(s,cap,text,mid=None,tid=None,actor='PROPRIETAIRE'):
-    if not isinstance(cap,str) or cap not in ADAPTERS:raise ValueError('Connecteur non exécutable')
-    value=slug(text) if cap==PUBLIC else None
-    if value is None:raise ValueError('Contrat de paramètres absent')
+    if not isinstance(cap,str):raise ValueError('Connecteur non exécutable')
+    value=validate_input(cap,text);is_n8n=cap in n8n.PATHS
+    digest=hashlib.sha256(value.encode()).hexdigest();request_id=secrets.token_hex(16) if is_n8n else None
     with s.db() as c:
         c.execute('BEGIN IMMEDIATE')
         cid,cost=check(c,cap,mid,tid,actor)
+        if is_n8n and mid is not None and c.execute('SELECT 1 FROM connector_runs WHERE mission=? AND capability=? AND input_sha256=?',(mid,cap,digest)).fetchone():raise ValueError('Workflow identique déjà tenté; consulter le journal, aucun retry automatique')
         rid=c.execute("""INSERT INTO connector_runs(capability,mission,task,campaign,actor,input_sha256,reserved,state)
-            VALUES(?,?,?,?,?,?,?,'reserved')""",(cap,mid,tid,cid,actor,hashlib.sha256(value.encode()).hexdigest(),cost)).lastrowid
+            VALUES(?,?,?,?,?,?,?,'reserved')""",(cap,mid,tid,cid,actor,digest,cost)).lastrowid
+        if is_n8n:c.execute('INSERT INTO connector_workflow_results(run,request_id) VALUES(?,?)',(rid,request_id))
     try:
-        result=ADAPTERS[cap](value)
+        result=n8n.call(cap,value,request_id) if is_n8n else ADAPTERS[cap](value)
     except Exception as e:
         # No exception messages, response bodies, headers, or secrets are logged.
         diag=type(e).__name__
         if isinstance(e,RuntimeError) and re.fullmatch(r'HTTP [1-5][0-9]{2}',str(e)):diag=str(e)
-        with s.db() as c:c.execute("UPDATE connector_runs SET state='failed',diagnostic=?,finished=CURRENT_TIMESTAMP WHERE id=?",(diag,rid))
-        return {'connector':cap,'run':rid,'status':'failed','diagnostic':diag,'note':'Tentative décomptée; aucun retry automatique.'}
-    with s.db() as c:c.execute("UPDATE connector_runs SET state='received',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
+        state='unknown' if is_n8n else 'failed'
+        with s.db() as c:c.execute('UPDATE connector_runs SET state=?,diagnostic=?,finished=CURRENT_TIMESTAMP WHERE id=?',(state,diag,rid))
+        return {'connector':cap,'run':rid,'status':state,'diagnostic':diag,'note':'Tentative décomptée; aucun retry automatique.'}
+    with s.db() as c:
+        if is_n8n:c.execute('UPDATE connector_workflow_results SET execution_id=?,result=? WHERE run=?',(result['execution_id'],json.dumps(result,ensure_ascii=False),rid))
+        c.execute("UPDATE connector_runs SET state='received',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
     return {'connector':cap,'run':rid,'status':'received','data':result}
 
 def status(c):
@@ -181,7 +201,7 @@ def status(c):
     for cap,spec in REGISTRY.items():
         # Do not read, copy or return credential values; only presence of a future env variable.
         caps.append({'id':cap,**{k:v for k,v in spec.items() if k!='secret_env'},
-            'credential_present':bool(spec['secret_env'] and os.environ.get(spec['secret_env'])),
+            'available':usable(cap),'credential_present':bool(spec['secret_env'] and os.environ.get(spec['secret_env'])),
             'policy':policy(c,cap),**totals(c,'WHERE capability=?',(cap,))})
-    return {'capabilities':caps,'runs':[dict(r) for r in c.execute('SELECT * FROM connector_runs ORDER BY id DESC LIMIT 100')],
+    return {'capabilities':caps,'runs':[dict(r) for r in c.execute('SELECT r.*,w.request_id,w.execution_id,w.result AS workflow_result FROM connector_runs r LEFT JOIN connector_workflow_results w ON w.run=r.id ORDER BY r.id DESC LIMIT 100')],
             'total':totals(c),'limit':LIMIT}

@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.0"
+VERSION="0.4.1"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -232,6 +232,11 @@ class Handler(BaseHTTPRequestHandler):
                     tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=?',(mid,))]
                     calls,cost=c.execute('SELECT COUNT(*),COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger WHERE mission=?',(mid,)).fetchone()
                 return self.send({'mission':dict(mission),'tasks':tasks,'events':events,'calls':calls,'estimated_usd':cost/1e6,'limit':'Extraits de journal local; vérifier avant partage.'})
+            if self.route()=='/api/n8n_template' and self.headers.get('X-Session')==SESSION:
+                cap=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('capability',[''])[0]
+                files={n8n_bridge.HEALTH:'aes_health.json',n8n_bridge.METRICS:'aes_metrics.json'}
+                if cap not in files:raise ValueError('Workflow inconnu')
+                return self.send(json.loads((ROOT/'n8n'/files[cap]).read_text(encoding='utf8')))
             if self.route()=='/api/connectors' and self.headers.get('X-Session')==SESSION:
                 with db() as c:return self.send(connectors.status(c))
             if self.route()=='/api/campaign_diagnostic' and self.headers.get('X-Session')==SESSION:
@@ -276,7 +281,10 @@ class Handler(BaseHTTPRequestHandler):
                             c.execute('BEGIN IMMEDIATE')
                             connectors.set_policy(c,p)
                         return self.send({'ok':True})
-                    return self.send(connectors.invoke(sys.modules[__name__],connectors.PUBLIC,'octocat/Hello-World'))
+                    cap=p.get('capability',connectors.PUBLIC)
+                    samples={connectors.PUBLIC:'octocat/Hello-World',n8n_bridge.HEALTH:'{}',n8n_bridge.METRICS:'{"values":[10,-3,7]}'}
+                    if not isinstance(cap,str) or cap not in samples:raise ValueError('Test non autorisé')
+                    return self.send(connectors.invoke(sys.modules[__name__],cap,samples[cap]))
                 finally:LOCK.release()
             if self.route()=='/api/laboratory/run':
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
