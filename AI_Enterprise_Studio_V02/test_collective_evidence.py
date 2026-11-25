@@ -32,7 +32,7 @@ class CollectiveEvidenceTests(unittest.TestCase):
                 assumptions={'price_cents':10000,'variable_cost_cents':4500,'fixed_month_cents':11000,
                     'monthly_units':10,'automation_pct':80,'risk':4,'source_runs':[],'rationale':'Hypothèses non certifiées, coûts à vérifier.'}
                 i.assess(c,mid,'MIDAS',str(oid),json.dumps(assumptions))
-                for step,(agent,report) in enumerate([('MIDAS',"n8n.market_compare n’a pas été appelé."),('ATLAS',"Aucun résultat n8n n’est attesté.")]):
+                for step,(agent,report) in enumerate([('MIDAS',"Le relevé est macroéconomique ; `n8n.market_compare` n’a pas été appelé."),('ATLAS',"Aucun résultat n8n n’est attesté.")]):
                     c.execute("INSERT INTO reports(mission,step,agent,report,sources) VALUES(?,?,?,?,?)",
                         (mid,step,agent,json.dumps({'rapport':report}),'[]'))
                 c.execute("UPDATE campaigns SET state='terminé' WHERE id=?",(cid,))

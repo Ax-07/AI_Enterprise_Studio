@@ -3,6 +3,7 @@ import json, hashlib
 import protocol_recovery
 import working_memory
 import portfolio
+import commercial
 import laboratory
 import improvement
 import connectors
@@ -11,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 ACTIVE='actif'
 FLAGS=('research','production','tests','market')
 ROLES={'opportunity':{'ORION','MIDAS','SENTINEL'},'create':{'NEXUS'},'improve':{'NEXUS'},
-       'functional':{'SENTINEL'},'market':{'HERMES','MIDAS'}}
+       'functional':{'SENTINEL'},'market':{'HERMES','MIDAS'},'commercial':{'ORION','HERMES','MIDAS','SENTINEL'}}
 
 def init(c):
     c.executescript("""CREATE TABLE IF NOT EXISTS campaigns(
@@ -52,9 +53,14 @@ def search_allowed(c,mid):
 
 def permitted(c,mid,agent,base):
     p=link(c,mid)
-    if not p:return set(base),None
+    if not p:return set(base)-set(commercial.ACTIONS),None
     flags=json.loads(p['permissions']);kind=p['kind']
     allowed=set(base)
+    if kind!='commercial':allowed-=set(commercial.ACTIONS)
+    else:
+        if not flags['market']:allowed-=set(commercial.ACTIONS)
+        if not flags['research']:allowed.discard('commercial_signal')
+        if not flags['tests']:allowed.discard('commercial_review')
     if not flags['research'] or p['search_cap']==0: allowed-={'search','read'}
     elif searches(c,p['id'])>=p['search_cap']:allowed.discard('search')
     if not flags['production'] or kind not in ('create','improve'): allowed.discard('write_file')
@@ -66,7 +72,7 @@ def permitted(c,mid,agent,base):
 
 def delegable(p):
     agents=set(ROLES[p['kind']])
-    if p['kind']=='opportunity' and not json.loads(p['permissions'])['tests']:agents.discard('SENTINEL')
+    if p['kind'] in ('opportunity','commercial') and not json.loads(p['permissions'])['tests']:agents.discard('SENTINEL')
     return agents
 
 def guard(c,mid,agent,action,target,base):
@@ -139,7 +145,13 @@ def start(c,body,cfg):
     requested=body.get('project')
     # Old API clients and already-authorized campaigns retain their original scope.
     frozen=None
-    if 'improvement' in body:
+    if 'commercial' in body:
+        if (body['commercial'] is not True or 'improvement' in body or type(requested) is not int or count!=1 or not flags['market'] or flags['production'] or body.get('connector_cap',0)):
+            raise ValueError('Préparation commerciale : activité précise, une mission, marché autorisé, production et connecteurs désactivés')
+        project=portfolio.project(c,requested)
+        if not project or project['state']!='active':raise ValueError('Activité inactive ou inconnue')
+        pid=requested;scope='commercial';artifact=portfolio.latest(c,pid);source=artifact['id'] if artifact else None
+    elif 'improvement' in body:
         mode=body['improvement']
         if type(requested) is not int or not flags['production'] or not flags['tests'] or cap or count!=1:
             raise ValueError('Amélioration : activité précise, production et tests, une mission, Brave 0 requis')
@@ -213,6 +225,8 @@ def choose(c,p):
     cid=p['id'];flags=json.loads(p['permissions']);ms=_missions(c,cid);kinds={x['kind'] for x in ms}
     scoped=portfolio.scope(c,cid)
     if scoped:
+        if scoped['scope']=='commercial':
+            return (('commercial',p['source'],None),'') if not ms else (None,'Préparation commerciale terminée; aucun test externe autorisé.')
         if scoped['scope']=='improvement':
             return (('improve',p['source'],None),'') if not ms else (None,'Production candidate terminée.')
         if scoped['scope']=='explore':
@@ -245,6 +259,7 @@ def choose(c,p):
 
 def title(p,kind,artifact,opp):
     tasks={
+      'commercial':"ORION : si recherche autorisée, lire des pages sectorielles via Brave, enregistrer des citations exactes avec commercial_signal; sinon signaler les lacunes. HERMES : commercial_offer, offre et protocole futur mesurable, signal_ids pertinents ou vides. MIDAS : commercial_economics sur l’ID de l’offre. SENTINEL si tests autorisés : commercial_review après MIDAS. ATLAS : synthèse factuelle, aucune publication, prospection, vente ou dépense commerciale. Réutilise les preuves de l’activité sans inventer de rapprochement.",
       'opportunity':"ORION puis MIDAS : explore des secteurs légaux diversifiés. Si autorisés, worldbank.market compare 2–3 pays (population, internet, PIB/hab.), n8n.market_compare exploite le relevé de la mission. ORION enregistre des opportunités via opportunity; MIDAS évalue chaque ID via assess_opportunity en EUR ou explique les omissions. ATLAS s’appuie sur le registre collectif; SENTINEL si anomalies, tests autorisés et budget suffisant. Macro ≠ demande; concurrence et coûts non prouvés restent hypothèses. Aucun achat.",
       'create':"NEXUS : à partir de l’opportunité #"+str((opp or {}).get('id','?'))+" ("+str((opp or {}).get('title',''))[:160]+"), crée un petit livrable autonome interne, testable en HTML/CSV/JSON. Utilise la mémoire pour les éléments disponibles. Expérience proposée : "+str((opp or {}).get('next_test',''))[:300]+". Produis un livrable et des données synthétiques avec résultats attendus; ne prétends pas que la demande est validée.",
       'improve':"NEXUS : corrige uniquement les défauts observés dans la preuve du fichier ref:"+str(artifact)+", produis un fichier distinct, ne modifie pas l’original.",

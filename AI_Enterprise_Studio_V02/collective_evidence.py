@@ -94,7 +94,7 @@ def registry(c,mid,compact=False):
             try:
                 text=intel.decode(row['report'])['rapport'].lower().replace('’',"'")
                 # Match the two narrow false-negative formulations observed in the historical campaign.
-                if re.search(r"\bn8n(?:\.market_compare)?\s+n[' ]a pas été appelé\b|\baucun résultat n8n n[' ]est attesté\b",text):
+                if re.search(r"\bn8n(?:\.market_compare)?\x60?\s+n[' ]a pas été appelé\b|\baucun résultat n8n n[' ]est attesté\b",text):
                     findings.append(_finding('possible_n8n_report_contradiction',report=row['id'],agent=row['agent'],runs=valid_compare))
             except (ValueError,TypeError,KeyError,AttributeError):
                 findings.append(_finding('report_unreadable',report=row['id']))
@@ -127,7 +127,7 @@ def campaign_summary(c,campaign):
     if not campaign:return None
     rows=[]
     for m in campaign['missions']:
-        if m['kind'] not in ('opportunity','market'):continue
+        if m['kind'] not in ('opportunity','market','commercial'):continue
         v=registry(c,m['id'])
         rows.append({k:v[k] for k in ('mission','connector_count','opportunity_count','assessed_count',
             'finding_count','review_required','sentinel_tasks')})

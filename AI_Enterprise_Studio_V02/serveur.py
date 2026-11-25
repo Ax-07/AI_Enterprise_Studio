@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.4.2.1"
+VERSION="0.4.3"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -48,6 +48,7 @@ def init():
         portfolio.init(c)
         improvement.init(c)
         connectors.init(c)
+        commercial.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -208,7 +209,7 @@ def status():
     cfg=config()
     with db() as c:
         campaign=autopilot.status(c,cfg)
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 def campaign_audit(c,cfg,cid):
     # Single read snapshot. Never copy config, environment or session credentials.
     campaign=autopilot.status(c,cfg)
@@ -227,7 +228,7 @@ def campaign_audit(c,cfg,cid):
         'diagnostic_campagne':{'version':VERSION,'readiness':autopilot.readiness(c,cfg,LOCK.locked()),'campaign':campaign},
         'connecteurs':connectors.status(c),'intelligence_economique':intelligence.status(c,full=True),
         'missions':missions,'collective_audit':collective_evidence.campaign_summary(c,campaign),
-        'previous_laboratory':collective_evidence.previous_laboratory(c),
+        'previous_laboratory':collective_evidence.previous_laboratory(c),'commercial':commercial.campaign(c,cid),
         'limit':'Rapports et journaux locaux potentiellement privés : vérifier avant partage. Connecteurs et intelligence : exports globaux avec limites habituelles (100/30 relevés); filtrer par mission/campagne. Événements : 100 extraits par mission. Aucun appel externe pour cet export.'}
 
 class Handler(BaseHTTPRequestHandler):
@@ -259,6 +260,11 @@ class Handler(BaseHTTPRequestHandler):
                 files={n8n_bridge.HEALTH:'aes_health.json',n8n_bridge.METRICS:'aes_metrics.json',n8n_bridge.COMPARE:'aes_market_compare.json'}
                 if cap not in files:raise ValueError('Workflow inconnu')
                 return self.send(json.loads((ROOT/'n8n'/files[cap]).read_text(encoding='utf8')))
+            if self.route()=='/api/commercial' and self.headers.get('X-Session')==SESSION:
+                pid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['project'][0])
+                with db() as c:
+                    if not portfolio.project(c,pid):raise ValueError('Activité absente')
+                    return self.send(commercial.project_status(c,pid))
             if self.route()=='/api/intelligence' and self.headers.get('X-Session')==SESSION:
                 with db() as c:return self.send(intelligence.status(c,full=True))
             if self.route()=='/api/connectors' and self.headers.get('X-Session')==SESSION:
