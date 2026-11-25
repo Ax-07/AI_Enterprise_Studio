@@ -1,5 +1,5 @@
 """Project-scoped commercial preparation. No publisher, payment or contact connector."""
-import hashlib,json
+import hashlib,json,re
 from urllib.parse import urlsplit
 import intelligence as intel
 import portfolio
@@ -13,6 +13,7 @@ OFFER_TEXT=('audience','problem','offer','deliverables','channel','risks')
 OFFER_LIMIT=800
 
 def init(c):
+    first_recovery=not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='commercial_followup_retries'").fetchone()
     c.executescript("""CREATE TABLE IF NOT EXISTS commercial_signals(
         id INTEGER PRIMARY KEY, project INTEGER NOT NULL REFERENCES projects(id),
         mission INTEGER NOT NULL REFERENCES missions(id), page INTEGER NOT NULL REFERENCES fetched(id),
@@ -35,11 +36,52 @@ def init(c):
         CREATE INDEX IF NOT EXISTS commercial_signals_project ON commercial_signals(project,id);
         CREATE INDEX IF NOT EXISTS commercial_offers_project ON commercial_offers(project,id);""")
 
+    # Create and populate atomically. Only the pre-upgrade history can qualify.
+    c.execute('SAVEPOINT followup_upgrade')
+    c.execute("""CREATE TABLE IF NOT EXISTS commercial_followup_retries(
+        original_campaign INTEGER PRIMARY KEY REFERENCES commercial_followups(campaign),
+        campaign INTEGER UNIQUE REFERENCES campaigns(id),resulting_offer INTEGER UNIQUE REFERENCES commercial_offers(id),
+        reason TEXT NOT NULL,created TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    if first_recovery:capture_legacy_no_search(c)
+    c.execute('RELEASE followup_upgrade')
+
+def capture_legacy_no_search(c):
+    """Recognize only the observed V0.4.5 zero-attempt delegation defect."""
+    if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='enterprise_plan_queue'").fetchone():return
+    for row in c.execute("""SELECT f.campaign,ca.permissions,ca.search_cap,cm.mission
+        FROM commercial_followups f JOIN campaigns ca ON ca.id=f.campaign
+        JOIN enterprise_plan_queue q ON q.campaign=ca.id
+        JOIN campaign_missions cm ON cm.campaign=ca.id JOIN missions m ON m.id=cm.mission
+        WHERE f.resulting_offer IS NULL AND ca.state='terminé' AND ca.search_cap>0
+        AND cm.kind='commercial' AND m.mode='cloud' AND m.state='terminée' AND m.error=''
+        AND (SELECT COUNT(*) FROM campaign_missions WHERE campaign=ca.id)=1"""):
+        mid=row['mission']
+        if not intel.decode(row['permissions']).get('research'):continue
+        if any(c.execute('SELECT 1 FROM '+table+' WHERE mission=?',(mid,)).fetchone() for table in ('searches','fetched','commercial_signals','commercial_offers')):continue
+        tasks=list(c.execute("SELECT agent,state,turns FROM tasks WHERE mission=? ORDER BY id",(mid,)))
+        if [tuple(t) for t in tasks]!=[('ATLAS','terminée',2),('ORION','terminée',1)]:continue
+        events=list(c.execute("SELECT agent,action,args,ok FROM events WHERE mission=? ORDER BY id",(mid,)))
+        if [(e['agent'],e['action'],e['ok']) for e in events]!=[('ATLAS','delegate',1),('ORION','finish',1),('ATLAS','finish',1)]:continue
+        args=intel.decode(events[0]['args'])
+        if args.get('target')!='ORION' or not re.search(r'\bbrave (?:est|était) indisponible\b',args.get('text',''),re.I):continue
+        c.execute('INSERT OR IGNORE INTO commercial_followup_retries(original_campaign,reason) VALUES(?,?)',
+            (row['campaign'],'Historique V0.4.5 : délégation Brave indisponible malgré quota positif, aucune tentative réseau. Une nouvelle autorisation requise.'))
+
 def followup(c,cid):
-    return c.execute('SELECT * FROM commercial_followups WHERE campaign=?',(cid,)).fetchone()
+    return c.execute("""SELECT campaign,base_offer,resulting_offer,created,NULL AS recovery_of FROM commercial_followups WHERE campaign=?
+        UNION ALL SELECT r.campaign,f.base_offer,r.resulting_offer,r.created,r.original_campaign AS recovery_of
+        FROM commercial_followup_retries r JOIN commercial_followups f ON f.campaign=r.original_campaign WHERE r.campaign=?""",(cid,cid)).fetchone()
 
 def followup_mission(c,mid):
-    return c.execute('SELECT f.* FROM commercial_followups f JOIN campaign_missions cm ON cm.campaign=f.campaign WHERE cm.mission=?',(mid,)).fetchone()
+    link=c.execute('SELECT campaign FROM campaign_missions WHERE mission=?',(mid,)).fetchone()
+    return followup(c,link['campaign']) if link else None
+
+def followup_outcome(c,mid,follow):
+    attempts=c.execute('SELECT COUNT(*) FROM searches WHERE mission=?',(mid,)).fetchone()[0]
+    state=c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]
+    return {'search_attempts':attempts,'state':'offre_enrichie' if follow['resulting_offer'] is not None else
+        'en_cours' if state=='en cours' else 'recherche_sans_nouvelle_offre' if attempts else 'recherche_non_commencee',
+        'legacy_retry_available':bool(c.execute('SELECT 1 FROM commercial_followup_retries WHERE original_campaign=? AND campaign IS NULL',(follow['campaign'],)).fetchone())}
 
 def eligible_followup(c,pid,aid):
     if not aid:return None
@@ -48,15 +90,22 @@ def eligible_followup(c,pid,aid):
     if set(offer['gaps'])!={'indices_documentaires_insuffisants','revue_independante_manquante_ou_reserves'}:return None
     if not offer['review'] or offer['review']['verdict']!='study_further':return None
     if not offer['economics'] or offer['economics']['result']['monthly_result_cents']<=0:return None
-    # Only one automatic documentary complement per product version, including if unsuccessful.
-    if c.execute("""SELECT 1 FROM commercial_followups f JOIN commercial_offers o ON o.id=f.base_offer
-        WHERE o.project=? AND o.artifact=?""",(pid,aid)).fetchone():return None
-    return offer
+    # No repeat except a migration-captured, proven zero-attempt legacy case.
+    past=list(c.execute("""SELECT f.*,r.original_campaign,r.campaign AS retry_campaign FROM commercial_followups f
+        JOIN commercial_offers o ON o.id=f.base_offer LEFT JOIN commercial_followup_retries r ON r.original_campaign=f.campaign
+        WHERE o.project=? AND o.artifact=?""",(pid,aid)))
+    if not past:return offer
+    if len(past)==1 and past[0]['base_offer']==offer['id'] and past[0]['original_campaign'] is not None and past[0]['retry_campaign'] is None and past[0]['resulting_offer'] is None:
+        return {**offer,'recovery_of':past[0]['campaign']}
+    return None
 
 def authorize_followup(c,cid,pid,aid,oid):
     offer=eligible_followup(c,pid,aid)
     if type(oid) is not int or not offer or offer['id']!=oid:raise ValueError('Offre à compléter non admissible ou modifiée')
-    c.execute('INSERT INTO commercial_followups(campaign,base_offer) VALUES(?,?)',(cid,oid))
+    if offer.get('recovery_of') is not None:
+        changed=c.execute('UPDATE commercial_followup_retries SET campaign=? WHERE original_campaign=? AND campaign IS NULL',(cid,offer['recovery_of'])).rowcount
+        if changed!=1:raise ValueError('Récupération déjà autorisée')
+    else:c.execute('INSERT INTO commercial_followups(campaign,base_offer) VALUES(?,?)',(cid,oid))
 
 def scope(c,mid):
     return c.execute("""SELECT cp.project,ca.source,ca.state,ca.permissions,m.mode,m.state AS mission_state,p.state AS project_state
@@ -159,7 +208,8 @@ def execute(c,t,action,target,text,detail):
             (oid,mid,intel.canonical(eco['assumptions']),intel.canonical(eco['result']))).lastrowid
         rid=c.execute('INSERT INTO commercial_reviews(offer,mission,review) VALUES(?,?,?)',
             (oid,mid,intel.canonical({'verdict':d['verdict'],'gaps':d['gaps']}))).lastrowid
-        c.execute('UPDATE commercial_followups SET resulting_offer=? WHERE campaign=?',(oid,follow['campaign']))
+        table='commercial_followup_retries' if follow['recovery_of'] is not None else 'commercial_followups'
+        c.execute('UPDATE '+table+' SET resulting_offer=? WHERE campaign=?',(oid,follow['campaign']))
         return {'offer':oid,'base_offer':base['id'],'economics':eid,'economics_reused_from':eco['id'],'review':rid,'verdict':d['verdict'],'external_authorized':False,'limit':LIMIT}
     if action=='commercial_signal':
         d=_obj(text,('kind','quote','interpretation'));page=_id(target)
@@ -244,7 +294,8 @@ def offer_status(c,row):
     if not audit or audit['verdict']!='propose_future_test':gaps.append('revue_independante_manquante_ou_reserves')
     m=c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()
     if m['state']!='terminée':gaps.append('mission_non_terminee')
-    origin=c.execute('SELECT base_offer FROM commercial_followups WHERE resulting_offer=?',(row['id'],)).fetchone()
+    origin=c.execute("""SELECT base_offer FROM commercial_followups WHERE resulting_offer=?
+        UNION ALL SELECT f.base_offer FROM commercial_followup_retries r JOIN commercial_followups f ON f.campaign=r.original_campaign WHERE r.resulting_offer=?""",(row['id'],row['id'])).fetchone()
     return {'id':row['id'],'base_offer':origin['base_offer'] if origin else None,'project':pid,'mission':mid,'artifact':row['artifact'],'artifact_sha256':row['artifact_sha256'],
         'plan':plan,'evidence':evidence,'invalid_signal_ids':invalid,'economics':economics,'review':audit,
         'technical_proofs':proofs,'laboratory':lab,'gaps':gaps,
@@ -264,7 +315,7 @@ def context(c,mid):
     art=portfolio.latest(c,pid)
     v=project_status(c,pid,mid)
     follow=followup_mission(c,mid)
-    if follow:v['followup']={**dict(follow),'limit':'Prix, offre, protocole et hypothèses économiques conservés; risques et revue actualisés uniquement si nouvel indice. Aucun lancement.'}
+    if follow:v['followup']={**dict(follow),'outcome':followup_outcome(c,mid,follow),'limit':'Prix, offre, protocole et hypothèses économiques conservés; risques et revue actualisés uniquement si nouvel indice. Aucun lancement.'}
     v['activity']={'id':pid,'title':p['title'],'opportunity':dict(opp) if opp else None}
     v['reference']={'id':art['id'],'name':art['name'],'version':art['version'],
         'proofs':portfolio.evidence(c,art),'laboratory':portfolio.laboratory.canonical(c,art)} if art else None

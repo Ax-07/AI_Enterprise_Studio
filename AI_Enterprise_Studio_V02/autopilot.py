@@ -191,7 +191,7 @@ def start(c,body,cfg):
         VALUES(?,?,?,?,?,?,'actif')""",(goal.strip(),budget,count,json.dumps(flags),cap,source)).lastrowid
     if 'project' in body:c.execute('INSERT INTO campaign_projects(campaign,project,scope) VALUES(?,?,?)',(cid,pid,scope))
     if 'commercial_followup' in body:
-        if scope!='commercial' or not cap or not flags['research'] or not flags['tests']:raise ValueError('Complément : recherche et revue autorisées, quota Brave positif requis')
+        if scope!='commercial' or not cap or not flags['research'] or not flags['tests'] or not cfg['mission_search_limit'] or c.execute('SELECT COUNT(*) FROM searches').fetchone()[0]>=cfg['limit']:raise ValueError('Complément : recherche et revue autorisées, quota Brave réellement disponible requis')
         commercial.authorize_followup(c,cid,pid,source,body['commercial_followup'])
     connectors.authorize_campaign(c,cid,body)
     if frozen is not None:improvement.begin(c,cid,pid,artifact,mode,goal.strip(),frozen)
