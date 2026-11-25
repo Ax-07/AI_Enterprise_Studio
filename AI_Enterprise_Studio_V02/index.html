@@ -141,7 +141,7 @@ function renderLab(s){
  }
  $('lab-run').disabled=busy||!opts.length||!s.html_sandbox_enabled||s.autopilot?.state==='actif'||s.missions.some(m=>m.state==='en cours');
  text('lab-note',lastError||(!s.html_sandbox_enabled?'Activer le sandbox HTML dans la configuration.':d.limit||''));
- const signature=JSON.stringify(d.runs);if(signature===labSig)return;labSig=signature;
+ const signature=JSON.stringify([d.runs,busy]);if(signature===labSig)return;labSig=signature;
  fill('lab-results',d.runs.length?d.runs.map(r=>{
    const n=el('article',undefined,'request');n.append(el('b','Expérience #'+r.id+' · fichier #'+r.artifact),badge(r.status),el('p',r.size+' lignes · graine '+r.seed+' · profil '+r.profile+' r'+r.revision));
    const m=r.metrics;
