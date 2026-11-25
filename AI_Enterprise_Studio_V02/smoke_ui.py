@@ -532,6 +532,47 @@ def smoke_intelligence():
     finally:case.doCleanups()
     print('Chromium intelligence: evidence export, dedicated preset and frozen capability selection')
 
+def smoke_periodic():
+    import periodic as pe
+    from test_periodic import PeriodicTests
+    case=PeriodicTests('test_http_authorize_revoke_export_and_manual_guard');case.setUp()
+    try:
+        with patch.object(s,'config',return_value=case.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page(accept_downloads=True)
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base)
+                    page.locator('#plan-budget').fill('9.00')
+                    expect(page.locator('#plan-start')).to_be_disabled()
+                    expect(page.locator('#plan-money-note')).to_contain_text('Enveloppes invalides')
+                    page.locator('#plan-budget').fill('0.50')
+                    expect(page.locator('#plan-start')).to_be_enabled()
+                    page.locator('#periodic-total').fill('0.40')
+                    expect(page.locator('#periodic-start')).to_be_disabled()
+                    page.locator('#periodic-total').fill('0.20')
+                    expect(page.locator('#periodic-start')).to_be_enabled()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/periodic/authorize') as res:page.locator('#periodic-start').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#periodic-state')).to_contain_text('active')
+                    expect(page.locator('#plan-start')).to_be_disabled()
+                    with page.expect_download() as dl:page.locator('#periodic-export').click()
+                    audit=json.loads(Path(dl.value.path()).read_text());assert audit['periodic']['grant']['state']=='active'
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/periodic/revoke') as res:page.locator('#periodic-revoke').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#periodic-state')).to_contain_text('révoquée')
+                    expect(page.locator('#plan-start')).to_be_enabled()
+                    network.assert_not_called();assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:case.doCleanups()
+    print('Chromium périodique : contrôle des enveloppes, autorisation, révocation, export, sans fournisseur')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
@@ -544,3 +585,4 @@ if __name__=='__main__':
     smoke_connectors()
     smoke_n8n()
     smoke_intelligence()
+    smoke_periodic()

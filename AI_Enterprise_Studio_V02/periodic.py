@@ -159,6 +159,8 @@ def loop(s,shutdown):
     while not shutdown.wait(2):
         try:
             with s.POST_LOCK:
+                with s.db() as c:
+                    if not active(c):continue
                 cfg=s.config()
                 with s.db() as c:
                     c.execute('BEGIN IMMEDIATE')
@@ -173,4 +175,5 @@ def loop(s,shutdown):
                     g=active(c)
                     if g:stop_linked(c,g['id']);change(c,g['id'],'suspended','Erreur ordonnanceur : '+type(e).__name__,now())
             except Exception:pass
-            return
+            # A later explicit authorization may use this scheduler again.
+            continue
