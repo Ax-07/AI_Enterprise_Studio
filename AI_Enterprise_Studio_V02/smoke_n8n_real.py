@@ -15,7 +15,7 @@ def main():
     env=['-e','N8N_DIAGNOSTICS_ENABLED=false','-e','N8N_VERSION_NOTIFICATIONS_ENABLED=false',
          '-e','N8N_TEMPLATES_ENABLED=false','-e','N8N_SECURE_COOKIE=false',
          '-e','N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true','-e','N8N_BLOCK_ENV_ACCESS_IN_NODE=true']
-    cred_id='AesCiHeader00001';workflow_ids=['AesCiHealth00001','AesCiMetrics0001']
+    cred_id='AesCiHeader00001';workflow_ids=['AesCiHealth00001','AesCiMetrics0001','AesCiMarket00001']
     docker('pull',IMAGE);docker('volume','create',vol)
     try:
         with tempfile.TemporaryDirectory() as tmp:
@@ -23,7 +23,7 @@ def main():
             credentials=[{'id':cred_id,'name':'AES CI','type':'httpHeaderAuth','data':{'name':'X-AES-Token','value':token}}]
             (path/'credentials.json').write_text(json.dumps(credentials),encoding='utf8')
             workflows=[]
-            for wid,kind in zip(workflow_ids,['health','metrics']):
+            for wid,kind in zip(workflow_ids,['health','metrics','market_compare']):
                 w=json.loads(pathlib.Path('n8n/aes_'+kind+'.json').read_text(encoding='utf8'))
                 w['id']=wid;w['nodes'][0]['credentials']={'httpHeaderAuth':{'id':cred_id,'name':'AES CI'}}
                 workflows.append(w)
@@ -47,7 +47,7 @@ def main():
             print(pub.stdout.replace(token,'[REDACTED]')[-1200:])
         # Startup health only describes DB readiness. The publication service registers routes asynchronously.
         # Probe with an intentionally incorrect secret, never replay a valid execution.
-        for cap in (n.HEALTH,n.METRICS):
+        for cap in (n.HEALTH,n.METRICS,n.COMPARE):
             registered=False
             for _ in range(40):
                 conn=http.client.HTTPConnection('127.0.0.1',5678,timeout=2)
@@ -66,11 +66,12 @@ def main():
         os.environ['AES_N8N_TOKEN']=token
         result=n.call(n.HEALTH,'{}',secrets.token_hex(16));assert result['result']=={'ready':True}
         result=n.call(n.METRICS,'{"values":[10,-3,7]}',secrets.token_hex(16));assert result['result']=={'count':3,'sum':14,'min':-3,'max':10}
+        result=n.call(n.COMPARE,n.SAMPLE_COMPARE,secrets.token_hex(16));assert result['result']=={'markets':[{'country':'GBR','estimated_users':810},{'country':'FRA','estimated_users':800}]}
         os.environ['AES_N8N_TOKEN']=secrets.token_urlsafe(32)
         try:n.call(n.HEALTH,'{}',secrets.token_hex(16))
         except n.Unconfirmed as e:assert str(e) in ('HTTP 401','HTTP 403'),str(e)
         else:raise AssertionError('Wrong credential accepted')
-        print('n8n Docker: imported and published 2 workflows, authenticated real calls and wrong-token rejection')
+        print('n8n Docker: imported and published 3 workflows, authenticated real calls and wrong-token rejection')
     finally:
         os.environ.pop('AES_N8N_TOKEN',None)
         docker('rm','-f',name,check=False);docker('volume','rm',vol,check=False)

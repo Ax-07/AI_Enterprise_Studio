@@ -1,6 +1,7 @@
 """Trusted capability registry. Default deny, bounded public read-only adapters."""
 import hashlib,http.client,json,os,re,ssl,secrets
 import n8n_bridge as n8n
+import intelligence as intel
 from decimal import Decimal,InvalidOperation
 
 AGENTS=('ATLAS','ORION','MIDAS','NEXUS','HERMES','SENTINEL','PROMETHEUS','MNEMOS')
@@ -15,6 +16,8 @@ REGISTRY={
          'provider':'n8n','available':False,'risk':'not_enabled','method':None,'cost_usd_micro':None,
          'roles':(),'secret_env':'AES_N8N_TOKEN'},
  n8n.HEALTH:{'label':'n8n — Test de communication','description':'Vérifie le contrat du webhook local authentifié; aucun effet commercial.', 'provider':'n8n','available':True,'risk':'local_compute','method':'POST','cost_usd_micro':0,'roles':n8n.ROLES,'secret_env':'AES_N8N_TOKEN','revision':1},
+ intel.CAP:{'label':'Banque mondiale — Marchés internationaux','description':'Population, internet et PIB par habitant de deux ou trois pays sur une même année. Source publique officielle, pas de preuve de demande.', 'provider':'World Bank','available':True,'risk':'public_read','method':'GET','cost_usd_micro':0,'roles':('ORION','MIDAS','ATLAS','HERMES','SENTINEL'),'secret_env':None,'revision':1},
+ n8n.COMPARE:{'label':'n8n — Comparaison de marchés','description':'Estimation comparative des internautes à partir d’un relevé Banque mondiale de la mission; aucune donnée client.', 'provider':'n8n','available':True,'risk':'local_compute','method':'POST','cost_usd_micro':0,'roles':('ORION','MIDAS','ATLAS','HERMES','SENTINEL'),'secret_env':'AES_N8N_TOKEN','revision':1},
  n8n.METRICS:{'label':'n8n — Statistiques numériques','description':'Compte, somme, minimum, maximum de 1 à 100 entiers. Aucun appel fournisseur ni donnée client.', 'provider':'n8n','available':True,'risk':'local_compute','method':'POST','cost_usd_micro':0,'roles':n8n.ROLES,'secret_env':'AES_N8N_TOKEN','revision':1},
 }
 
@@ -37,6 +40,7 @@ def init(c):
         CREATE TABLE IF NOT EXISTS connector_workflow_results(
           run INTEGER PRIMARY KEY REFERENCES connector_runs(id), request_id TEXT NOT NULL UNIQUE,
           execution_id TEXT, result TEXT);""")
+    intel.init(c)
     for cap in REGISTRY:c.execute('INSERT OR IGNORE INTO connector_policies(capability) VALUES(?)',(cap,))
     # A crash after reservation never releases a potentially consumed quota.
     c.execute("UPDATE connector_runs SET state='unknown',diagnostic='Interruption; réservation conservée' WHERE state='reserved'")
@@ -81,16 +85,19 @@ def authorize_campaign(c,cid,body):
     count=body.get('connector_cap',0);budget=micro(body.get('connector_budget','0'))
     if type(count) is not int or not 0<=count<=10:raise ValueError('Quota connecteurs entre 0 et 10')
     if not count:
-        if budget:raise ValueError('Budget connecteurs sans quota')
+        if budget or body.get('connector_selection') is not None:raise ValueError('Sélection ou budget connecteurs sans quota')
         return
     if 'project' not in body or not body['permissions']['research'] or 'improvement' in body:
         raise ValueError('Connecteurs : campagne ciblée de recherche (hors amélioration) requise')
+    selection=body.get('connector_selection')
+    if selection is not None and (not isinstance(selection,list) or not selection or len(selection)>len(REGISTRY) or any(not isinstance(k,str) or k not in REGISTRY for k in selection) or len(set(selection))!=len(selection) or count<len(selection)):raise ValueError('Sélection explicite des connecteurs invalide')
     caps={}
     for cap,spec in REGISTRY.items():
+        if selection is not None and cap not in selection:continue
         p=policy(c,cap);t=totals(c,'WHERE capability=?',(cap,))
         if p['enabled'] and p['agents'] and usable(cap) and spec['risk'] in ('public_read','local_compute') and spec['cost_usd_micro'] is not None and t['calls']<p['max_calls'] and t['reserved']+spec['cost_usd_micro']<=p['budget'] and spec['cost_usd_micro']<=budget:
             caps[cap]={'agents':p['agents'],'cost':spec['cost_usd_micro'],'revision':spec.get('revision',1)}
-    if not caps:raise ValueError('Aucun connecteur autorisé avec quota et budget disponibles')
+    if not caps or (selection is not None and set(caps)!=set(selection)):raise ValueError('Connecteur sélectionné non autorisé ou quota/budget indisponible')
     c.execute('INSERT INTO connector_campaigns(campaign,max_calls,budget,capabilities) VALUES(?,?,?,?)',
         (cid,count,budget,json.dumps(caps)))
 
@@ -129,7 +136,11 @@ def check(c,cap,mid,tid,actor):
 def available(c,t):
     out=[]
     for cap in REGISTRY:
-        try:check(c,cap,t['mission'],t['id'],t['agent'])
+        try:
+            check(c,cap,t['mission'],t['id'],t['agent'])
+            if cap==n8n.COMPARE:
+                candidates=intel.sources(c,t['mission'])
+                if not any(intel.comparable(x['snapshot']) for x in candidates):continue
         except ValueError:continue
         out.append(cap)
     return out
@@ -164,10 +175,12 @@ def github_repo(name):
             'archived':data.get('archived') is True,'note':'Métadonnées publiques non certifiées; popularité ≠ demande commerciale.'}
     finally:conn.close()
 
-ADAPTERS={PUBLIC:github_repo}
+ADAPTERS={PUBLIC:github_repo,intel.CAP:intel.fetch}
 
 def validate_input(cap,text):
     if cap==PUBLIC:return slug(text)
+    if cap==intel.CAP:return intel.request_spec(text)
+    if cap==n8n.COMPARE:return intel.compare_ref(text)
     if cap in n8n.PATHS:return n8n.validate(cap,text)
     raise ValueError('Connecteur non exécutable')
 
@@ -178,12 +191,15 @@ def invoke(s,cap,text,mid=None,tid=None,actor='PROPRIETAIRE'):
     with s.db() as c:
         c.execute('BEGIN IMMEDIATE')
         cid,cost=check(c,cap,mid,tid,actor)
-        if is_n8n and mid is not None and c.execute('SELECT 1 FROM connector_runs WHERE mission=? AND capability=? AND input_sha256=?',(mid,cap,digest)).fetchone():raise ValueError('Workflow identique déjà tenté; consulter le journal, aucun retry automatique')
+        if cap==n8n.COMPARE:
+            payload=intel.compare_input(c,value,mid) if mid is not None else n8n.SAMPLE_COMPARE
+        else:payload=value
+        if (is_n8n or cap==intel.CAP) and mid is not None and c.execute('SELECT 1 FROM connector_runs WHERE mission=? AND capability=? AND input_sha256=?',(mid,cap,digest)).fetchone():raise ValueError('Workflow identique déjà tenté; consulter le journal, aucun retry automatique')
         rid=c.execute("""INSERT INTO connector_runs(capability,mission,task,campaign,actor,input_sha256,reserved,state)
             VALUES(?,?,?,?,?,?,?,'reserved')""",(cap,mid,tid,cid,actor,digest,cost)).lastrowid
         if is_n8n:c.execute('INSERT INTO connector_workflow_results(run,request_id) VALUES(?,?)',(rid,request_id))
     try:
-        result=n8n.call(cap,value,request_id) if is_n8n else ADAPTERS[cap](value)
+        result=n8n.call(cap,payload,request_id) if is_n8n else ADAPTERS[cap](value)
     except Exception as e:
         # No exception messages, response bodies, headers, or secrets are logged.
         diag=type(e).__name__
@@ -192,9 +208,16 @@ def invoke(s,cap,text,mid=None,tid=None,actor='PROPRIETAIRE'):
         state='unknown' if is_n8n else 'failed'
         with s.db() as c:c.execute('UPDATE connector_runs SET state=?,diagnostic=?,finished=CURRENT_TIMESTAMP WHERE id=?',(state,diag,rid))
         return {'connector':cap,'run':rid,'status':state,'diagnostic':diag,'note':'Tentative décomptée; aucun retry automatique.'}
-    with s.db() as c:
-        if is_n8n:c.execute('UPDATE connector_workflow_results SET execution_id=?,result=? WHERE run=?',(result['execution_id'],json.dumps(result,ensure_ascii=False),rid))
-        c.execute("UPDATE connector_runs SET state='received',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
+    if cap==n8n.COMPARE:result={**result,'source_run':json.loads(value)['source_run'] if mid is not None else None,'payload_sha256':hashlib.sha256(payload.encode()).hexdigest(),'note':'Proxy de couverture numérique, pas demande; test propriétaire synthétique si source_run null.'}
+    try:
+        with s.db() as c:
+            if cap==intel.CAP:intel.record(c,rid,result)
+            if is_n8n:c.execute('UPDATE connector_workflow_results SET execution_id=?,result=? WHERE run=?',(result['execution_id'],json.dumps(result,ensure_ascii=False),rid))
+            c.execute("UPDATE connector_runs SET state='received',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
+    except (ValueError,TypeError,KeyError,AttributeError):
+        with s.db() as c:c.execute("UPDATE connector_runs SET state='unknown',diagnostic='Résultat local non validé',finished=CURRENT_TIMESTAMP WHERE id=?",(rid,))
+        return {'connector':cap,'run':rid,'status':'unknown','diagnostic':'Résultat local non validé','note':'Tentative décomptée.'}
+    if cap==intel.CAP:result={k:v for k,v in result.items() if k!='raw_json'}
     return {'connector':cap,'run':rid,'status':'received','data':result}
 
 def status(c):

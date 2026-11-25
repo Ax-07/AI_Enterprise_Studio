@@ -17,3 +17,5 @@ for(const [kind,input,want] of [['health',{}, {ready:true}],['metrics',{values:[
  }
 }
 console.log('n8n code contracts: both workflows, positive and negative cases');
+
+const cmp=JSON.parse(fs.readFileSync('n8n/aes_market_compare.json','utf8'));const runCmp=new Function('$input','$execution',cmp.nodes[1].parameters.jsCode);const b={protocol:'aes-n8n-v1',request_id:req,input:{rows:[{country:'FRA',population:1000,internet_bp:8000},{country:'GBR',population:900,internet_bp:9000}]}};assert.deepStrictEqual(runCmp({first:()=>({json:{body:b}})},{id:18})[0].json.result,{markets:[{country:'GBR',estimated_users:810},{country:'FRA',estimated_users:800}]});assert.throws(()=>runCmp({first:()=>({json:{body:{...b,input:{rows:[b.input.rows[0],b.input.rows[0]]}}}})},{id:18}));console.log('n8n market comparison contract OK');

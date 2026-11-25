@@ -16,7 +16,7 @@ class ConnectorTests(unittest.TestCase):
         with patch.dict(os.environ,{'AES_N8N_TOKEN':'PRIVATE_TEST_VALUE'}):
             with s.db() as c:
                 x.init(c);d=x.status(c)
-                self.assertEqual(len(d['capabilities']),4)
+                self.assertEqual(len(d['capabilities']),6)
                 self.assertTrue(all(not y['policy']['enabled'] for y in d['capabilities']))
                 self.assertTrue(d['capabilities'][1]['credential_present'])
                 self.assertNotIn('PRIVATE_TEST_VALUE',json.dumps(d))

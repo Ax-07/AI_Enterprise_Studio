@@ -60,7 +60,7 @@ def permitted(c,mid,agent,base):
     if not flags['production'] or kind not in ('create','improve'): allowed.discard('write_file')
     if not flags['tests'] or kind!='functional': allowed.discard('test_file')
     if not flags['tests']: allowed.discard('check_file')
-    if kind!='opportunity': allowed.discard('opportunity')
+    if kind!='opportunity': allowed-={'opportunity','assess_opportunity'}
     if not flags['research'] or kind not in ('opportunity','market') or not connectors.campaign_status(c,p['id'])['max_calls']:allowed.discard('connector')
     return allowed,p
 
@@ -240,7 +240,7 @@ def choose(c,p):
 
 def title(p,kind,artifact,opp):
     tasks={
-      'opportunity':"ORION et MIDAS : explore des secteurs légaux diversifiés, relève des signaux vérifiables de demande, concurrence, coûts et automatisation. Enregistre une opportunité ciblée via opportunity, en tant qu’hypothèse; aucun achat.",
+      'opportunity':"ORION puis MIDAS : explore des secteurs légaux diversifiés. Si autorisés, worldbank.market compare 2–3 pays (population, internet, PIB/hab.), n8n.market_compare exploite le relevé de la mission. ORION enregistre des opportunités via opportunity; MIDAS évalue les hypothèses en EUR via assess_opportunity sur leurs ID. Macro ≠ demande; concurrence et coûts non prouvés restent hypothèses. Aucun achat.",
       'create':"NEXUS : à partir de l’opportunité #"+str((opp or {}).get('id','?'))+" ("+str((opp or {}).get('title',''))[:160]+"), crée un petit livrable autonome interne, testable en HTML/CSV/JSON. Utilise la mémoire pour les éléments disponibles. Expérience proposée : "+str((opp or {}).get('next_test',''))[:300]+". Produis un livrable et des données synthétiques avec résultats attendus; ne prétends pas que la demande est validée.",
       'improve':"NEXUS : corrige uniquement les défauts observés dans la preuve du fichier ref:"+str(artifact)+", produis un fichier distinct, ne modifie pas l’original.",
       'functional':"SENTINEL : lis ref:"+str(artifact)+", examine les preuves antérieures, définis des assertions indépendantes sur les lacunes et exécute test_file sur ce fichier exact. Ne répète pas les tests déjà passés sans nécessité. Adapte les tests au produit et à ses critères enregistrés; distingue assertions synthétiques, performance mesurée et critères non couverts.",

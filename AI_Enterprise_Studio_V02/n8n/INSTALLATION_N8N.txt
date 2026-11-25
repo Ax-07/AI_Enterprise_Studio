@@ -1,3 +1,5 @@
+V0.4.2 : importer aes_market_compare.json, réutiliser AES Local dans Webhook AES, publier. Ne pas recréer de jeton. Test propriétaire synthétique, distinct des relevés réels. Comparaison des internautes estimés sur population et couverture internet de même année (pourcentage arrondi au centième); pas une demande commerciale.
+
 V0.4.1 — Installer n8n local (une seule fois)
 
 Pré-requis : instance n8n locale déjà disponible sur http://127.0.0.1:5678, non exposée à Internet ou au LAN. Ne pas modifier une instance existante sans sauvegarde. Si aucune instance locale : démarrer Docker Desktop puis, dans V02, exécuter docker compose -f n8n/compose.yaml up -d. Ce fichier crée une instance distincte avec un volume persistant et un port loopback; ne l'utilise pas si une instance occupe déjà le port 5678. Créer le compte propriétaire local lors de la première ouverture. Ne pas utiliser un tunnel. Ne pas utiliser n8n Cloud avec cette version.
