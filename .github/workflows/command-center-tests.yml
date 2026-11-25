@@ -35,3 +35,8 @@ jobs:
         run: docker build -t aes-verifier:0.3.0 sandbox
       - name: Functional sandbox test
         run: python smoke_sandbox.py
+
+      - name: Build laboratory sandbox
+        run: docker tag aes-verifier:0.3.0 aes-lab:0.3.8
+      - name: Laboratory real browser benchmark
+        run: python smoke_laboratory.py
