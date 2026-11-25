@@ -30,7 +30,7 @@ def smoke():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
                 page.goto(base)
-                expect(page.locator('#connection-text')).to_have_text('Serveur V0.3.8')
+                expect(page.locator('#connection-text')).to_have_text('Serveur V0.3.9')
                 expect(page.locator('#quick-products')).to_have_text('2')
                 expect(page.locator('#pilotage-plan')).to_contain_text('Activer ou examiner le bac à sable')
                 page.locator('#pilotage-next').click()
@@ -285,6 +285,41 @@ def smoke_laboratory():
     finally:fixture.doCleanups()
     print('Chromium laboratoire: sélection du moteur, résultat et export, sans fournisseur')
 
+def smoke_improvement():
+    from test_improvement import ImprovementTests
+    import autopilot as a,improvement as i
+    fixture=ImprovementTests('test_auto_retain_and_restore')
+    fixture.setUp()
+    try:
+        pid,aid=fixture.prepared()
+        with patch.object(s,'config',return_value=fixture.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.object(a,'worker',return_value=None) as worker:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page()
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base);page.locator('[data-page="portfolio"]').click()
+                    page.get_by_role('button',name='Préparer une amélioration').click()
+                    expect(page.locator('#auto-project')).to_have_value(str(pid))
+                    expect(page.locator('#auto-improvement')).to_have_value(i.CSV_PROFILE)
+                    expect(page.locator('#auto-count')).to_have_value('1')
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/autopilot/start') as res:page.locator('#auto-start').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#auto-state')).to_have_text('actif')
+                    with s.db() as c:
+                        cy=i.cycle(c,res.value.json()['campaign'])
+                        assert cy['baseline']==aid and cy['state']=='pending'
+                    network.assert_not_called();worker.assert_called_once()
+                    assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:fixture.doCleanups()
+    print('Chromium amélioration: sélection du profil, une mission, référence protégée')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
@@ -292,3 +327,4 @@ if __name__=='__main__':
     smoke_working_memory()
     smoke_portfolio()
     smoke_laboratory()
+    smoke_improvement()

@@ -4,6 +4,7 @@ import protocol_recovery
 import working_memory
 import portfolio
 import laboratory
+import improvement
 from decimal import Decimal, InvalidOperation
 
 ACTIVE='actif'
@@ -90,6 +91,7 @@ def status(c,cfg=None):
     d['laboratory']=[laboratory.summary_row(r) for r in c.execute('SELECT * FROM laboratory_runs WHERE campaign=?',(p['id'],))]
     scope=portfolio.scope(c,p['id'])
     d['project']=scope['project'] if scope else None;d['scope']=scope['scope'] if scope else 'legacy'
+    cy=improvement.cycle(c,p['id']);d['improvement']=improvement.summary(c,cy) if cy else None
     return d
 
 def start(c,body,cfg):
@@ -113,17 +115,28 @@ def start(c,body,cfg):
     portfolio.sync(c)
     requested=body.get('project')
     # Old API clients and already-authorized campaigns retain their original scope.
-    if 'project' in body:
+    frozen=None
+    if 'improvement' in body:
+        mode=body['improvement']
+        if type(requested) is not int or not flags['production'] or not flags['tests'] or cap or count!=1:
+            raise ValueError('Amélioration : activité précise, production et tests, une mission, Brave 0 requis')
+        project=portfolio.project(c,requested)
+        if not project or project['state']!='active':raise ValueError('Activité inactive ou inconnue')
+        pid=requested;scope='improvement';artifact=portfolio.latest(c,pid)
+        frozen=improvement.plan(c,artifact,mode)
+        source=artifact['id']
+    elif 'project' in body:
         pid,scope=portfolio.select(c,requested,flags)
         artifact=portfolio.latest(c,pid) if pid is not None else None
         source=artifact['id'] if artifact else None
     else:
         row=c.execute("""SELECT a.id FROM artifacts a JOIN missions m ON m.id=a.mission
-            WHERE m.mode='cloud' AND m.state='terminée' AND a.agent='NEXUS' ORDER BY a.id DESC LIMIT 1""").fetchone()
+            WHERE m.mode='cloud' AND m.state='terminée' AND a.agent='NEXUS' AND NOT EXISTS(SELECT 1 FROM campaign_missions cm JOIN improvement_cycles ic ON ic.campaign=cm.campaign WHERE cm.mission=a.mission) ORDER BY a.id DESC LIMIT 1""").fetchone()
         source=row[0] if row else None
     cid=c.execute("""INSERT INTO campaigns(goal,budget,max_missions,permissions,search_cap,source,state)
         VALUES(?,?,?,?,?,?,'actif')""",(goal.strip(),budget,count,json.dumps(flags),cap,source)).lastrowid
     if 'project' in body:c.execute('INSERT INTO campaign_projects(campaign,project,scope) VALUES(?,?,?)',(cid,pid,scope))
+    if frozen is not None:improvement.begin(c,cid,pid,artifact,mode,goal.strip(),frozen)
     return cid
 
 def stop(c,cid):
@@ -141,6 +154,8 @@ def resume(c,cid,cfg):
     if not cfg['key'] or costs(c,cid)>=p['budget'] or c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0]>=cfg['budget']:raise ValueError('Ressources insuffisantes; aucune remise à zéro')
     scope=portfolio.scope(c,cid)
     if scope and scope['project'] is not None and portfolio.project(c,scope['project'])['state']!='active':raise ValueError('Réactiver cette activité avant la reprise')
+    cy=improvement.cycle(c,cid)
+    if cy and (cy['state']!='pending' or improvement.pinned(c,cy['project'])['id']!=cy['baseline']):raise ValueError('Cycle remplacé ou référence modifiée')
     ms=_missions(c,cid)
     recover=bool(p['state']=='bloqué' and ms and recovery_kind(c,ms[-1]['id'],cfg))
     if p['state']=='bloqué' and not recover:raise ValueError('Blocage non récupérable sans diagnostic; aucun compteur réinitialisé')
@@ -174,6 +189,8 @@ def choose(c,p):
     cid=p['id'];flags=json.loads(p['permissions']);ms=_missions(c,cid);kinds={x['kind'] for x in ms}
     scoped=portfolio.scope(c,cid)
     if scoped:
+        if scoped['scope']=='improvement':
+            return (('improve',p['source'],None),'') if not ms else (None,'Production candidate terminée.')
         if scoped['scope']=='explore':
             return ((('opportunity',None,None),'') if not ms and flags['research'] else (None,'Exploration terminée; sélectionner une activité pour la suite.'))
         return portfolio.next_step(c,scoped['project'],flags)
@@ -217,7 +234,7 @@ def worker(s,cid):
     with s.LOCK:
         try:
             while True:
-                cfg=s.config(); lab_artifact=None
+                cfg=s.config(); lab_artifact=None; compare_mid=None
                 with s.db() as c:
                     c.execute('BEGIN IMMEDIATE')
                     p=_campaign(c,cid)
@@ -230,24 +247,30 @@ def worker(s,cid):
                             c.execute('UPDATE campaigns SET state=?,reason=? WHERE id=?',(state,last['error'] or last['state'],cid));return
                         if c.execute("SELECT 1 FROM requests WHERE state='en attente'").fetchone():
                             c.execute("UPDATE campaigns SET state='en attente',reason='Décision requise.' WHERE id=?",(cid,));return
-                        if len(ms)>=p['max_missions']:
+                        cy=improvement.cycle(c,cid)
+                        if cy and last and last['state']=='terminée':compare_mid=last['id']
+                        if compare_mid is not None:pass
+                        elif len(ms)>=p['max_missions']:
                             c.execute("UPDATE campaigns SET state='terminé',reason='Nombre maximal de missions atteint; aucun objectif commercial certifié.' WHERE id=?",(cid,));return
-                        if not cfg['key'] or costs(c,cid)>=p['budget'] or s.used(c)>=cfg['budget']:
-                            c.execute("UPDATE campaigns SET state='terminé',reason='Plafond logiciel ou ressource atteint.' WHERE id=?",(cid,));return
-                        portfolio.sync(c)
-                        nxt,reason=choose(c,p)
-                        if not nxt:
-                            c.execute("UPDATE campaigns SET state='terminé',reason=? WHERE id=?",(reason,cid));return
-                        kind,artifact,opp=nxt
-                        if kind=='laboratory':
-                            if c.execute('SELECT 1 FROM laboratory_runs WHERE campaign=?',(cid,)).fetchone():
-                                c.execute("UPDATE campaigns SET state='terminé',reason='Une expérience locale maximum par campagne; examiner les résultats.' WHERE id=?",(cid,));return
-                            lab_artifact=artifact
-                        else:
-                            mid=s.moteur.create(s,c,title(p,kind,artifact,opp),'cloud',artifact_id=artifact)
-                            c.execute('INSERT INTO campaign_missions(campaign,mission,kind,artifact) VALUES(?,?,?,?)',(cid,mid,kind,artifact))
-                            scoped=portfolio.scope(c,cid)
-                            if scoped and scoped['project'] is not None:portfolio.attach(c,mid,scoped['project'],'campagne ciblée')
+                        if compare_mid is None:
+                            if not cfg['key'] or costs(c,cid)>=p['budget'] or s.used(c)>=cfg['budget']:
+                                c.execute("UPDATE campaigns SET state='terminé',reason='Plafond logiciel ou ressource atteint.' WHERE id=?",(cid,));return
+                            portfolio.sync(c)
+                            nxt,reason=choose(c,p)
+                            if not nxt:
+                                c.execute("UPDATE campaigns SET state='terminé',reason=? WHERE id=?",(reason,cid));return
+                            kind,artifact,opp=nxt
+                            if kind=='laboratory':
+                                if c.execute('SELECT 1 FROM laboratory_runs WHERE campaign=?',(cid,)).fetchone():
+                                    c.execute("UPDATE campaigns SET state='terminé',reason='Une expérience locale maximum par campagne; examiner les résultats.' WHERE id=?",(cid,));return
+                                lab_artifact=artifact
+                            else:
+                                mid=s.moteur.create(s,c,improvement.production_title(cy,improvement.row(c,artifact)) if cy else title(p,kind,artifact,opp),'cloud',artifact_id=artifact)
+                                c.execute('INSERT INTO campaign_missions(campaign,mission,kind,artifact) VALUES(?,?,?,?)',(cid,mid,kind,artifact))
+                                scoped=portfolio.scope(c,cid)
+                                if scoped and scoped['project'] is not None:portfolio.attach(c,mid,scoped['project'],'campagne ciblée')
+                if compare_mid is not None:
+                    improvement.complete(s,cid,compare_mid,cfg);return
                 if lab_artifact is not None:
                     result=laboratory.run(s,lab_artifact,laboratory.PROFILE,300,laboratory.DEFAULT_SEED,cfg,campaign=cid)
                     if result['status']!='passed':

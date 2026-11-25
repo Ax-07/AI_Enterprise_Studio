@@ -2,12 +2,12 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
-VERSION="0.3.8"
+VERSION="0.3.9"
 SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -46,6 +46,7 @@ def init():
         autopilot.init(c)
         laboratory.init(c)
         portfolio.init(c)
+        improvement.init(c)
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
     budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
@@ -230,6 +231,11 @@ class Handler(BaseHTTPRequestHandler):
                     tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=?',(mid,))]
                     calls,cost=c.execute('SELECT COUNT(*),COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger WHERE mission=?',(mid,)).fetchone()
                 return self.send({'mission':dict(mission),'tasks':tasks,'events':events,'calls':calls,'estimated_usd':cost/1e6,'limit':'Extraits de journal local; vérifier avant partage.'})
+            if self.route()=='/api/improvement' and self.headers.get('X-Session')==SESSION:
+                rid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
+                with db() as c:r=c.execute('SELECT * FROM improvement_cycles WHERE id=?',(rid,)).fetchone()
+                if not r:raise ValueError('Cycle absent')
+                return self.send({**dict(r),'plan':json.loads(r['plan']),'result':json.loads(r['result'])})
             if self.route()=='/api/laboratory' and self.headers.get('X-Session')==SESSION:
                 rid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:r=c.execute('SELECT * FROM laboratory_runs WHERE id=?',(rid,)).fetchone()
@@ -262,6 +268,20 @@ class Handler(BaseHTTPRequestHandler):
                     result=laboratory.run(sys.modules[__name__],p.get('artifact'),p.get('profile'),p.get('size'),p.get('seed'),cfg)
                     return self.send({'experiment':result['id'],'status':result['status']})
                 finally:LOCK.release()
+            if self.route()=='/api/improvement/retain':
+                if p.get('confirm') is not True:raise ValueError('Confirmation requise')
+                if LOCK.locked():raise ValueError('Travail en cours')
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    improvement.retain_review(c,p.get('id'))
+                return self.send({'ok':True})
+            if self.route()=='/api/improvement/restore':
+                if p.get('confirm') is not True:raise ValueError('Confirmation requise')
+                if LOCK.locked():raise ValueError('Travail en cours')
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    improvement.restore(c,p.get('project'),p.get('artifact'))
+                return self.send({'ok':True})
             if self.route()=='/api/portfolio/state':
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 with db() as c:
