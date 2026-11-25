@@ -2,6 +2,7 @@
 import json, hashlib
 import protocol_recovery
 import working_memory
+import portfolio
 from decimal import Decimal, InvalidOperation
 
 ACTIVE='actif'
@@ -85,6 +86,8 @@ def status(c,cfg=None):
     d['spent']=costs(c,p['id']);d['searches']=searches(c,p['id']);d['missions']=[dict(x) for x in _missions(c,p['id'])]
     d['recovery_kind']=recovery_kind(c,d['missions'][-1]['id'],cfg) if cfg and p['state']=='bloqué' and d['missions'] else None
     d['recoverable']=bool(d['recovery_kind'])
+    scope=portfolio.scope(c,p['id'])
+    d['project']=scope['project'] if scope else None;d['scope']=scope['scope'] if scope else 'legacy'
     return d
 
 def start(c,body,cfg):
@@ -105,10 +108,21 @@ def start(c,body,cfg):
     except (InvalidOperation,ValueError,OverflowError):raise ValueError('Budget invalide')
     remaining=cfg['budget']-c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0]
     if not cfg['key'] or budget>remaining:raise ValueError('Clé ou budget global disponible insuffisant')
-    source=c.execute("""SELECT a.id FROM artifacts a JOIN missions m ON m.id=a.mission
-        WHERE m.mode='cloud' AND m.state='terminée' AND a.agent='NEXUS' ORDER BY a.id DESC LIMIT 1""").fetchone()
-    return c.execute("""INSERT INTO campaigns(goal,budget,max_missions,permissions,search_cap,source,state)
-        VALUES(?,?,?,?,?,?,'actif')""",(goal.strip(),budget,count,json.dumps(flags),cap,source[0] if source else None)).lastrowid
+    portfolio.sync(c)
+    requested=body.get('project')
+    # Old API clients and already-authorized campaigns retain their original scope.
+    if 'project' in body:
+        pid,scope=portfolio.select(c,requested,flags)
+        artifact=portfolio.latest(c,pid) if pid is not None else None
+        source=artifact['id'] if artifact else None
+    else:
+        row=c.execute("""SELECT a.id FROM artifacts a JOIN missions m ON m.id=a.mission
+            WHERE m.mode='cloud' AND m.state='terminée' AND a.agent='NEXUS' ORDER BY a.id DESC LIMIT 1""").fetchone()
+        source=row[0] if row else None
+    cid=c.execute("""INSERT INTO campaigns(goal,budget,max_missions,permissions,search_cap,source,state)
+        VALUES(?,?,?,?,?,?,'actif')""",(goal.strip(),budget,count,json.dumps(flags),cap,source)).lastrowid
+    if 'project' in body:c.execute('INSERT INTO campaign_projects(campaign,project,scope) VALUES(?,?,?)',(cid,pid,scope))
+    return cid
 
 def stop(c,cid):
     p=_campaign(c,cid)
@@ -123,6 +137,8 @@ def resume(c,cid,cfg):
     if active(c) or c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone():raise ValueError('Un travail est déjà en cours')
     if c.execute("SELECT 1 FROM requests WHERE state='en attente'").fetchone():raise ValueError('Traiter les décisions en attente')
     if not cfg['key'] or costs(c,cid)>=p['budget'] or c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0]>=cfg['budget']:raise ValueError('Ressources insuffisantes; aucune remise à zéro')
+    scope=portfolio.scope(c,cid)
+    if scope and scope['project'] is not None and portfolio.project(c,scope['project'])['state']!='active':raise ValueError('Réactiver cette activité avant la reprise')
     ms=_missions(c,cid)
     recover=bool(p['state']=='bloqué' and ms and recovery_kind(c,ms[-1]['id'],cfg))
     if p['state']=='bloqué' and not recover:raise ValueError('Blocage non récupérable sans diagnostic; aucun compteur réinitialisé')
@@ -154,6 +170,11 @@ def _proof(c,artifact,mid):
 def choose(c,p):
     """One bounded action based on durable results; no text report is a commercial proof."""
     cid=p['id'];flags=json.loads(p['permissions']);ms=_missions(c,cid);kinds={x['kind'] for x in ms}
+    scoped=portfolio.scope(c,cid)
+    if scoped:
+        if scoped['scope']=='explore':
+            return ((('opportunity',None,None),'') if not ms and flags['research'] else (None,'Exploration terminée; sélectionner une activité pour la suite.'))
+        return portfolio.next_step(c,scoped['project'],flags)
     artifact=p['source']
     for x in ms:
         if x['kind'] in ('create','improve'):
@@ -182,9 +203,9 @@ def choose(c,p):
 def title(p,kind,artifact,opp):
     tasks={
       'opportunity':"ORION et MIDAS : explore des secteurs légaux diversifiés, relève des signaux vérifiables de demande, concurrence, coûts et automatisation. Enregistre une opportunité ciblée via opportunity, en tant qu’hypothèse; aucun achat.",
-      'create':"NEXUS : à partir de l’opportunité #"+str((opp or {}).get('id','?'))+" ("+str((opp or {}).get('title',''))[:160]+"), crée un petit livrable autonome interne, testable en HTML/CSV/JSON. Utilise la mémoire pour les éléments disponibles.",
+      'create':"NEXUS : à partir de l’opportunité #"+str((opp or {}).get('id','?'))+" ("+str((opp or {}).get('title',''))[:160]+"), crée un petit livrable autonome interne, testable en HTML/CSV/JSON. Utilise la mémoire pour les éléments disponibles. Expérience proposée : "+str((opp or {}).get('next_test',''))[:300]+". Produis un livrable et des données synthétiques avec résultats attendus; ne prétends pas que la demande est validée.",
       'improve':"NEXUS : corrige uniquement les défauts observés dans la preuve du fichier ref:"+str(artifact)+", produis un fichier distinct, ne modifie pas l’original.",
-      'functional':"SENTINEL : lis ref:"+str(artifact)+", examine les preuves antérieures, définis des assertions indépendantes sur les lacunes et exécute test_file sur ce fichier exact. Ne répète pas les tests déjà passés sans nécessité. Pour Shopify : repli sur date, choix manuel, langues et cas limites. Signale les contrôles non couverts.",
+      'functional':"SENTINEL : lis ref:"+str(artifact)+", examine les preuves antérieures, définis des assertions indépendantes sur les lacunes et exécute test_file sur ce fichier exact. Ne répète pas les tests déjà passés sans nécessité. Adapte les tests au produit et à ses critères enregistrés; distingue assertions synthétiques, performance mesurée et critères non couverts.",
       'market':"HERMES et MIDAS : étudie la demande, les alternatives, prix hypothétiques, coûts et seuils, pour ref:"+str(artifact)+". Les preuves techniques sont bornées. Aucun contact client, publication ou vente. Distingue données et hypothèses."}
     return ("AUTOPILOTE — "+kind+" | Objectif propriétaire : "+p['goal']+" | ATLAS, délègue aux agents autorisés : "+tasks[kind]+
             " Rapports courts, outils autorisés seulement, aucune dépense commerciale ni action externe hors recherche autorisée. Termine avec limites et preuves.")[:1500]
@@ -211,13 +232,17 @@ def worker(s,cid):
                             c.execute("UPDATE campaigns SET state='terminé',reason='Nombre maximal de missions atteint; aucun objectif commercial certifié.' WHERE id=?",(cid,));return
                         if not cfg['key'] or costs(c,cid)>=p['budget'] or s.used(c)>=cfg['budget']:
                             c.execute("UPDATE campaigns SET state='terminé',reason='Plafond logiciel ou ressource atteint.' WHERE id=?",(cid,));return
+                        portfolio.sync(c)
                         nxt,reason=choose(c,p)
                         if not nxt:
                             c.execute("UPDATE campaigns SET state='terminé',reason=? WHERE id=?",(reason,cid));return
                         kind,artifact,opp=nxt
                         mid=s.moteur.create(s,c,title(p,kind,artifact,opp),'cloud',artifact_id=artifact)
                         c.execute('INSERT INTO campaign_missions(campaign,mission,kind,artifact) VALUES(?,?,?,?)',(cid,mid,kind,artifact))
+                        scoped=portfolio.scope(c,cid)
+                        if scoped and scoped['project'] is not None:portfolio.attach(c,mid,scoped['project'],'campagne ciblée')
                 s.moteur.run(s,mid)
+                with s.db() as c:portfolio.sync(c)
         except Exception as e:
             with s.db() as c:
                 c.execute("UPDATE campaigns SET state='bloqué',reason=? WHERE id=? AND state='actif'",(str(e)[:400],cid))
