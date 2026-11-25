@@ -44,10 +44,14 @@ def searches(c,cid):
 def reserve(c,mid,amount):
     p=link(c,mid)
     if p:
+        import periodic
+        periodic.guard_campaign(c,p['id'])
         if p['state']!=ACTIVE: raise RuntimeError('Autopilote non actif')
         if costs(c,p['id'])+amount>p['budget']: raise RuntimeError('Enveloppe Autopilote insuffisante pour réserver cet appel.')
 
 def search_allowed(c,mid):
+    import periodic
+    periodic.guard_mission(c,mid)
     p=link(c,mid)
     if p and (p['state']!=ACTIVE or not json.loads(p['permissions'])['research'] or searches(c,p['id'])>=p['search_cap']):
         raise ValueError('Quota de recherches Autopilote atteint ou non autorisé')
@@ -305,6 +309,8 @@ def worker(s,cid):
                     c.execute('BEGIN IMMEDIATE')
                     p=_campaign(c,cid)
                     if not p or p['state']!=ACTIVE:return
+                    import periodic
+                    periodic.guard_campaign(c,cid)
                     ms=_missions(c,cid);last=ms[-1] if ms else None
                     if last and last['state']=='en cours':mid=last['id']
                     else:
