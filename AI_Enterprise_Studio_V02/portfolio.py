@@ -81,11 +81,25 @@ def history(c,pid,kind,aid=None):
         JOIN campaign_missions cm ON cm.mission=m.id WHERE pm.project=? AND cm.kind=?
         AND (? IS NULL OR cm.artifact=?) ORDER BY m.id""",(pid,kind,aid,aid)).fetchall()
 
+def economic_hold(c,oid):
+    """Only an exact, latest completed Cloud assessment with independently recalculated values."""
+    if oid is None:return False
+    import intelligence as intel
+    import collective_evidence as ce
+    row=c.execute("""SELECT o.*,a.id AS assessment_id,a.agent AS assessment_agent,a.assumptions,
+        a.source_runs,a.result,a.opportunity_sha256 FROM opportunities o JOIN market_assessments a ON a.opportunity=o.id
+        JOIN missions m ON m.id=a.mission WHERE o.id=? AND a.mission=o.mission AND m.mode='cloud'
+        AND m.state='terminée' AND a.id=(SELECT MAX(b.id) FROM market_assessments b WHERE b.opportunity=o.id)""",(oid,)).fetchone()
+    if not row:return False
+    try:return ce.assessment(c,row)['result']['scenario_viable'] is False
+    except (ValueError,TypeError,KeyError,AttributeError,ArithmeticError):return False
+
 def next_step(c,pid,flags):
     p=project(c,pid)
     if not p or p['state']!='active':return None,'Activité suspendue ou archivée.'
     a=latest(c,pid)
     if not a:
+        if economic_hold(c,p['opportunity']):return None,'Production suspendue : dernier scénario économique vérifié déficitaire ou sans marge. Préparation commerciale ou réévaluation requise.'
         if flags['production'] and p['opportunity'] is not None and not history(c,pid,'create'):
             o=c.execute('SELECT id,title,next_test FROM opportunities WHERE id=?',(p['opportunity'],)).fetchone()
             if o:return ('create',None,dict(o)),'Premier prototype et expérience interne.'

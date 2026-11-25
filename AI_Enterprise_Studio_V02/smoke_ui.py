@@ -30,7 +30,7 @@ def smoke():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
                 page.goto(base)
-                expect(page.locator('#connection-text')).to_have_text('Serveur V0.4.3')
+                expect(page.locator('#connection-text')).to_have_text('Serveur V0.4.3.1')
                 expect(page.locator('#quick-products')).to_have_text('2')
                 expect(page.locator('#pilotage-plan')).to_contain_text('Activer ou examiner le bac à sable')
                 page.locator('#pilotage-next').click()
@@ -243,16 +243,28 @@ def smoke_portfolio():
                     expect(page.locator('#auto-production')).not_to_be_checked()
                     expect(page.locator('#auto-connector-cap')).to_have_value('0')
                     expect(page.locator('#auto-start')).to_be_enabled()
-                    page.locator('[data-page="portfolio"]').click()
-                    card.get_by_role('button',name='Préparer la campagne').click()
-                    expect(page.locator('#auto-project')).to_have_value(str(new))
-                    page.once('dialog',lambda d:d.accept())
+                    expect(page.locator('#auto-mode')).to_have_value('commercial')
+                    page.locator('#auto-project').select_option('explore')
+                    expect(page.locator('#auto-mode')).to_have_value('commercial')
+                    expect(page.locator('#auto-start')).to_be_disabled()
+                    page.locator('#auto-project').select_option(str(old))
+                    expect(page.locator('#auto-mode-summary')).to_contain_text('fichier #')
+                    page.locator('#auto-project').select_option(str(new))
+                    expect(page.locator('#auto-mode')).to_have_value('commercial')
+                    expect(page.locator('#auto-start')).to_be_enabled()
+                    dialogs=[]
+                    def accept(d):
+                        dialogs.append(d.message);d.accept()
+                    page.once('dialog',accept)
                     with page.expect_response(lambda r:r.url==base+'/api/autopilot/start') as res:page.locator('#auto-start').click()
                     assert res.value.ok,res.value.text()
+                    assert 'Préparation commerciale interne' in dialogs[0]
                     expect(page.locator('#auto-state')).to_have_text('actif')
+                    expect(page.locator('#auto-info')).to_contain_text('Préparation commerciale')
                     with s.db() as c:
                         import portfolio as p
                         assert p.scope(c,res.value.json()['campaign'])['project']==new
+                        assert p.scope(c,res.value.json()['campaign'])['scope']=='commercial'
                         assert a._campaign(c,res.value.json()['campaign'])['source'] is None
                     network.assert_not_called();worker.assert_called_once()
                     assert not errors,errors
