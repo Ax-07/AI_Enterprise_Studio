@@ -1,0 +1,21 @@
+name: aes-n8n
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.48.5
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      GENERIC_TIMEZONE: Europe/Paris
+      TZ: Europe/Paris
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
+      N8N_COMMUNITY_PACKAGES_ENABLED: "false"
+    volumes:
+      - aes_n8n_data:/home/node/.n8n
+volumes:
+  aes_n8n_data:

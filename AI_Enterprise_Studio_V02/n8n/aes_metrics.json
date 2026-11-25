@@ -1,0 +1,61 @@
+{
+  "name": "AES v1 — Statistiques",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aes-v1-metrics",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "id": "15a1c210-9c00-4dd1-8000-000000000002",
+      "name": "Webhook AES",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "25a1c210-9c00-4dd1-8000-000000000002"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$input.first().json.body;\nif (!b || typeof b !== 'object' || Array.isArray(b) || Object.keys(b).sort().join(',') !== 'input,protocol,request_id' || b.protocol !== 'aes-n8n-v1' || typeof b.request_id !== 'string' || !/^[a-f0-9]{32}$/.test(b.request_id)) throw new Error('Invalid AES envelope');\nconst d=b.input;\nif (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('Invalid AES input');\nif (Object.keys(d).join(',') !== 'values' || !Array.isArray(d.values) || d.values.length<1 || d.values.length>100 || d.values.some(v=>!Number.isSafeInteger(v)||Math.abs(v)>100000000)) throw new Error('Invalid metrics input');\nconst a=d.values; const result={count:a.length,sum:a.reduce((x,y)=>x+y,0),min:Math.min(...a),max:Math.max(...a)};\nreturn [{json:{protocol:'aes-n8n-v1',request_id:b.request_id,execution_id:String($execution.id),result}}];"
+      },
+      "id": "35a1c210-9c00-4dd1-8000-000000000002",
+      "name": "Contrat AES",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook AES": {
+      "main": [
+        [
+          {
+            "node": "Contrat AES",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "executionTimeout": 15
+  },
+  "pinData": {},
+  "tags": []
+}

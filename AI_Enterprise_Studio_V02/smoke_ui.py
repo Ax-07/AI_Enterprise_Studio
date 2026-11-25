@@ -30,7 +30,7 @@ def smoke():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
                 page.goto(base)
-                expect(page.locator('#connection-text')).to_have_text('Serveur V0.4.0')
+                expect(page.locator('#connection-text')).to_have_text('Serveur V0.4.1')
                 expect(page.locator('#quick-products')).to_have_text('2')
                 expect(page.locator('#pilotage-plan')).to_contain_text('Activer ou examiner le bac à sable')
                 page.locator('#pilotage-next').click()
@@ -423,6 +423,44 @@ def smoke_connectors():
     finally:fixture.doCleanups()
     print('Chromium connecteurs: activation, permissions, test public simulé, export et autorisation de campagne')
 
+def smoke_n8n():
+    import os,n8n_bridge as n
+    from test_n8n import N8nTests,TOKEN
+    fixture=N8nTests('test_contracts_reject_arbitrary_payloads')
+    fixture.setUp()
+    try:
+        with patch.dict(os.environ,{'AES_N8N_TOKEN':TOKEN}),patch.object(s,'config',return_value=fixture.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')),patch.object(n,'call',side_effect=fixture.result) as call:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page(accept_downloads=True)
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base);page.locator('#nav-expert > summary').click();page.locator('[data-page="tools"]').click()
+                    card=page.locator('#connector-list article').filter(has_text='Statistiques numériques')
+                    with page.expect_download() as dl:card.get_by_role('button',name='Télécharger le workflow JSON').click()
+                    w=json.loads(Path(dl.value.path()).read_text());assert w['nodes'][0]['parameters']['authentication']=='headerAuth'
+                    card.locator('summary').click()
+                    card.get_by_label('Activer ce connecteur').check();card.get_by_label('MIDAS',exact=True).check()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/connectors/policy') as res:card.get_by_role('button',name='Enregistrer les autorisations').click()
+                    assert res.value.ok,res.value.text()
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/connectors/test') as res:card.get_by_role('button',name='Tester le workflow local').click()
+                    assert res.value.json()['status']=='received'
+                    expect(card).to_contain_text('n8n #123')
+                    expect(card).to_contain_text('"sum": 14')
+                    with page.expect_download() as dl:page.locator('#connector-export').click()
+                    raw=Path(dl.value.path()).read_text();assert TOKEN not in raw
+                    assert json.loads(raw)['runs'][0]['execution_id']=='123'
+                    call.assert_called_once();assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:fixture.doCleanups()
+    print('Chromium n8n: template download, scoped authorization, verified result and secret-free export (mock transport)')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
@@ -433,3 +471,4 @@ if __name__=='__main__':
     smoke_improvement()
     smoke_owner_console()
     smoke_connectors()
+    smoke_n8n()
