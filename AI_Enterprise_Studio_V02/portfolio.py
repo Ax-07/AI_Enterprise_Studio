@@ -20,6 +20,7 @@ def _get(c,origin,title,opp=None):
     return c.execute('SELECT id FROM projects WHERE origin=?',(origin,)).fetchone()[0]
 
 def attach(c,mid,pid,reason):
+    if not c.execute('SELECT 1 FROM projects WHERE id=?',(pid,)).fetchone() or not c.execute("SELECT 1 FROM missions WHERE id=? AND mode='cloud'",(mid,)).fetchone():raise ValueError('Lien de projet invalide')
     old=c.execute('SELECT project FROM project_missions WHERE mission=?',(mid,)).fetchone()
     if old and old[0]!=pid:raise ValueError('Mission déjà attribuée à une autre activité')
     c.execute('INSERT OR IGNORE INTO project_missions(mission,project,provenance) VALUES(?,?,?)',(mid,pid,reason))

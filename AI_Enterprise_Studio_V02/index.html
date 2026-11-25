@@ -105,12 +105,13 @@ function renderPortfolio(s){
  text('auto-project-note',sel.value==='explore'?'Une mission de découverte, sans création automatique.':chosen?chosen.reason:rec?'Proposition : activité #'+rec.id+' · '+projectKinds[rec.kind]+' — '+rec.reason:'Aucune étape concrète disponible; exploration si autorisée.');
  const sig=JSON.stringify([data,active,busy]);if(sig===portfolioSig)return;portfolioSig=sig;
  fill('portfolio-summary',[el('b',ps.length+' activité(s) · '+money((data.unallocated||0)/1e6,4)+' de coûts non attribués'),el('p',data.limit||'Aucune activité enregistrée.','muted'),el('p',rec?'ATLAS propose l’activité #'+rec.id+' : '+projectKinds[rec.kind]+'.':'Aucune prochaine étape disponible sur les activités actives.')]);
+ const expanded=new Set([...$('portfolio-list').querySelectorAll('details[open]')].map(x=>x.dataset.project));
  fill('portfolio-list',ps.length?ps.map(p=>{
    const n=el('article',undefined,'request');n.append(badge(projectStates[p.state]||p.state),el('h3','#'+p.id+' · '+p.title),el('p',p.opportunity_data?.body||'Activité issue de la production historique.'),el('small',p.missions.length+' mission(s) · '+money(p.spent/1e6,4)+' estimés · '+p.files.length+' fichier(s)'));
    const proofs=p.proofs.filter(v=>v.agent==='SENTINEL');
    n.append(el('p','Version de référence : '+(p.latest_artifact?'fichier #'+p.latest_artifact:'aucun fichier')+' · preuves indépendantes '+proofs.filter(v=>v.status==='passed').length+' réussies / '+proofs.filter(v=>v.status==='failed').length+' échouées · '+p.market_studies+' étude(s) commerciale(s) · '+p.search_results+' recherches reçues. Aucune preuve de demande certifiée.'));
    if(p.opportunity_data?.next_test)n.append(el('b','Expérience proposée'),el('p',p.opportunity_data.next_test));
-   n.append(el('b','Prochaine étape'),el('p',(projectKinds[p.next_kind]?projectKinds[p.next_kind]+' — ':'')+p.reason));
+   n.append(el('p','Rentabilité, demande et autonomie opérationnelle : non certifiées. Risques à examiner avant tout lancement.','muted'),el('b','Prochaine étape'),el('p',(projectKinds[p.next_kind]?projectKinds[p.next_kind]+' — ':'')+p.reason));
    const controls=el('div',undefined,'context-actions');
    if(p.state==='active'&&p.next_kind){const b=btn('Préparer la campagne',()=>{go('home');$('auto-project').value=String(p.id);renderPortfolio(snapshot);$('auto-project').scrollIntoView({block:'center'})});b.disabled=busy||active;controls.append(b)}
    for(const state of ['active','paused','archived'].filter(x=>x!==p.state)){
@@ -118,7 +119,7 @@ function renderPortfolio(s){
      b.disabled=busy||active;controls.append(b);
    }
    n.append(controls);
-   const detail=el('details'),summary=el('summary','Missions, fichiers et preuves');detail.append(summary);
+   const detail=el('details'),summary=el('summary','Missions, fichiers et preuves');detail.dataset.project=String(p.id);detail.open=expanded.has(String(p.id));detail.append(summary);
    for(const m of p.missions)detail.append(row('#'+m.id+' · '+m.title,m.state+' · '+m.provenance,null,btn('Voir',()=>{if(!chooseMission(m.id))go('missions')},'quiet')));
    for(const f of p.files)detail.append(row('#'+f.id+' · '+f.name,'V'+f.version+' · '+f.agent,null,btn('Ouvrir',()=>{go('files');openFile(f.id)},'quiet')));
    for(const v of p.proofs)detail.append(el('small','Preuve #'+v.id+' · '+v.agent+' · '+v.status+' · '+v.cases+' cas/assertions'));

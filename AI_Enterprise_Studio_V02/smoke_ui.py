@@ -215,8 +215,46 @@ def smoke_working_memory():
     finally:fixture.doCleanups()
     print('Chromium mémoire de travail: reprise ciblée, campagne et compteurs conservés')
 
+def smoke_portfolio():
+    from test_portfolio import PortfolioTests
+    import autopilot as a
+    fixture=PortfolioTests('test_migration_costs_lineage_and_no_duplicate')
+    fixture.setUp()
+    try:
+        *_,old,new=fixture.historical()
+        with patch.object(s,'config',return_value=fixture.cfg),patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network,patch.object(a,'worker',return_value=None) as worker:
+            server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            port=server.server_address[1];base=f'http://127.0.0.1:{port}'
+            try:
+                with patch.object(s,'PORT',port),sync_playwright() as pw:
+                    browser=pw.chromium.launch(headless=True);page=browser.new_page()
+                    errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+                    page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                    page.goto(base);page.locator('[data-page="portfolio"]').click()
+                    expect(page.locator('#portfolio-list')).to_contain_text('Audit de catalogues')
+                    expect(page.locator('#portfolio-list')).to_contain_text('original.csv')
+                    card=page.locator('#portfolio-list article').filter(has_text='Audit de catalogues')
+                    card.get_by_role('button',name='Préparer la campagne').click()
+                    expect(page.locator('#auto-project')).to_have_value(str(new))
+                    page.once('dialog',lambda d:d.accept())
+                    with page.expect_response(lambda r:r.url==base+'/api/autopilot/start') as res:page.locator('#auto-start').click()
+                    assert res.value.ok,res.value.text()
+                    expect(page.locator('#auto-state')).to_have_text('actif')
+                    with s.db() as c:
+                        import portfolio as p
+                        assert p.scope(c,res.value.json()['campaign'])['project']==new
+                        assert a._campaign(c,res.value.json()['campaign'])['source'] is None
+                    network.assert_not_called();worker.assert_called_once()
+                    assert not errors,errors
+                    browser.close()
+            finally:server.shutdown();server.server_close();thread.join()
+    finally:fixture.doCleanups()
+    print('Chromium portefeuille: historique, sélection d’une activité, campagne ciblée sans fournisseur')
+
 if __name__=='__main__':
     smoke()
     smoke_recovery()
     smoke_autopilot()
     smoke_working_memory()
+    smoke_portfolio()
