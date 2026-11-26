@@ -382,6 +382,36 @@ def smoke_original():
                     actual=page.locator('#original-signs [data-id="'+building+'"] .label-bg')
                     for attr in ['x','y','width','height','rx']:
                         assert abs(float(ref.get_attribute(attr))-float(actual.get_attribute(attr)))<.001,(building,attr)
+                # Paired real browser evidence: same viewport, same original art, no
+                # numerical pixel threshold on legitimate differences in business data.
+                if 'day' not in (compare.locator('#campusPanel').get_attribute('class') or '').split():
+                    compare.locator('#dayBtn').click()
+                expect(compare.locator('#hdDecor image')).to_have_attribute('href','/campus/assets/campus_1_1.webp')
+                for prop in ['background-image','filter']:
+                    assert compare.locator('#mapWrap').evaluate('(e,p)=>getComputedStyle(e)[p]',prop)==page.locator('#mapWrap').evaluate('(e,p)=>getComputedStyle(e)[p]',prop),prop
+                if target:
+                    compare.screenshot(path=str(Path(target)/'F05-reference-jour.png'),animations='disabled',full_page=True)
+                capture('F05-connecte-jour')
+                compare.locator('#dayBtn').click()
+                expect(compare.locator('#hdDecor image')).to_have_attribute('href','/campus/assets/campus_1_0.webp')
+                if target:
+                    compare.screenshot(path=str(Path(target)/'F05-reference-nuit.png'),animations='disabled',full_page=True)
+                page.locator('#day-toggle').click()
+                capture('F05-connecte-nuit')
+                page.locator('#day-toggle').click()
+                # Original tower and interior on the same department as the connected one.
+                compare.locator('#roster [data-agent="NEXUS"]').click()
+                # Original roster may only select when on campus; use the real building control.
+                if not compare.locator('#elevator181').is_visible():
+                    compare.locator('#buildings [data-id="NEXUS"]').first.focus()
+                    compare.keyboard.press('Enter')
+                expect(compare.locator('#elevator181')).to_be_visible()
+                if target:
+                    compare.screenshot(path=str(Path(target)/'F05-reference-ascenseur.png'),animations='disabled',full_page=True)
+                compare.locator('#elevator181 [data-floor181="NEXUS"]').click()
+                expect(compare.locator('#roomScene svg.office16')).to_be_visible()
+                if target:
+                    compare.screenshot(path=str(Path(target)/'F05-reference-bureau.png'),animations='disabled',full_page=True)
                 compare.close()
                 page.locator('#day-toggle').click()
                 expect(page.locator('#campus-decor')).to_have_attribute('href','/campus/assets/campus_1_0.webp')
@@ -397,6 +427,7 @@ def smoke_original():
                 page.locator('#lift-view [data-floor="NEXUS"]').hover()
                 expect(page.locator('#lift-view [data-level-id="NEXUS"]')).to_have_class(re.compile('focus181'))
                 capture('F02-ascenseur')
+                capture('F05-connecte-ascenseur')
                 page.locator('#campus-back').click()
                 page.locator('#focus-toggle').click()
                 expect(page.locator('#campusView')).to_have_class(re.compile('immersive'))
@@ -409,6 +440,7 @@ def smoke_original():
                     expect(page.locator('#original-office [data-seat16]')).to_have_count(count)
                     if building=='NEXUS':
                         capture('F01-bureau-nexus')
+                        capture('F05-connecte-bureau')
                         page.locator('#original-office [data-seat16="director"]').focus()
                         page.keyboard.press('Enter')
                         expect(page.locator('#team-detail')).to_contain_text('NEXUS')
@@ -474,6 +506,13 @@ def smoke_original():
                 page.locator('.top [data-view="finance"]').click()
                 expect(page.locator('#native-tool')).to_be_visible()
                 expect(page.locator('#native-tool h3')).to_contain_text('Dépenses API')
+                expect(page.locator('#otherView')).to_be_visible()
+                expect(page.locator('#campusView')).to_be_hidden()
+                expect(page.locator('#top-tool-host #native-tool')).to_be_visible()
+                capture('F05-navigation-finances')
+                page.locator('#back-top-tool').click()
+                expect(page.locator('#campusView')).to_be_visible()
+                expect(page.locator('#otherView')).to_be_hidden()
                 assert not posts and not errors,(posts,errors)
                 assert not any('/campus/design.js' in url for url in requests)
                 network.assert_not_called()
