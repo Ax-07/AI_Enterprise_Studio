@@ -5,7 +5,7 @@
     const preview=document.querySelector('meta[name="campus-mode"]').content==='preview';
     if(preview){$('preview-notice').hidden=false;$('legacy-entry').hidden=true;$('operational-footer').textContent='Aperçu en lecture seule · toutes les commandes sont désactivées. Les listes sont limitées aux entrées les plus récentes.';}
     const fidelity=document.querySelector('meta[name="campus-original"]')?.content==='true';
-    let topTool=null,officeMode=true;
+    let topTool=null,officeMode=true,roomTab='scene';
     let data=null, selected='ATLAS', busy=false;
     const labels={ATLAS:'Direction',ORION:'Recherche',NEXUS:'Production',MIDAS:'Finance',HERMES:'Commerce',SENTINEL:'Sécurité',CORE:'DATA CORE'};
     const mode=m=>m==='demo'?'SIMULATION enregistrée':m==='cloud'?'CLOUD · moteur':('Mode '+String(m??'inconnu'));
@@ -82,7 +82,7 @@
                     svg('path',{d:'M64 12L88 1V20L64 32Z',class:'desk-screen',stroke:'#7895a7'}));
                 const robot=svg('g',{class:'desk-avatar',transform:'translate(44 43)'});robot.append(window.AESLiveArt.robot(byId.get(selected).color,.8));art.append(robot);
                 b.append(art,node('b',slot.name),node('small','','slot-identity'),node('small','','slot-status'));
-                b.addEventListener('click',()=>{selectedSlot=slot.id;renderTeam();});slots.append(b);
+                b.addEventListener('click',()=>{selectedSlot=slot.id;renderTeam();if(fidelity)applyOriginalTab();});slots.append(b);
             }
         }
         for(const slot of team.slots){
@@ -115,7 +115,7 @@
                 const key=g.dataset.seat16,slot=team.slots.find(s=>s.id===selected+':'+key);
                 if(!slot)continue;
                 g.dataset.slot=slot.id;
-                const select=()=>{selectedSlot=slot.id;renderTeam();};
+                const select=()=>{selectedSlot=slot.id;renderTeam();if(fidelity)applyOriginalTab();};
                 const label=graphic.querySelector('[data-label-seat1631="'+key+'"]');
                 const lit=on=>label?.classList.toggle('linkedHover1631',on);
                 g.addEventListener('click',select);g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select();}});
@@ -234,9 +234,9 @@
         const st=f.stations.find(x=>x.id===q.get('station'));stationId=st?.id||null;
     }
     function currentFloor(){return byId.get(selected)?.floors.find(f=>f.id===floorId);}
-    function openLift(id){if(!byId.has(id))return;topTool=null;if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));officeMode=true;clearFlows();if(id!==selected)lastFloor=null;else if(scene==='room')lastFloor=floorId;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-view').querySelector('button')?.focus();}
-    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;topTool=null;officeMode=true;if(!preview&&id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
-    function openCampus(){topTool=null;if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();document.querySelector('[data-building="'+selected+'"]')?.focus();}
+    function openLift(id){if(!byId.has(id))return;topTool=null;roomTab='scene';if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));officeMode=true;clearFlows();if(id!==selected)lastFloor=null;else if(scene==='room')lastFloor=floorId;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-view').querySelector('button')?.focus();}
+    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;topTool=null;roomTab='scene';officeMode=true;if(!preview&&id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
+    function openCampus(){topTool=null;roomTab='scene';if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();document.querySelector('[data-building="'+selected+'"]')?.focus();}
     function tower(b){return art.tower(b,lastFloor);}
     function highlightFloor(id){
         for(const g of $('lift-view').querySelectorAll('[data-level-id]'))g.classList.toggle('focus181',g.dataset.levelId===id);
@@ -293,6 +293,73 @@
         if(fidelity){const door=$('doorTransition');door.getAnimations().forEach(a=>a.cancel());door.animate([{opacity:1},{opacity:0}],{duration:180,easing:'ease-out'});}
         else e.animate([{opacity:.55,transform:'translateY(3px)'},{opacity:1,transform:'translateY(0)'}],{duration:200,easing:'ease-out'});
     }
+    function applyOriginalTab(){
+        if(!fidelity)return;
+        const f=currentFloor(),isTeam=scene==='room'&&f?.id===currentTeam()?.floor;
+        if(!isTeam&&roomTab==='team')roomTab='scene';
+        const room=$('roomScene');
+        room.dataset.tab161=roomTab;
+        const inRoom=scene==='room';
+        for(const btn of $('room-tabs').querySelectorAll('[role=tab]')){
+            const key=btn.dataset.roomTab,on=key===roomTab;
+            btn.hidden=key==='team'&&!isTeam;
+            btn.setAttribute('aria-selected',String(on));btn.tabIndex=on?0:-1;
+        }
+        $('room-view').hidden=!inRoom||roomTab!=='scene';
+        $('room-functions').hidden=!inRoom||roomTab!=='functions';
+        $('room-options').hidden=!inRoom||roomTab!=='settings';
+        $('team-view').hidden=!isTeam||!(roomTab==='team'||roomTab==='scene'&&selectedSlot);
+        $('room-tip').hidden=!inRoom||roomTab!=='scene';
+        const destination=inRoom&&roomTab==='functions'&&!topTool?$('function-detail'):$('station-home');
+        if($('station-detail').parentElement!==destination)destination.append($('station-detail'));
+    }
+    function chooseRoomTab(key,focus=false){
+        if(!fidelity||scene!=='room'||!['scene','functions','team','settings'].includes(key))return;
+        if(key==='team'&&currentFloor()?.id!==currentTeam()?.floor)return;
+        roomTab=key;applyOriginalTab();
+        if(focus)$('room-tabs').querySelector('[data-room-tab="'+key+'"]')?.focus({preventScroll:true});
+    }
+    function originalCard(title,description,meta,fn){
+        const b=node('button',undefined,'action161');b.type='button';
+        const body=node('span');body.append(node('b',title),node('small',description),node('small',meta,'actionMeta161'));
+        b.append(body,node('span','›','actionArrow161'));b.addEventListener('click',fn);return b;
+    }
+    function renderOriginalFunctions(b,f){
+        if(!fidelity)return;
+        $('room-crumb').replaceChildren(node('span',window.AESOriginalOffice.departments[b.id].title),node('span','›'),node('span',f.name));
+        $('room-caption-title').textContent=levelLabel(f.level)+' / '+f.name;
+        const groups=new Map(),other=[];
+        for(const st of f.stations){
+            const pages=(modules.stations[st.id]||[]).filter(page=>Object.hasOwn(window.AESNativeTools.names,page));
+            if(st.id.startsWith('OWNER:station:'))pages.unshift('owner');
+            if(selected==='HERMES'&&pages.includes('business')&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId))pages.push('marketing');
+            if(!pages.length){other.push(st);continue;}
+            for(const page of new Set(pages)){
+                if(!groups.has(page))groups.set(page,[]);
+                groups.get(page).push(st);
+            }
+        }
+        const cards=$('function-cards');cards.replaceChildren();
+        for(const [page,stations] of groups){
+            const card=originalCard(window.AESNativeTools.names[page],stations.map(s=>s.name).join(' · '),'Consulter · données locales',()=>{
+                activateStation(stations[0].id);
+                if(data)window.AESNativeTools.open(page);
+            });card.dataset.functionTool=page;cards.append(card);
+        }
+        $('function-summary').textContent=groups.size+' accès métier distinct(s) · '+other.length+' poste(s) sans module associé';
+        const unavailable=$('function-other');unavailable.replaceChildren();
+        for(const st of other)unavailable.append(originalCard(st.name,st.description,'Fiche du poste · module non raccordé',()=>activateStation(st.id)));
+        $('function-other-title').hidden=!other.length;
+        const options=$('option-cards');options.replaceChildren();
+        if(f.id===currentTeam()?.floor)options.append(originalCard('Choisir le décor','Alterner entre les bureaux modulaires et le décor historique.','Réglage graphique',()=>{
+            officeMode=!officeMode;roomTab='scene';renderScene();renderBuilding();
+        }));
+        options.append(originalCard('Mode immersion','Agrandir la scène ou revenir à la disposition normale.','Réglage graphique',()=>$('focus-toggle').click()),
+            originalCard('Animations','Activer ou désactiver les transitions et les délégations observées.','Réglage graphique',()=>$('motion-toggle').click()));
+        const historical=$('option-stations');historical.replaceChildren();
+        for(const st of f.stations)historical.append(originalCard(st.name,st.description,'Fiche du poste',()=>{chooseRoomTab('functions');activateStation(st.id);}));
+        applyOriginalTab();
+    }
     function renderScene(){
         const b=byId.get(selected),f=currentFloor();
         $('campus-map').hidden=scene!=='campus';$('lift-view').hidden=scene!=='lift';$('room-view').hidden=scene!=='room';
@@ -301,6 +368,7 @@
         document.querySelectorAll('#buildings button').forEach(btn=>btn.setAttribute('aria-pressed',String(btn.dataset.id===selected)));
         if(fidelity){for(const g of $('campus-map').querySelectorAll('[data-building]'))g.setAttribute('aria-pressed',String(g.dataset.building===selected));for(const g of $('campus-map').querySelectorAll('#original-signs [data-id]'))g.classList.toggle('selected',g.dataset.id===selected);}
         renderTeam();
+        if(fidelity)applyOriginalTab();
         if(scene==='campus'){$('scene-title').textContent='Campus · 7 bâtiments';$('scene-note').textContent='Sélectionne un bâtiment sur le campus ou dans la liste.';return;}
         if(scene==='lift'){
             $('scene-title').textContent='Ascenseur · '+labels[b.id];$('scene-note').textContent='Services du design · leur présence ne signifie pas qu’ils sont opérationnels.';
@@ -316,6 +384,7 @@
         else room.append(node('div','Décor HD dédié non disponible dans la maquette originale. Les postes sont accessibles ci-dessous.','room-missing'));
         const buttons=node('div',undefined,'station-list');
         for(const st of f.stations){const btn=node('button');btn.type='button';btn.dataset.station=st.id;btn.setAttribute('aria-pressed',String(stationId===st.id));btn.append(node('b',st.name),node('small',st.description));if(hasModule(st))btn.append(node('small','Module existant ↗','module-marker'));btn.addEventListener('click',()=>activateStation(st.id));buttons.append(btn);}room.append(buttons);
+        if(fidelity)renderOriginalFunctions(b,f);
     }
     function renderStation(){
         const st=currentFloor()?.stations.find(s=>s.id===stationId),panel=$('station-detail'),out=$('station-content');
@@ -333,7 +402,7 @@
         else out.append(node('p',hasModule(st)?'Données propres à ce poste non intégrées au campus. Le module existant est accessible ci-dessous.':'Fonction métier non raccordée à ce poste. Aucun résultat simulé ni action disponible.','station-pending'));
     }
     function renderBuilding(){
-        renderTeam();renderLiftStatus();
+        renderTeam();renderLiftStatus();if(fidelity)applyOriginalTab();
         if(!data){$('detail-title').textContent=labels[selected]+' · données indisponibles';$('agents').replaceChildren();$('tasks').replaceChildren();renderStation();return;}
         const b=data.buildings.find(x=>x.id===selected);if(!b)return;
         $('detail-title').textContent=labels[b.id]+' · agents du moteur';
@@ -372,12 +441,15 @@
     $('motion-toggle').addEventListener('click',()=>{motion=!motion;if(!motion)clearFlows();$('motion-toggle').textContent=motion?'Animations : oui':'Animations : non';$('motion-toggle').setAttribute('aria-pressed',String(motion));});
     $('focus-toggle').addEventListener('click',()=>{const expanded=fidelity?$('campusView').classList.toggle('immersive'):$('scene-layout').classList.toggle('scene-expanded');$('focus-toggle').setAttribute('aria-pressed',String(expanded));$('focus-toggle').textContent=expanded?'↙ Vue normale':'⛶ Agrandir le campus';});
     if(fidelity){
+        $('room-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-room-tab]');if(b)chooseRoomTab(b.dataset.roomTab,true);});
+        $('room-tabs').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const tabs=[...$('room-tabs').querySelectorAll('[role=tab]:not([hidden])')],i=tabs.indexOf(e.target);if(i<0)return;e.preventDefault();const n=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;chooseRoomTab(tabs[n].dataset.roomTab,true);});
+        $('room-tip').querySelector('button').addEventListener('click',()=>chooseRoomTab('functions',true));
         const tools={classic:'agents',campaigns:'home',finance:'finance',memory:'memory',connectors:'tools'};
         document.querySelectorAll('.top [data-view]').forEach(btn=>btn.addEventListener('click',()=>{
             if(btn.dataset.view==='campus'){openCampus();return;}
             if(!data)return;
             const tool=tools[btn.dataset.view];if(!tool)return;
-            topTool=tool;
+            openCampus();topTool=tool;applyOriginalTab();
             document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b===btn));
             $('station-detail').hidden=false;$('station-title').textContent=window.AESNativeTools.names[tool];$('station-content').replaceChildren();$('station-modules').replaceChildren();$('station-modules').dataset.station='';window.AESNativeTools.setStation('nav:'+tool);window.AESNativeTools.open(tool);
         }));

@@ -51,3 +51,17 @@
 .original-shell .original-vector-room svg{display:block;width:100%;max-height:580px}
 .original-shell .original-vector-room .station{cursor:pointer;outline:none}.original-shell .original-vector-room .station:hover,.original-shell .original-vector-room .station:focus-visible,.original-shell .original-vector-room .station[aria-pressed=true]{filter:brightness(1.22) drop-shadow(0 0 4px #83deff45)}
 .original-shell .original-vector-room .stationLabel1631 rect{fill:#091827;stroke:var(--room);stroke-opacity:.7}.original-shell .original-vector-room .stationLabel1631.linkedHover1631 rect{fill:#203c50;stroke-opacity:1;stroke-width:2.2}.original-shell .original-vector-room .room-screen{animation:none!important}
+
+/* F04: original label ancestors are passive; explicitly enable the clickable face. */
+.original-shell #original-signs .domain15 .label-bg{pointer-events:all;cursor:pointer}
+.original-shell #original-signs .domain15 text{pointer-events:none}
+.original-shell #roomScene[data-tab161=scene] #team-slots{display:none}
+.original-shell #roomScene[data-tab161=scene] #team-view{padding:9px 14px}
+.original-shell #roomScene[data-tab161=team] #team-slots{display:grid}
+.original-shell #roomScene .room-caption strong{color:var(--cyan)}
+.original-shell #function-detail #station-detail{margin-top:16px;padding:14px;border:1px solid #365166;border-radius:9px;background:#0c1928}
+.original-shell #function-detail .native-results{max-height:520px}
+.original-shell #roomScene .action161 b,.original-shell #roomScene .action161 small{display:block;overflow-wrap:anywhere}
+.original-shell #roomScene .action161 b{font-size:12px}.original-shell #roomScene .action161 small{margin-top:5px;font-size:11px;color:#a8bfd1}.original-shell #roomScene .action161 .actionMeta161{font-size:10px;color:var(--cyan)}
+.original-shell #function-summary{font-size:12px;color:#9be2f5}.original-shell #roomScene .actionArrow161{color:var(--cyan);font-size:18px}
+.original-shell #function-detail #native-tool button{font-size:12px}.original-shell #function-detail .entry b,.original-shell #function-detail .entry small{font-size:12px}
