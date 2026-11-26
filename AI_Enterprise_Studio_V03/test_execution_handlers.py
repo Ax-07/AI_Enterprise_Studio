@@ -19,7 +19,7 @@ class ExecutionHandlerTests(unittest.TestCase):
         self.c.executescript("""
             CREATE TABLE missions(id INTEGER PRIMARY KEY, state TEXT);
             INSERT INTO missions VALUES(1,'en cours');
-            CREATE TABLE searches(mission INTEGER, query TEXT, status TEXT, result TEXT);
+            CREATE TABLE searches(id INTEGER PRIMARY KEY, mission INTEGER, query TEXT, status TEXT, result TEXT DEFAULT '[]');
             CREATE TABLE fetched(id INTEGER PRIMARY KEY, mission INTEGER, url TEXT,
                                  state TEXT, content TEXT);
             CREATE TABLE verification_results(mission INTEGER, agent TEXT);
@@ -48,7 +48,7 @@ class ExecutionHandlerTests(unittest.TestCase):
 
     def allow_read(self):
         with self.c:
-            self.c.execute("INSERT INTO searches VALUES(1,?, 'reçue',?)",
+            self.c.execute("INSERT INTO searches(mission,query,status,result) VALUES(1,?, 'reçue',?)",
                            ('fixture', json.dumps([{'url': self.url}])))
 
     def test_connector_mode_detail_and_live_substitution(self):
