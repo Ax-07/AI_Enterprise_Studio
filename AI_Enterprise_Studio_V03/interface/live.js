@@ -110,7 +110,7 @@
         const signature=selected+':'+ids.join(',')+':'+Boolean(data);
         if(host.dataset.signature!==signature){
             host.dataset.signature=signature;
-            const graphic=window.AESOriginalOffice.draw(selected,ids);
+            const graphic=window.AESOriginalOffice.draw(selected,ids,Boolean(data));
             for(const g of graphic.querySelectorAll('[data-seat16]')){
                 const key=g.dataset.seat16,slot=team.slots.find(s=>s.id===selected+':'+key);
                 if(!slot)continue;
@@ -230,9 +230,9 @@
         const st=f.stations.find(x=>x.id===q.get('station'));stationId=st?.id||null;
     }
     function currentFloor(){return byId.get(selected)?.floors.find(f=>f.id===floorId);}
-    function openLift(id){if(!byId.has(id))return;topTool=null;officeMode=true;clearFlows();if(id!==selected)lastFloor=null;else if(scene==='room')lastFloor=floorId;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-view').querySelector('button')?.focus();}
+    function openLift(id){if(!byId.has(id))return;topTool=null;if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));officeMode=true;clearFlows();if(id!==selected)lastFloor=null;else if(scene==='room')lastFloor=floorId;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-view').querySelector('button')?.focus();}
     function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;topTool=null;officeMode=true;if(!preview&&id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
-    function openCampus(){topTool=null;scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();document.querySelector('[data-building="'+selected+'"]')?.focus();}
+    function openCampus(){topTool=null;if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();document.querySelector('[data-building="'+selected+'"]')?.focus();}
     function tower(b){return art.tower(b,lastFloor);}
     function highlightFloor(id){
         for(const g of $('lift-view').querySelectorAll('[data-level-id]'))g.classList.toggle('focus181',g.dataset.levelId===id);
