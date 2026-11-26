@@ -68,3 +68,6 @@
 
 /* Global navigation: the original full-width view, using the same native read panel. */
 .original-shell #otherView .native-results{max-height:65vh;overflow:auto}.original-shell #otherView .entry b,.original-shell #otherView .entry small{font-size:13px}.original-shell #otherView .native-actions button,.original-shell #otherView #native-tool button{font-size:12px;padding:9px 12px}.original-shell #otherView #station-title{display:none}.original-shell #otherView #native-tool h3{font-size:16px}.original-shell #otherView .native-results pre{font-size:12px}
+
+/* Original five economy cards plus a matching operational band, no fabricated revenue. */
+.original-shell .kpi-heading{margin:0 0 5px 2px;color:#9ab7cf}.original-shell .kpi-band .metrics{margin-bottom:9px}.original-shell .kpi-band .metric{min-width:0;overflow-wrap:anywhere}.original-shell .kpi-band .metric strong{font-size:clamp(18px,2vw,25px)}.original-shell .kpi-band .metric strong.green{color:var(--green)}.original-shell .kpi-band .metric strong.gold{color:var(--gold)}.original-shell .kpi-band .metric strong.cyan{color:var(--cyan)}.original-shell .kpi-band .metric strong.kpi-unavailable{color:var(--muted)}.original-shell .kpi-band .track{margin:5px 0}

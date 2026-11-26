@@ -6,7 +6,12 @@
 <link rel="stylesheet" href="/campus/design.css"><link rel="stylesheet" href="/campus/original.css">
 </head><body><div class="shell original-shell"><header class="top"><div class="logo"><svg viewBox="0 0 32 32" fill="none" stroke="#7be4ff" stroke-width="1.4"><path d="M16 2 29 9v14l-13 7L3 23V9zM3 9l13 8 13-8M16 17v13M9 12l7-4 7 4v8l-7 4-7-4z"/></svg></div><div class="brand"><strong>AI ENTERPRISE STUDIO</strong><div class="eyebrow">Autonomous enterprise system</div></div><nav class="nav" aria-label="Navigation"><button class="active" data-view="campus">◈ &nbsp;Campus</button><button data-view="classic">Agents</button><button data-view="campaigns">Campagnes</button><button data-view="finance">Finances</button><button data-view="memory">Mémoire</button><button data-view="connectors">Connecteurs</button></nav><div class="demo">V3.0.1 · APERÇU CONNECTÉ</div><div class="live"><span class="dot"></span><span id="status" role="status">Connexion…</span></div></header><section class="intro"><div><div class="eyebrow">01 / Supervision de l'entreprise</div><h1>Centre de commandement <span class="version">DESIGN 22.6</span></h1><p>Une entreprise, sept domaines de compétences, des équipes modulables.</p></div><div class="date">CAMPUS / EUROPE<br><span>V3.0.1 · consultation locale</span></div></section>
 
-<section class="metrics" id="metrics" aria-label="Indicateurs locaux"></section>
+<section class="kpi-band" aria-label="Indicateurs de l’entreprise">
+<div class="eyebrow kpi-heading">Performance de l’entreprise</div>
+<div class="metrics" id="economic-metrics" aria-label="Indicateurs économiques"></div>
+<div class="eyebrow kpi-heading">Pilotage opérationnel</div>
+<div class="metrics" id="metrics" aria-label="Indicateurs opérationnels"></div>
+</section>
 <main id="campusView"><div class="main" id="scene-layout">
 <aside class="panel"><div class="panel-head"><h2>Départements</h2><small>7 bâtiments</small></div><div class="roster" id="buildings"></div><div class="health"><div class="eyebrow">Infrastructure</div><div id="alert-list"></div><p class="muted" id="preview-notice" hidden>Lecture seule · aucun lancement</p><button class="secondary" id="refresh">Actualiser</button></div></aside>
 <section class="panel campus day" id="campusPanel"><div class="map-top"><div><h2 id="scene-title">Campus opérationnel</h2><div class="eyebrow" id="scene-note">7 bâtiments · choix d’un étage</div></div><div class="controls"><button id="campus-back" hidden>← Campus</button><button id="lift-back" hidden>⇅ Ascenseur</button><button id="motion-toggle" aria-pressed="true">Ⅱ Pause</button></div></div>

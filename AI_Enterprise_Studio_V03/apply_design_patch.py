@@ -9,7 +9,7 @@ import socket
 import tempfile
 
 SCHEMA='aes.design.patch.v1'
-FILES=('serveur.py','campus_preview.py','preview_campus.py','LANCER_DESIGN.bat',
+FILES=('serveur.py','campus_preview.py','campus_live.py','preview_campus.py','LANCER_DESIGN.bat',
        'interface/live.js','interface/live-art.js','interface/live.html',
        'interface/original.html','interface/original.css','interface/original-office.js',
        'interface/original-rooms.js')

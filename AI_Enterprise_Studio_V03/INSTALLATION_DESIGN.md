@@ -1,6 +1,6 @@
 # Correctif graphique V3.0.1 — aperçu local uniquement
 
-À appliquer uniquement à AI_Enterprise_Studio_V03 V3.0.0 déjà préparée. Ce correctif contient 11 fichiers publics d'interface et de routage ; le moteur conserve VERSION 3.0.0. Aucun changement de schéma ni import de données. Ne remplace pas le dossier V03 avec le ZIP.
+À appliquer uniquement à AI_Enterprise_Studio_V03 V3.0.0 déjà préparée. Ce correctif contient 12 fichiers publics d'interface et de routage ; le moteur conserve VERSION 3.0.0. Aucun changement de schéma ni import de données. Ne remplace pas le dossier V03 avec le ZIP.
 
 1. Ferme l'aperçu et tous les serveurs de l'application (y compris TEST local). Ne laisse aucune autre instance active. Le contrôle des ports 8790 et 8765 est une précaution supplémentaire, pas une détection exhaustive des processus.
 2. Extrais le ZIP dans un nouveau dossier temporaire à côté de V03, jamais à l'intérieur.

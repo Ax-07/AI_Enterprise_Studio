@@ -363,6 +363,13 @@ def smoke_original():
                 expect(page.locator('#status')).to_contain_text('Connecté')
                 expect(page.locator('.main > aside')).to_have_count(2)
                 expect(page.locator('#metrics .metric')).to_have_count(5)
+                expect(page.locator('#economic-metrics .metric')).to_have_count(5)
+                for k in ('revenue','profit','api-today'):
+                    expect(page.locator('[data-kpi="'+k+'"] strong')).to_have_text('—')
+                expect(page.locator('[data-kpi="workforce"] strong')).to_have_text('8')
+                expect(page.locator('[data-kpi="campaigns"] strong')).to_have_text('0 / 0')
+                expect(page.locator('[data-kpi="budget"] strong')).not_to_have_text('—')
+                expect(page.locator('[data-kpi="commitment"] [role="meter"]')).to_have_count(1)
                 expect(page.locator('#buildings .agent')).to_have_count(7)
                 expect(page.locator('script[src="/campus/design.js"]')).to_have_count(0)
                 assert page.locator('meta[name="campus-command-session"]').get_attribute('content')==''

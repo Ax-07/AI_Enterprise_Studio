@@ -415,16 +415,55 @@
         if(data.unmapped_agents.length)$('agents').append(node('p','Agents non affectés au campus : '+data.unmapped_agents.map(a=>a.id).join(', '),'muted'));
         renderStation();
     }
+    function renderEnterpriseKPI(){
+        if(!fidelity)return;
+        const k=data?.enterprise_kpi,known=Boolean(data),missing='—';
+        const count=mode=>known?data.mission_counts.filter(x=>x.mode===mode).reduce((n,x)=>n+x.count,0):missing;
+        const agents=known?data.buildings.reduce((n,b)=>n+b.agents.length,0)+data.unmapped_agents.length:missing;
+        const eur=n=>new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(n/100);
+        const card=(id,title,value,subtitle,tone)=>{
+            const e=node('div',undefined,'metric');e.dataset.kpi=id;
+            e.append(node('label',title),node('strong',String(value),tone||''),node('small',subtitle));
+            return e;
+        };
+        const unavailable=known?'Non disponible':'Données indisponibles';
+        const declared=k?.declared_receipts_all_time;
+        const revenueNote=!known?unavailable:declared?.count>0?'Encaissements nets déclarés (cumul, non vérifiés) : '+eur(declared.net_cents):'CA réel non vérifié · aucun montant inventé';
+        const c=k?.campaigns;
+        const economy=[
+            card('revenue',"Chiffre d’affaires",missing,revenueNote,'kpi-unavailable'),
+            card('profit','Résultat net',missing,known?'Comptabilité complète non raccordée · marge : —':unavailable,'kpi-unavailable'),
+            card('workforce','Effectifs',agents,known?'Agents IA configurés · pas présence physique':unavailable,'cyan'),
+            card('campaigns','Campagnes',c?c.active+' / '+c.total:missing,c?'Actives / total enregistré':unavailable),
+            card('api-today',"Coût API · aujourd’hui",missing,known?'Registre non horodaté par dépense':unavailable,'kpi-unavailable')
+        ];
+        const operational=[
+            card('cloud','Missions CLOUD',count('cloud'),known?'Total enregistré':unavailable,'cyan'),
+            card('simulation','Missions SIMULATION',count('demo'),known?'Total enregistré · exclu du CA':unavailable),
+            card('commitment','Engagement API estimé',known?money(data.budget.committed_estimate_micro_usd):missing,known?'Cumul local · USD · réservations incluses':unavailable,'gold'),
+            card('budget','Plafond API local',known?money(data.budget.limit_micro_usd):missing,known?'Enveloppe configurée · USD':unavailable,'gold'),
+            card('pending','Demandes en attente',known?data.pending_requests:missing,known?'Tous modes':unavailable,'cyan')
+        ];
+        if(known&&Number.isFinite(data.budget.limit_micro_usd)&&data.budget.limit_micro_usd>0){
+            const value=data.budget.committed_estimate_micro_usd,limit=data.budget.limit_micro_usd;
+            const ratio=Math.max(0,Math.min(100,100*value/limit));
+            const track=node('div',undefined,'track');track.style.setProperty('--c','var(--gold)');
+            const bar=node('i');bar.style.width=ratio+'%';track.append(bar);
+            track.setAttribute('role','meter');track.setAttribute('aria-label','Part du plafond API engagée');track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');track.setAttribute('aria-valuenow',String(ratio));
+            operational[2].insertBefore(track,operational[2].lastElementChild);
+        }
+        $('economic-metrics').replaceChildren(...economy);$('metrics').replaceChildren(...operational);
+    }
     function render(){
         const agents=data.buildings.reduce((n,b)=>n+b.agents.length,0)+data.unmapped_agents.length;
         const count=m=>data.mission_counts.filter(x=>x.mode===m).reduce((n,x)=>n+x.count,0);
-        if(fidelity){$('metrics').replaceChildren(metric('Agents configurés',agents),metric('Missions CLOUD enregistrées',count('cloud')),metric('Missions SIMULATION enregistrées',count('demo')),metric('Engagement API local estimé',money(data.budget.committed_estimate_micro_usd)),metric('Demandes en attente',data.pending_requests));}else $('metrics').replaceChildren(metric('Agents configurés',agents),metric('Missions CLOUD enregistrées',count('cloud')),metric('Missions SIMULATION enregistrées',count('demo')),metric('Engagement API local estimé (USD)',money(data.budget.committed_estimate_micro_usd)),metric('Plafond API local (USD)',money(data.budget.limit_micro_usd)),metric('Demandes en attente (tous modes)',data.pending_requests));
+        if(fidelity){renderEnterpriseKPI();}else $('metrics').replaceChildren(metric('Agents configurés',agents),metric('Missions CLOUD enregistrées',count('cloud')),metric('Missions SIMULATION enregistrées',count('demo')),metric('Engagement API local estimé (USD)',money(data.budget.committed_estimate_micro_usd)),metric('Plafond API local (USD)',money(data.budget.limit_micro_usd)),metric('Demandes en attente (tous modes)',data.pending_requests));
         renderAlerts();renderActivity();renderBuilding();
         list('missions',data.missions,m=>entry('#'+m.id+' · '+m.title,m.state+' · '+mode(m.mode)+' · '+m.created));
         list('events',data.events,e=>entry(e.agent+' · '+e.action,'Mission #'+e.mission+' · '+mode(e.mode)+' · '+e.created+' · '+(e.ok===1?'OK':e.ok===0?'Échec':'Résultat inconnu')));
         list('artifacts',data.artifacts,a=>entry(a.name+' · V'+a.version,a.agent+' · mission #'+a.mission+' · '+mode(a.mode)));
     }
-    function clear(){topTool=null;if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));window.AESCampusCommands.setOnline(false);window.AESNativeTools.reset();data=null;renderAlerts();renderActivity();for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
+    function clear(){topTool=null;if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));window.AESCampusCommands.setOnline(false);window.AESNativeTools.reset();data=null;renderAlerts();renderActivity();for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();if(fidelity)renderEnterpriseKPI();renderBuilding();}
     async function refresh(){
         if(busy)return;busy=true;$('refresh').disabled=true;
         const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);
@@ -437,7 +476,7 @@
         }catch(e){clear();$('status').className='error';$('status').textContent='Données indisponibles · aucune valeur de remplacement affichée.';}
         finally{clearTimeout(timer);busy=false;$('refresh').disabled=false;}
     }
-    restoreLocation();initMap();renderScene();renderAlerts();renderActivity();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
+    restoreLocation();initMap();if(fidelity)renderEnterpriseKPI();renderScene();renderAlerts();renderActivity();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
     $('day-toggle').addEventListener('click',()=>{day=!day;if(fidelity){$('campusPanel').classList.toggle('day',day);$('original-skyline').replaceWith(art.skyline(day));}$('campus-decor').setAttribute('href','/campus/assets/campus_1_'+(day?1:0)+'.webp');$('day-toggle').textContent=day?'☀ Jour':'☾ Nuit';$('day-toggle').setAttribute('aria-pressed',String(day));});
     $('motion-toggle').setAttribute('aria-pressed',String(motion));$('motion-toggle').textContent=motion?'Animations : oui':'Animations : non';
     $('motion-toggle').addEventListener('click',()=>{motion=!motion;if(!motion)clearFlows();$('motion-toggle').textContent=motion?'Animations : oui':'Animations : non';$('motion-toggle').setAttribute('aria-pressed',String(motion));});
