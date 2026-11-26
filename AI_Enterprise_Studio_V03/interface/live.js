@@ -182,6 +182,7 @@
     function initMap(){
         const map=svg('svg',{viewBox:'0 0 1000 600',class:'campus-map-svg',role:'group','aria-label':'Campus interactif'});
         const signs=svg('g',{id:'original-signs','aria-hidden':'true'});
+        if(fidelity)map.append(art.skyline(day));
         map.append(svg('image',{id:'campus-decor',href:'/campus/assets/campus_1_1.webp',class:'live-hd-art',x:0,y:0,width:1000,height:600,preserveAspectRatio:'none'}));
         for(const b of [...layout].sort((a,b)=>a.x+a.y-b.x-b.y)){
             const w=b.w*.82,d=b.d*.82,h=b.h*.77,X=b.x-w/2,Y=b.y-d/2,top=b.type==='core'?51:h+(b.type==='hq'?28:8);
@@ -437,7 +438,7 @@
         finally{clearTimeout(timer);busy=false;$('refresh').disabled=false;}
     }
     restoreLocation();initMap();renderScene();renderAlerts();renderActivity();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
-    $('day-toggle').addEventListener('click',()=>{day=!day;if(fidelity)$('campusPanel').classList.toggle('day',day);$('campus-decor').setAttribute('href','/campus/assets/campus_1_'+(day?1:0)+'.webp');$('day-toggle').textContent=day?'☀ Jour':'☾ Nuit';$('day-toggle').setAttribute('aria-pressed',String(day));});
+    $('day-toggle').addEventListener('click',()=>{day=!day;if(fidelity){$('campusPanel').classList.toggle('day',day);$('original-skyline').replaceWith(art.skyline(day));}$('campus-decor').setAttribute('href','/campus/assets/campus_1_'+(day?1:0)+'.webp');$('day-toggle').textContent=day?'☀ Jour':'☾ Nuit';$('day-toggle').setAttribute('aria-pressed',String(day));});
     $('motion-toggle').setAttribute('aria-pressed',String(motion));$('motion-toggle').textContent=motion?'Animations : oui':'Animations : non';
     $('motion-toggle').addEventListener('click',()=>{motion=!motion;if(!motion)clearFlows();$('motion-toggle').textContent=motion?'Animations : oui':'Animations : non';$('motion-toggle').setAttribute('aria-pressed',String(motion));});
     $('focus-toggle').addEventListener('click',()=>{const expanded=fidelity?$('campusView').classList.toggle('immersive'):$('scene-layout').classList.toggle('scene-expanded');$('focus-toggle').setAttribute('aria-pressed',String(expanded));$('focus-toggle').textContent=expanded?'↙ Vue normale':'⛶ Agrandir le campus';});

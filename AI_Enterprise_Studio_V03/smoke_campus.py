@@ -387,6 +387,9 @@ def smoke_original():
                 if 'day' not in (compare.locator('#campusPanel').get_attribute('class') or '').split():
                     compare.locator('#dayBtn').click()
                 expect(compare.locator('#hdDecor image')).to_have_attribute('href','/campus/assets/campus_1_1.webp')
+                assert page.locator('#original-skyline path').count()==compare.locator('#skyline path').count()
+                assert page.locator('#original-skyline rect').count()==compare.locator('#skyline rect').count()
+                expect(page.locator('#original-skyline > g')).to_have_attribute('opacity','0.4')
                 for prop in ['background-image','filter']:
                     assert compare.locator('#mapWrap').evaluate('(e,p)=>getComputedStyle(e)[p]',prop)==page.locator('#mapWrap').evaluate('(e,p)=>getComputedStyle(e)[p]',prop),prop
                 if target:
@@ -397,6 +400,7 @@ def smoke_original():
                 if target:
                     compare.screenshot(path=str(Path(target)/'F05-reference-nuit.png'),animations='disabled',full_page=True)
                 page.locator('#day-toggle').click()
+                expect(page.locator('#original-skyline > g')).to_have_attribute('opacity','0.8')
                 capture('F05-connecte-nuit')
                 page.locator('#day-toggle').click()
                 # Original tower and interior on the same department as the connected one.

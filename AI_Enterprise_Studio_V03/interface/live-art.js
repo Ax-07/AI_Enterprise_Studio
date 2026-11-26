@@ -29,5 +29,11 @@ function tower(b,from){
     if(!palette.has(b.color)||!Array.isArray(b.floors)||b.floors.length>20||b.floors.some(f=>!/^[A-Z][A-Z0-9]*$/.test(f.id)))throw Error('Topologie graphique invalide');
     return parse(tower181(b,from).replace('<svg ','<svg xmlns="http://www.w3.org/2000/svg" '));
 }
-window.AESLiveArt=Object.freeze({robot,tower});
+function skyline07(dayMode){let q='<defs><linearGradient id="sky07" x2="0" y2="1"><stop stop-color="#080e20"/><stop offset="1" stop-color="#0a1c2d" stop-opacity="0"/></linearGradient><linearGradient id="city07" x2="1" y2="1"><stop stop-color="#243b56"/><stop offset="1" stop-color="#0b1729"/></linearGradient></defs><rect width="1000" height="240" fill="url(#sky07)"/>';let state=723;const rr=()=>((state=(state*1664525+1013904223)>>>0)/4294967296);for(let i=0;i<70;i++){let x=rr()*1000,y=rr()*100;q+=`<circle cx="${x}" cy="${y}" r="${rr()*.8+.2}" fill="#b9d5e6" opacity="${rr()*.38}"/>`}for(let l=0;l<3;l++){let x=-10;while(x<1010){let w=15+rr()*30,h=20+rr()*(l===2?125:80),y=176-l*8;q+=`<path d="M${x} ${y}v-${h}h${w}v${h}z" fill="url(#city07)" opacity="${.36+l*.23}"/><path d="M${x+w} ${y}v-${h}l5 -3v${h}z" fill="#172e43" opacity=".4"/>`;for(let u=5;u<w-3;u+=7)for(let v=7;v<h-4;v+=10)if(rr()>.66){let col=rr()>.65?'#ffd19a':'#6cb9e9';q+=`<rect x="${x+u}" y="${y-h+v}" width="2.5" height="2" fill="${col}" opacity="${.25+rr()*.53}"/>`}if(l===2&&rr()>.72)q+=`<path d="M${x+w/2} ${y-h}v-13" stroke="#7196b4" opacity=".5"/><circle cx="${x+w/2}" cy="${y-h-13}" r="1.2" fill="#f5828a" class="static-sky-signal"/>`;x+=w+3+rr()*12}}return `<g opacity="${dayMode?.40:.8}">${q}</g><rect width="1000" height="220" fill="url(#skyFade)"/>`}
+function skyline(day){
+ const root=parse('<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="skyFade" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#070f1c" stop-opacity=".06"/><stop offset=".65" stop-color="#081421" stop-opacity=".2"/><stop offset="1" stop-color="#091725" stop-opacity="1"/></linearGradient></defs>'+skyline07(day===true)+'</svg>');
+ const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+ g.setAttribute('id','original-skyline');g.setAttribute('pointer-events','none');g.setAttribute('aria-hidden','true');g.append(...root.children);return g;
+}
+window.AESLiveArt=Object.freeze({robot,tower,skyline});
 })();
