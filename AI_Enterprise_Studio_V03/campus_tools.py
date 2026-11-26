@@ -3,9 +3,10 @@ import json
 import sqlite3
 import campus_commercial
 import incidents
+import campus_quality
 from pathlib import Path
 
-TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions','incidents')) | campus_commercial.TOOLS
+TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions','incidents','quality')) | campus_commercial.TOOLS
 MAX_ARTIFACT_BYTES=2*1024*1024
 MAX_REPORT_BYTES=256*1024
 
@@ -37,6 +38,8 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
         if tool in campus_commercial.TOOLS:
             result=campus_commercial.read(db,tool,ident)
             if tool in campus_commercial.DETAILS and not result:raise Missing('Dossier absent')
+        elif tool=='quality':
+            result=campus_quality.read(db)
         elif tool=='incidents':
             # Persisted states only: never run incident eligibility or a recovery on read.
             counts=rows("SELECT mode,state,COUNT(*) AS count FROM missions WHERE state IN ('bloquée','en attente','interrompue') GROUP BY mode,state")

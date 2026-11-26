@@ -376,7 +376,8 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
     "incidents"
   ],
   "SUPERVISION:station:4": [
-    "incidents"
+    "incidents",
+    "quality"
   ],
   "SENTINEL:station:1": [
     "incidents"
@@ -404,5 +405,38 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
   ],
   "ITOPS17:station:0": [
     "incidents"
+  ],
+  "NEXUS:station:0": [
+    "quality"
+  ],
+  "NEXUS:station:3": [
+    "quality"
+  ],
+  "FACTORY:station:2": [
+    "quality"
+  ],
+  "FACTORY:station:3": [
+    "quality"
+  ],
+  "FACTORY:station:4": [
+    "quality"
+  ],
+  "LAB:station:2": [
+    "quality"
+  ],
+  "LAB:station:3": [
+    "quality"
+  ],
+  "LAB:station:4": [
+    "quality"
+  ],
+  "PORTFOLIO:station:3": [
+    "quality"
+  ],
+  "SENTINEL:station:2": [
+    "quality"
+  ],
+  "SENTINEL:station:3": [
+    "quality"
   ]
 })});
