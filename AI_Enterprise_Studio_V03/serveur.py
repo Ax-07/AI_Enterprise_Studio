@@ -304,6 +304,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(campus_live.snapshot(DB,AGENTS,config()['budget'],VERSION))
                 except Exception:
                     return self.send({'error':'Données du campus indisponibles'},503)
+            if self.route()=='/campus/original':
+                if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
+                    return self.send({'error':'Accès local direct requis'},403)
+                asset=campus_preview.read(ROOT,self.route())
+                if asset is None:return self.missing()
+                data,typ=asset
+                return self.send(data.replace(b'__CAMPUS_READ_SESSION__',CAMPUS_READ_SESSION.encode()),typ=typ,csp=campus_preview.LIVE_CSP)
             if self.route()=='/campus/live':
                 if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
                     return self.send({'error':'Accès local direct requis'},403)

@@ -3,7 +3,7 @@ on:
   push:
     branches: [main, 'feature/**', 'fix/**']
   pull_request:
-    branches: [main, 'feature/v0.5.1-acquisition']
+    branches: [main, 'feature/v0.5.1-acquisition', 'feature/v3.0.0-campus']
 permissions:
   contents: read
 jobs:
@@ -31,6 +31,7 @@ jobs:
           node --check interface/live-layout.js
           node --check interface/live-teams.js
           node --check interface/live-art.js
+          node --check interface/original-office.js
           node --check interface/live-modules.js
           node --check interface/live-tools.js
           node --check interface/live-commands.js

@@ -341,9 +341,70 @@ def smoke_preview():
         finally:srv.shutdown();srv.server_close();th.join()
     print('D08.2 read-only preview smoke passed')
 
+def smoke_original():
+    import tempfile
+    from pathlib import Path
+    from preview_campus import PreviewHandler
+    with tempfile.TemporaryDirectory() as d,patch.object(s,'DB',Path(d)/'db.sqlite3'):
+        s.init()
+        before=s.DB.read_bytes()
+        srv=s.ThreadingHTTPServer(('127.0.0.1',0),PreviewHandler)
+        th=threading.Thread(target=srv.serve_forever,daemon=True);th.start()
+        port=srv.server_address[1];base=f'http://127.0.0.1:{port}'
+        try:
+            with patch.object(s,'PORT',port),patch.object(s,'request',side_effect=AssertionError('No provider')) as network,sync_playwright() as pw:
+                browser=pw.chromium.launch(headless=True)
+                page=browser.new_page(viewport={'width':1600,'height':1000})
+                errors=[];posts=[];requests=[]
+                page.on('pageerror',lambda e:errors.append(str(e)))
+                page.on('request',lambda r:(requests.append(r.url),posts.append(r.url) if r.method=='POST' else None))
+                page.route('**/*',lambda r:r.continue_() if r.request.url.startswith(base+'/') else r.abort())
+                page.goto(base+'/campus/original/')
+                expect(page.locator('#status')).to_contain_text('Connecté')
+                expect(page.locator('.main > aside')).to_have_count(2)
+                expect(page.locator('#metrics .metric')).to_have_count(5)
+                expect(page.locator('#buildings .agent')).to_have_count(7)
+                expect(page.locator('script[src="/campus/design.js"]')).to_have_count(0)
+                assert page.locator('meta[name="campus-command-session"]').get_attribute('content')==''
+                target=os.getenv('AES_CAMPUS_SCREENSHOTS')
+                def capture(name):
+                    if target:
+                        directory=Path(target);directory.mkdir(parents=True,exist_ok=True)
+                        page.screenshot(path=str(directory/(name+'.png')),animations='disabled',full_page=True)
+                capture('F01-campus-original')
+                for building,floor,count in [('NEXUS','NEXUS',8),('CORE','CORE',7)]:
+                    page.locator('#buildings button[data-id="'+building+'"]').click()
+                    page.locator('#lift-view [data-floor="'+floor+'"]').click()
+                    expect(page.locator('#original-office svg.office16')).to_be_visible()
+                    expect(page.locator('#original-office [data-seat16]')).to_have_count(count)
+                    if building=='NEXUS':
+                        capture('F01-bureau-nexus')
+                        page.locator('#original-office [data-seat16="director"]').focus()
+                        page.keyboard.press('Enter')
+                        expect(page.locator('#team-detail')).to_contain_text('NEXUS')
+                        page.locator('.office-switch button').click()
+                        expect(page.locator('#room-view img')).to_be_visible()
+                    else:
+                        capture('F01-bureau-core')
+                        page.locator('#original-office [data-seat16="1"]').focus()
+                        page.keyboard.press('Enter')
+                        expect(page.locator('#team-detail')).to_contain_text('MNEMOS')
+                    page.locator('#campus-back').click()
+                page.locator('.top [data-view="finance"]').click()
+                expect(page.locator('#native-tool')).to_be_visible()
+                expect(page.locator('#native-tool h3')).to_contain_text('Dépenses API')
+                assert not posts and not errors,(posts,errors)
+                assert not any('/campus/design.js' in url for url in requests)
+                network.assert_not_called()
+                browser.close()
+                assert s.DB.read_bytes()==before
+        finally:srv.shutdown();srv.server_close();th.join()
+    print('F01 original design smoke passed')
+
 if __name__=='__main__':
     smoke()
     smoke_live()
     smoke_commands()
     smoke_preview()
+    smoke_original()
 
