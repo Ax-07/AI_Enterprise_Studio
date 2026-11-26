@@ -2,13 +2,16 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, campus_tools, campus_commands, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
 VERSION="0.5.0"
 SESSION=secrets.token_urlsafe(32)
+CAMPUS_READ_SESSION=secrets.token_urlsafe(32)
+CAMPUS_COMMAND_SESSION=secrets.token_urlsafe(32)
+CAMPUS_OWNER_SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 POST_LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -263,8 +266,8 @@ def plan_audit(c,cfg,pid):
         'limit':'Journal local potentiellement privé; vérifier avant partage. Aucun appel externe pour cet export.'}
 
 class Handler(BaseHTTPRequestHandler):
-    def send(self,data,status=200,typ='application/json'):
-        b=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type',typ); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store, no-cache, must-revalidate'); self.send_header('X-Enterprise-Version',VERSION); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer'); self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"); self.end_headers(); self.wfile.write(b)
+    def send(self,data,status=200,typ='application/json',csp=None):
+        b=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type',typ); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store, no-cache, must-revalidate'); self.send_header('X-Enterprise-Version',VERSION); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer'); self.send_header('Content-Security-Policy',csp or "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"); self.end_headers(); self.wfile.write(b)
     def route(self): return urllib.parse.urlsplit(self.path).path.rstrip('/') or '/'
     def missing(self):
         route=self.route()[:120]
@@ -274,6 +277,47 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.local(): return self.send({'error':'Hôte refusé'},403)
         try:
+            if self.route() in ('/campus/live-data','/campus/read'):
+                origin=self.headers.get('Origin')
+                if (not secrets.compare_digest(self.headers.get('X-Campus-Session','').encode(),CAMPUS_READ_SESSION.encode())
+                    or origin not in (None,'http://'+self.headers.get('Host',''))
+                    or self.headers.get('Sec-Fetch-Site') not in (None,'same-origin')):
+                    return self.send({'error':'Accès lecture campus refusé'},403)
+                if self.route()=='/campus/read':
+                    try:
+                        q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=4)
+                        tools=q.pop('tool',[])
+                        if len(tools)!=1:raise campus_tools.BadQuery('Outil requis')
+                        resources=None
+                        if tools[0]=='owner':
+                            cfg=config()
+                            resources={'budget':cfg['budget'],'search_limit':cfg['limit'],
+                                'mission_budget':cfg['mission_budget'],'mission_calls':cfg['call_limit'],
+                                'openai_configured':bool(cfg['key']),'brave_configured':bool(cfg['brave']),
+                                'sandbox_enabled':cfg.get('html_sandbox_enabled',False)}
+                        return self.send(campus_tools.read(DB,tools[0],q,roles=moteur.ROLES,permissions=moteur.PERMS,registry=connectors.REGISTRY,resources=resources))
+                    except campus_tools.Missing as e:return self.send({'error':str(e)},404)
+                    except campus_tools.TooLarge as e:return self.send({'error':str(e)},413)
+                    except ValueError:return self.send({'error':'Paramètres de lecture invalides'},400)
+                    except Exception:return self.send({'error':'Outil de lecture indisponible'},503)
+                try:
+                    return self.send(campus_live.snapshot(DB,AGENTS,config()['budget'],VERSION))
+                except Exception:
+                    return self.send({'error':'Données du campus indisponibles'},503)
+            if self.route()=='/campus/live':
+                if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
+                    return self.send({'error':'Accès local direct requis'},403)
+                asset=campus_preview.read(ROOT,self.route())
+                if asset is None:return self.missing()
+                data,typ=asset
+                q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                owner=q.get('building')==['ATLAS'] and q.get('floor')==['OWNER']
+                return self.send(data.replace(b'__CAMPUS_READ_SESSION__',CAMPUS_READ_SESSION.encode()).replace(b'__CAMPUS_COMMAND_SESSION__',CAMPUS_COMMAND_SESSION.encode()).replace(b'__CAMPUS_OWNER_SESSION__',CAMPUS_OWNER_SESSION.encode() if owner else b''),typ=typ,csp=campus_preview.LIVE_CSP)
+            if self.route()=='/campus' or self.route().startswith('/campus/'):
+                asset=campus_preview.read(ROOT,self.route())
+                if asset is None:return self.missing()
+                data,typ=asset
+                return self.send(data,typ=typ,csp=campus_preview.CSP)
             if self.route()=='/api/health': return self.send({'application':'AI Enterprise Studio','version':VERSION,'resume_supported':True,'resume_route':'POST /api/resume','paid_call':False})
             if self.route()=='/': return self.send((ROOT/'index.html').read_text(encoding='utf8').replace('__SESSION__',SESSION).encode(),typ='text/html; charset=utf-8')
             if self.route()=='/api/status' and self.headers.get('X-Session')==SESSION: return self.send(status())
@@ -372,12 +416,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         with POST_LOCK:self._post()
     def _post(self):
-        if not self.local() or self.headers.get('X-Session')!=SESSION or self.headers.get('Origin') not in (None,f'http://127.0.0.1:{PORT}',f'http://localhost:{PORT}'): return self.send({'error':'Accès refusé'},403)
+        route=self.route()
+        campus=route in ('/campus/command','/campus/owner-command')
+        owner=route=='/campus/owner-command'
+        if campus:
+            if (not self.local() or not secrets.compare_digest(self.headers.get('X-Campus-Owner' if owner else 'X-Campus-Command','').encode(),(CAMPUS_OWNER_SESSION if owner else CAMPUS_COMMAND_SESSION).encode())
+                or self.headers.get('Origin')!='http://'+self.headers.get('Host','')
+                or self.headers.get('Sec-Fetch-Site') not in (None,'same-origin')
+                or self.headers.get('Content-Type','').split(';',1)[0].strip().lower()!='application/json'
+                or urllib.parse.urlsplit(self.path).query):
+                return self.send({'error':'Commande campus refusée'},403)
+        elif not self.local() or self.headers.get('X-Session')!=SESSION or self.headers.get('Origin') not in (None,f'http://127.0.0.1:{PORT}',f'http://localhost:{PORT}'): return self.send({'error':'Accès refusé'},403)
         try:
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
-            p=json.loads(self.rfile.read(n)); cfg=config()
-            route=self.route()
+            p=json.loads(self.rfile.read(n))
+            if campus:route,p=(campus_commands.owner_translate if owner else campus_commands.translate)(p)
+            cfg=config()
+
             business_routes={'/api/business/authorize':business.authorize,'/api/business/observe':business.observe,
                 '/api/business/close':business.close,'/api/business/receipt':business.receipt}
             if route in ('/api/acquisition/test_publish','/api/acquisition/test_collect'):
@@ -455,7 +511,7 @@ class Handler(BaseHTTPRequestHandler):
                     threading.Thread(target=planner.worker,args=(sys.modules[__name__],pid),daemon=True).start()
                 return self.send({'plan':pid})
             with db() as c:planner.guard_manual(c)
-            if self.route()=='/api/research/diagnostic':
+            if route=='/api/research/diagnostic':
                 if p!={'confirm':True}:raise ValueError('Diagnostic fixe : confirmation seule requise')
                 if not LOCK.acquire(blocking=False):raise ValueError('Un moteur travaille déjà')
                 try:
@@ -463,11 +519,11 @@ class Handler(BaseHTTPRequestHandler):
                         if autopilot.active(c) or c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone():raise ValueError('Un travail est déjà en cours')
                     return self.send(research.diagnostic(moteur.fetch_page))
                 finally:LOCK.release()
-            if self.route() in ('/api/connectors/policy','/api/connectors/test'):
+            if route in ('/api/connectors/policy','/api/connectors/test'):
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 if not LOCK.acquire(blocking=False):raise ValueError('Un moteur travaille déjà')
                 try:
-                    if self.route()=='/api/connectors/policy':
+                    if route=='/api/connectors/policy':
                         with db() as c:
                             c.execute('BEGIN IMMEDIATE')
                             connectors.set_policy(c,p)
@@ -477,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not isinstance(cap,str) or cap not in samples:raise ValueError('Test non autorisé')
                     return self.send(connectors.invoke(sys.modules[__name__],cap,samples[cap]))
                 finally:LOCK.release()
-            if self.route()=='/api/laboratory/run':
+            if route=='/api/laboratory/run':
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 if not LOCK.acquire(blocking=False):raise ValueError('Un moteur travaille déjà')
                 try:
@@ -486,30 +542,30 @@ class Handler(BaseHTTPRequestHandler):
                     result=laboratory.run(sys.modules[__name__],p.get('artifact'),p.get('profile'),p.get('size'),p.get('seed'),cfg)
                     return self.send({'experiment':result['id'],'status':result['status']})
                 finally:LOCK.release()
-            if self.route()=='/api/improvement/retain':
+            if route=='/api/improvement/retain':
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 if LOCK.locked():raise ValueError('Travail en cours')
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
                     improvement.retain_review(c,p.get('id'))
                 return self.send({'ok':True})
-            if self.route()=='/api/improvement/restore':
+            if route=='/api/improvement/restore':
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 if LOCK.locked():raise ValueError('Travail en cours')
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
                     improvement.restore(c,p.get('project'),p.get('artifact'))
                 return self.send({'ok':True})
-            if self.route()=='/api/portfolio/state':
+            if route=='/api/portfolio/state':
                 if p.get('confirm') is not True:raise ValueError('Confirmation requise')
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
                     planner.guard_manual(c)
                     portfolio.set_state(c,p.get('project'),p.get('state'))
                 return self.send({'ok':True})
-            if self.route() in ('/api/autopilot/start','/api/autopilot/resume','/api/autopilot/stop'):
+            if route in ('/api/autopilot/start','/api/autopilot/resume','/api/autopilot/stop'):
                 if p.get('confirm') is not True: raise ValueError('Confirmation requise')
-                route=self.route()
+
                 if route!='/api/autopilot/stop' and LOCK.locked():raise ValueError('Un moteur travaille déjà')
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
@@ -524,7 +580,7 @@ class Handler(BaseHTTPRequestHandler):
                             autopilot.resume(c,cid,cfg)
                 if route!='/api/autopilot/stop':threading.Thread(target=autopilot.worker,args=(sys.modules[__name__],cid),daemon=True).start()
                 return self.send({'campaign':cid})
-            if self.route()=='/api/close_audit':
+            if route=='/api/close_audit':
                 if p.get('confirm') is not True: raise ValueError('Confirmation de clôture partielle requise')
                 if not LOCK.acquire(blocking=False): raise ValueError('Une mission est déjà en cours')
                 try:
@@ -533,10 +589,10 @@ class Handler(BaseHTTPRequestHandler):
                         result=recovery.close(c,p.get('id'),p.get('task'),p.get('proof'),cfg)
                     return self.send(result)
                 finally: LOCK.release()
-            if self.route()=='/api/verify':
+            if route=='/api/verify':
                 if p.get('confirm') is not True: raise ValueError('Confirmation requise')
                 return self.send({'verification':moteur.quick_verify(sys.modules[__name__],p.get('id'),cfg,p.get('profile'))})
-            if self.route()=='/api/start':
+            if route=='/api/start':
                 mode=p['mode']; title=p['title'].strip()
                 if mode not in ('demo','cloud') or not 1<=len(title)<=1500: raise ValueError('Mission invalide.')
                 if mode=='cloud' and (not cfg['key'] or p.get('confirm') is not True): raise ValueError('Clé OpenAI et confirmation requises.')
@@ -548,7 +604,7 @@ class Handler(BaseHTTPRequestHandler):
                     if artifact_id is not None and p.get('engine')!='dynamic': raise ValueError('Référence réservée au moteur dynamique')
                     mid=moteur.create(sys.modules[__name__],c,title,mode,artifact_id=artifact_id) if p.get('engine')=='dynamic' else c.execute("INSERT INTO missions(title,mode,state) VALUES(?,?,'en cours')",(title,mode)).lastrowid
                 threading.Thread(target=run,args=(mid,),daemon=True).start(); return self.send({'id':mid})
-            if self.route()=='/api/resume':
+            if route=='/api/resume':
                 print(f'[REPRISE] POST /api/resume — serveur {VERSION}',flush=True)
                 if p.get('confirm') is not True: raise ValueError('Confirmation requise.')
                 mid=int(p['id'])
@@ -563,14 +619,14 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute("UPDATE missions SET state='en cours',error='' WHERE id=?",(mid,))
                 print(f'[REPRISE] Mission #{mid} acceptée; rapports conservés.',flush=True)
                 threading.Thread(target=run,args=(mid,),daemon=True).start(); return self.send({'id':mid})
-            if self.route()=='/api/stop':
+            if route=='/api/stop':
                 with db() as c:
                     c.execute('BEGIN IMMEDIATE')
                     linked=autopilot.link(c,int(p['id']))
                     if linked and linked['state']=='actif':autopilot.stop(c,linked['id'])
                     elif not linked:c.execute("UPDATE missions SET state='arrêtée' WHERE id=? AND state IN ('en cours','en attente','prête')",(int(p['id']),))
                 return self.send({'ok':True})
-            if self.route()=='/api/decision':
+            if route=='/api/decision':
                 if p['decision'] not in ('étude acceptée','refusée'): raise ValueError('Décision invalide.')
                 start=None
                 with db() as c:
