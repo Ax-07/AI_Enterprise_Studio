@@ -27,6 +27,16 @@ class DesignPatchTests(unittest.TestCase):
             self.assertFalse(root.with_name(root.name+'-sauvegarde-design-F06').exists())
             (root/'serveur.py').write_bytes(b'old:serveur.py')
             with self.assertRaises(ValueError):a.apply(root,package)
+            original_put=a.put
+            def interrupt(src,dst):
+                if src.is_relative_to(package) and dst.name=='campus_preview.py':raise OSError('interruption fixture')
+                original_put(src,dst)
+            with patch.object(a,'put',side_effect=interrupt):
+                with self.assertRaises(OSError):a.apply(root,package,confirmed=True)
+            for n,e in entries.items():self.assertEqual(a.digest(root/n),e['before'])
+            self.assertTrue(a.apply(root,package,confirmed=True,rollback=True)['restored'])
+            import shutil
+            shutil.rmtree(root.with_name(root.name+'-sauvegarde-design-F06')) # fixture only
             self.assertTrue(a.apply(root,package,confirmed=True)['installed'])
             for n,e in entries.items():self.assertEqual(a.digest(root/n),e['after'])
             with self.assertRaises(ValueError):a.apply(root,package,confirmed=True)

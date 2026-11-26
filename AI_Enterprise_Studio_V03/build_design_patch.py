@@ -14,7 +14,7 @@ def blob(ref,name):
     return git('show',ref+':'+PREFIX+name)
 def build(dest):
     revision=git('rev-parse','HEAD').decode().strip()
-    old=set(git('ls-tree','-r','--name-only',BASE).decode().splitlines())
+    old=set(git('ls-tree','-r','--full-tree','--name-only',BASE).decode().splitlines())
     files={}
     def h(b):return hashlib.sha256(b).hexdigest()
     dest=Path(dest);dest.parent.mkdir(parents=True,exist_ok=True)
