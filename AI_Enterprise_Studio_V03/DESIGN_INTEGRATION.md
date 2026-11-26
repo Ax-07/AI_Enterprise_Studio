@@ -145,3 +145,8 @@ O03.4 CI 45873857610 entièrement réussie ; phase O03 validée en CI, installat
 
 ### O04.2 — preuves d'expérience et besoins à examiner
 Extension de workforce : événements historiques regroupés par agent/mode/action connue et résultat OK/refus/échec/inconnu, actions hors nomenclature agrégées sans texte brut ; tâches terminées distinctes des preuves qualité ; note de compétence absente, aucune déduction de qualification ou de formation à partir d'un blocage. Accès aux preuves qualité et incidents. Enrichissement des postes PEOPLE17 2 et ACADEMY 1, tous deux déjà raccordés ; 135/185. Aucun apprentissage, affectation, appel fournisseur ni mutation. Tests fixture et Chromium complétés. CI requise.
+
+O04.1 CI 45875028327 réussie ; O04.2 commit 21ee90d8, CI 45877051214 en cours lors de la préparation.
+
+### O04.3 — aide à la mobilisation ATLAS
+Première amélioration du contexte Cloud ATLAS uniquement lorsque delegate reste autorisé : nombre de places de tâches restantes, candidats issus des rôles et de la politique de campagne existante, tâches non terminées par candidat dans cette mission. Pas de score, de délégation supplémentaire automatique, de permission, de nouveau modèle ou d'appel fournisseur ajouté. Vérification de l'état de la mission/campagne et de la fenêtre périodique ; les contrôles d'exécution existants restent souverains. Simulation inchangée. Test de plafond, restriction de périmètre, mode, absence d'appel et non-mutation. Le poste Mobilisation reste non raccordé tant qu'une interface métier dédiée n'est pas disponible ; 135/185. CI requise. Coût marginal possible des tokens de contexte supplémentaires lors des futures missions Cloud, sans modification des plafonds.
