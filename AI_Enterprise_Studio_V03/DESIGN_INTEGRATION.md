@@ -165,3 +165,8 @@ O04.4 CI 45888309281 réussie ; O04.5 commit 1110a80a, CI 45891344783 en cours l
 
 ### O04.6 — validation intégrée du pilotage
 Test transversal sur schéma réel isolé : exécution réelle du moteur en simulation gratuite, mission Cloud bloquée sans clé (aucun fournisseur), quatre délégations et cinq tâches simulation, une tâche Cloud bloquée, preuves d'expérience séparées, absence de note de compétence et de cycle/formation inventés, coût nul et lectures sans mutation. Navigation Académie dans la vue originale en aperçu, preuves et historique vides explicites. Aucun code de production ni nouveau droit. CI requise avant clôture O04 ; autonomie commerciale, formation réelle, centre de mobilisation dédié et 50 postes non raccordés hors validation présente. O05 : validation générale, inventaire réconcilié et procédure de déploiement préservant V2/V3 ; installation réelle non testée.
+
+O04.5 : CI 45891344783 entièrement réussie. O04.6 : commit c41dfe5a ; CI à contrôler.
+
+### O05.1 — réconciliation du périmètre du campus
+Audit statique de live-layout et live-modules : 7 bâtiments, 37 étages, 185 postes uniques, 135 associés (114 stations, 71 native, 50 communes), aucun orphelin ; 50 postes non associés tous inventoriés. Les deux nouveaux raccordements depuis O02.6 sont PEOPLE17 0 et COMMS 0. Ajout d'un test de cohérence des identifiants, nombres, inventaire et destinations déclarées. Aucun changement moteur, graphique, permission ou schéma ; aucune dépense API métier. CI requise. O05.2 : contrôle de la préparation à l'installation et des procédures de conservation/repli ; O05.3 : bilan et décision de livraison, sans présumer de validation locale ou de fusion autorisée.

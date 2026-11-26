@@ -111,3 +111,22 @@ P1 : dépendance prioritaire pour les revenus réels et la maîtrise des risques
 4. Chantiers métier parallèles après protections : conformité/droits et registre d'engagements, parcours client/commandes/paiements/livraison, fournisseurs/abonnements, médias/publication, intelligence sectorielle et académie. Chaque opération externe exige contrat, sandbox/test, politique de coûts, permissions, journal, mécanisme d'arrêt et validation appropriée.
 
 Outils propriétaires à évaluer : gestion des droits/contrôles de livrables, moteur de rapprochement et preuve de livraison, comparateur de marchés sourcé, pipeline média contrôlé, banc d'évaluation. Leur commercialisation est une hypothèse, pas une décision ni une preuve de marché. Ne pas créer de nouveaux agents, modifier le design, simuler des activités ou imposer un secteur économique pour remplir les postes.
+
+## Réconciliation O05.1 — état après O04.5
+
+Référence de code vérifiée : `1110a80addcb9410c9a1277744997a2bd73fb213` ; O04.6 ne change que les tests et la documentation. L'inventaire historique O02.6 ci-dessus est conservé. Les deux postes désormais associés sont `PEOPLE17:station:0` et `COMMS:station:0`, via workforce. Cela ne valide ni une mesure de compétences ni une mobilisation autonome complète.
+
+| Bâtiment | Étages | Postes | Associés | Restants |
+|---|---:|---:|---:|---:|
+| ATLAS | 9 | 45 | 32 | 13 |
+| ORION | 3 | 15 | 10 | 5 |
+| NEXUS | 5 | 25 | 19 | 6 |
+| MIDAS | 4 | 20 | 14 | 6 |
+| HERMES | 8 | 40 | 32 | 8 |
+| SENTINEL | 3 | 15 | 10 | 5 |
+| CORE | 5 | 25 | 18 | 7 |
+| Total | 37 | 185 | 135 | 50 |
+
+114 clés dans stations (accès historiques), 71 dans native (modules supplémentaires), 50 communes : 135 clés uniques. Aucun identifiant orphelin ; les 50 postes restants figurent tous dans l'inventaire O02.6. Les classifications restantes sont R 6, E 10, N 23, X 8, D 3 ; P1 17, P2 24, P3 9. Les priorités historiques ne constituent pas une autorisation. Un raccordement peut être une consultation partielle, pas une opération métier complète. Le taux de raccordement de 73,0 % n'est ni un taux d'autonomie ni de préparation commerciale.
+
+La validation automatisée O05.1 fige le périmètre actuel ; toute évolution volontaire nécessite une mise à jour conjointe du registre et des tests. La validation sur l'installation réelle, les opérations commerciales et les capacités de formation restent distinctes.
