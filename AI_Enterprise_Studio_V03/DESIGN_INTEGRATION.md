@@ -130,3 +130,8 @@ O03.1 : CI 45869168195 entièrement réussie. O03.2 : commit 38bb0d01 ; CI à v�
 
 ### O03.3 — supervision des enveloppes imbriquées
 Extension de la projection home existante : états actifs prioritaires, engagements et tentatives Brave par campagne/plan/autorisation périodique (réutilisation des compteurs moteur), restants arithmétiques distincts du solde global, liens parent et détails des périodes, fenêtre globale calculée sans mutation ni garantie d'exécution. Affichage explicite du risque de double comptage ; reprise manuelle des campagnes/plans liés à une période non proposée conformément aux refus existants du moteur. Tests de non-régression sur schéma réel, montant mesuré/réservé, lien campagne/plan/grant, expiration sans changement d'état, absence de requêtes privées et DB inchangée. Aucun changement de route, de politique, de schéma ou de budget. CI requise.
+
+O03.2 CI 45871476244 entièrement réussie ; O03.3 commit 4779c4d9, CI 45873103366 en cours lors de la préparation.
+
+### O03.4 — validation intégrée du bureau propriétaire
+Complément aux tests HTTP, Python et Chromium précédents : scénario navigateur exécuté par les deux vues live/original, avec campagne et plan liés à une autorisation suspendue, dépenses mesurées et réservées, quota Brave. Lecture de la filiation et avertissement de non-addition, pas de divulgation de requête, aucune reprise manuelle proposée ; annulation de la révocation sans POST ni mutation, confirmation de la révocation via route existante, conservation de l'historique et des engagements. Aucun appel fournisseur ; aucun code de production modifié. CI complète requise avant de déclarer O03 achevée. La validation sur l'installation réelle du propriétaire reste distincte.

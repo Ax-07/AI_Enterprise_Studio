@@ -327,6 +327,47 @@ def smoke_commands(route='live'):
                     assert db.execute('SELECT state FROM requests WHERE id=?',(rid,)).fetchone()[0]=='refusée'
                     assert s.used(db)==0
                 assert posts==[base+'/campus/command']*2+[base+'/campus/owner-command']*2,posts
+                # O03.4: actual engine schema; nested commitments must not be
+                # presented as three independent expenditures or manually resumed.
+                with s.db() as db:
+                    cid=db.execute("INSERT INTO campaigns(goal,budget,max_missions,permissions,search_cap,state) VALUES('Campagne périodique fixture',100000,1,'{}',3,'interrompu')").lastrowid
+                    db.execute("INSERT INTO campaign_missions(campaign,mission,kind) VALUES(?,?,'commercial')",(cid,mid))
+                    pid=db.execute("INSERT INTO enterprise_plans(budget,per_campaign,max_campaigns,search_cap,explore,state) VALUES(200000,100000,2,5,0,'paused')").lastrowid
+                    db.execute("INSERT INTO enterprise_plan_queue(plan,kind,reason,campaign) VALUES(?,'commercial','fixture',?)",(pid,cid))
+                    gid=db.execute("""INSERT INTO periodic_grants(cadence,seconds,periods,starts,expires,last_seen,total_budget,period_budget,per_campaign,max_campaigns,total_search,period_search,explore,state)
+                        VALUES('daily',86400,2,1000,173800,1000,400000,200000,100000,2,10,5,0,'suspended')""").lastrowid
+                    db.execute("INSERT INTO periodic_slots(grant_id,slot,starts,expires,plan) VALUES(?,0,1000,87400,?)",(gid,pid))
+                    db.execute("INSERT INTO ledger(mission,model,reserved,actual,state,agent) VALUES(?,'fixture',10000,8000,'mesuré','ORION')",(mid,))
+                    db.execute("INSERT INTO ledger(mission,model,reserved,state,agent) VALUES(?,'fixture',2000,'réservé','ORION')",(mid,))
+                    db.execute("INSERT INTO searches(mission,query,status) VALUES(?,'private-query','ok')",(mid,))
+                before_read=s.DB.read_bytes()
+                page.locator('#native-tool button',has_text='Campagnes, plans et autorisations').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Campagne #'+str(cid))
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Inclus dans l’autorisation périodique #'+str(gid))
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Période 1 · plan #'+str(pid))
+                expect(page.locator('#native-tool .native-results')).to_contain_text('ne pas additionner')
+                expect(page.locator('#native-tool .native-results')).not_to_contain_text('private-query')
+                page.locator('#native-tool button',has_text='Retour au tableau de direction').click()
+                page.locator('#native-tool [data-owner-command-panel="home"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
+                expect(page.locator('#campus-commands [data-command="campaign_resume"]')).to_have_count(0)
+                expect(page.locator('#campus-commands [data-command="plan_resume"]')).to_have_count(0)
+                revoke=page.locator('#campus-commands [data-command="periodic_revoke"]')
+                expect(revoke).to_have_count(1)
+                assert s.DB.read_bytes()==before_read
+                page.once('dialog',lambda d:d.dismiss())
+                revoke.click()
+                assert len(posts)==4,posts
+                assert s.DB.read_bytes()==before_read
+                page.once('dialog',lambda d:d.accept())
+                revoke.click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('Commande acceptée')
+                with s.db() as db:
+                    assert db.execute('SELECT state FROM periodic_grants WHERE id=?',(gid,)).fetchone()[0]=='revoked'
+                    assert db.execute('SELECT state FROM enterprise_plans WHERE id=?',(pid,)).fetchone()[0]=='paused'
+                    assert s.used(db)==10000
+                    assert s.periodic.slots(db,gid)[0]['spent']==10000
+                assert posts==[base+'/campus/command']*2+[base+'/campus/owner-command']*2+[base+'/campus/command'],posts
                 if route=='original':
                     page.locator('#campus-back').click()
                     page.locator('.top [data-view="campaigns"]').click()
