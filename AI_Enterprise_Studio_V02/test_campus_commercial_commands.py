@@ -15,6 +15,7 @@ import campus_commands as cmd
 import campus_tools as tools
 import business as b
 import acquisition_sync as sync
+import acquisition as ac
 import public_channel_http as channel_http
 import test_business as tb
 
@@ -36,8 +37,11 @@ class CommercialCommandTests(unittest.TestCase):
 
     def test_local_channel_and_revocation(self):
         oid,_,_=self.fixture()
-        offer=next(x for x in tools.read(s.DB,'business',{})['rows'] if x['kind']=='offer')
+        offer=next(x for x in tools.read(s.DB,'business',{})['rows'] if x['kind']=='offer' and x['id']==oid)
         self.assertTrue(offer['draft_eligible'])
+        with s.db() as db:
+            expected=b.digest(b.frozen(ac._offer(db,oid)))
+        self.assertEqual(offer['snapshot_sha256'],expected,'Le snapshot campus doit être identique au snapshot métier')
         with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{'AES_CHANNEL_TEST_KEY_HEX':(b'x'*32).hex()}),patch.object(sync.acquisition_runtime,'managed',return_value=False),patch.object(s,'request',side_effect=AssertionError('Paid provider forbidden')) as provider:
             service=make_server('127.0.0.1',0,channel_http.application(str(Path(d)/'channel.db'),b'x'*32,b.now),handler_class=channel_http.QuietHandler)
             server=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
@@ -50,15 +54,21 @@ class CommercialCommandTests(unittest.TestCase):
                 if code!=200:
                     with self.assertRaises(urllib.error.HTTPError) as e:urllib.request.urlopen(req)
                     self.assertEqual(e.exception.code,code);return
-                with urllib.request.urlopen(req) as r:return json.load(r)
+                try:
+                    with urllib.request.urlopen(req) as r:return json.load(r)
+                except urllib.error.HTTPError as e:
+                    self.fail(f'{action}: HTTP {e.code}: {e.read().decode(errors="replace")}')
             original=http.client.HTTPConnection
+            admin=sync.request_admin
             def local_connection(host,port=None,timeout=None,**kwargs):
-                if host=='127.0.0.1' and port==8765:port=service.server_port
-                if host not in ('127.0.0.1',f'127.0.0.1:{server.server_port}',f'127.0.0.1:{service.server_port}') or (port is not None and port not in (service.server_port,server.server_port)):
-                    raise AssertionError('Unexpected external transport')
-                return original(host,port,timeout=timeout,**kwargs)
+                if host!='127.0.0.1' or port!=8765:raise AssertionError('Unexpected admin transport')
+                return original(host,service.server_port,timeout=timeout,**kwargs)
+            def admin_local(*args,**kwargs):
+                # Only redirect the actual TEST admin transport, not the client of the enterprise API.
+                with patch.object(sync.http.client,'HTTPConnection',side_effect=local_connection):
+                    return admin(*args,**kwargs)
             try:
-                with patch.object(s,'PORT',port),patch.object(s,'config',return_value=self.cfg),patch.object(sync.http.client,'HTTPConnection',side_effect=local_connection):
+                with patch.object(s,'PORT',port),patch.object(s,'config',return_value=self.cfg),patch.object(sync,'request_admin',side_effect=admin_local):
                     snap=offer['snapshot_sha256']
                     post('draft_prepare',code=403,header={**headers,'X-Campus-Command':s.CAMPUS_READ_SESSION},offer=oid,snapshot_sha256=snap)
                     post('draft_prepare',code=400,offer=oid,snapshot_sha256='0'*64)

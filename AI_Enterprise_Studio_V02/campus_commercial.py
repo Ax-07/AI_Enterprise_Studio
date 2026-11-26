@@ -63,7 +63,7 @@ def read(db,tool,ident=None):
         WHERE x.project=o.project AND y.state='terminée') ORDER BY o.id DESC LIMIT 20"""):
         base={'kind':'offer','id':row['id'],'project':row['project'],'title':row['title'],'sale_authorized':False}
         try:
-            v,eligible,gaps=business.gate(db,row)
+            v,eligible,gaps=business.gate(db,business.offer_row(db,row['id']))
             eco=v['economics']
             result.append({**base,'state':v['state'],'price_cents':v['plan']['price_cents'],
                 'gaps':gaps,'review':(v['review'] or {}).get('verdict'),
