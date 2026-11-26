@@ -42,6 +42,7 @@ class CampusActivityTests(unittest.TestCase):
             self.assertEqual(agents['MNEMOS'],[])
             self.assertEqual(agents['PROMETHEUS'],[])
             edges=data['activity']['delegations']
+            self.assertEqual({x['state'] for x in data['attention_missions']},{'bloquée','en attente'})
             self.assertEqual(len(edges),1)
             self.assertEqual((edges[0]['id'],edges[0]['from_agent'],edges[0]['to_agent']),(child,'ATLAS','ORION'))
             self.assertEqual(edges[0]['mode'],'cloud')

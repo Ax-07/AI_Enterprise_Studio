@@ -16,6 +16,7 @@ def read(root,route):
            '/campus/live':('live.html','text/html; charset=utf-8'),
            '/campus/live.js':('live.js','text/javascript; charset=utf-8'),
            '/campus/live-layout.js':('live-layout.js','text/javascript; charset=utf-8'),
+           '/campus/live-teams.js':('live-teams.js','text/javascript; charset=utf-8'),
            '/campus/live-modules.js':('live-modules.js','text/javascript; charset=utf-8'),
            '/campus/live-tools.js':('live-tools.js','text/javascript; charset=utf-8'),
            '/campus/live-commands.js':('live-commands.js','text/javascript; charset=utf-8'),

@@ -23,11 +23,93 @@
     const statePriority=['blocked','waiting','running_recorded','selected','queued'];
     const modeShort=m=>m==='cloud'?'CLOUD':m==='demo'?'SIMULATION':String(m);
     let lastDelegation=null,flowTimer=null;
+    const teams=new Map(window.AESLiveTeams.map(t=>[t.id,t]));
+    let selectedSlot=null;
     function buildingActivity(b){
         const items=b.agents.flatMap(a=>a.activity||[]);
         const state=statePriority.find(k=>items.some(x=>x.state===k))||'quiet';
         const counts={};for(const r of items)counts[r.mode]=(counts[r.mode]||0)+r.count;
         return {state,detail:Object.entries(counts).map(([m,n])=>modeShort(m)+' '+n).join(' · ')||'Aucune tâche observée'};
+    }
+    function renderAlerts(){
+        const out=$('alert-list');out.replaceChildren();
+        if(!data){out.append(node('p','Données indisponibles · aucun état présumé.','muted'));return;}
+        const count=state=>data.mission_counts.filter(x=>x.state===state).reduce((n,x)=>n+x.count,0);
+        const alert=(state,title,detail,href,label)=>{
+            const e=node('div',undefined,'owner-alert');e.dataset.activity=state;e.append(node('b',title),node('small',detail));
+            if(href){const a=node('a',label);a.href=href;e.append(a);}out.append(e);
+        };
+        const owner='/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A';
+        const pending=data.pending_requests,blocked=count('bloquée'),waiting=count('en attente');
+        if(pending)alert('waiting',pending+' demande(s) en attente','Tous modes · décision éventuelle du propriétaire.',owner+'4','Ouvrir les validations');
+        if(blocked||waiting){
+            const detail=data.attention_missions.map(m=>'#'+m.id+' · '+modeShort(m.mode)+' · '+m.state).join(' / ');
+            alert(blocked?'blocked':'waiting',blocked+' mission(s) bloquée(s) · '+waiting+' en attente',detail||'États enregistrés, cause à examiner.','/?page=missions','Consulter les missions');
+        }
+        const limit=data.budget.limit_micro_usd,used=data.budget.committed_estimate_micro_usd;
+        if(used>=limit)alert('blocked','Plafond API local atteint ou dépassé',money(used)+' / '+money(limit)+' · engagements estimés.',owner+'3','Ouvrir les finances');
+        else if(used>=limit*.8)alert('waiting','80 % ou plus du plafond API engagé',money(used)+' / '+money(limit)+' · estimation locale.',owner+'3','Ouvrir les finances');
+        if(!out.children.length)out.append(node('p','Aucun des points de vigilance surveillés dans cet instantané. Ce n’est pas un contrôle de santé complet.','muted'));
+    }
+    function agentStatus(a){
+        if(!data)return {state:'unknown',detail:'Données indisponibles'};
+        if(!a)return {state:'unknown',detail:'Agent non configuré'};
+        const items=a.activity||[],state=statePriority.find(k=>items.some(x=>x.state===k))||'quiet';
+        return {state,detail:items.length?items.map(r=>modeShort(r.mode)+' · '+(stateNames[r.state]||r.state)+' : '+r.count).join(' / '):'Aucune tâche dynamique non résolue observée'};
+    }
+    function currentTeam(){return teams.get(selected);}
+    function teamAgent(slot){return data?.buildings.find(b=>b.id===selected)?.agents.find(a=>a.id===slot.agent);}
+    function renderTeam(){
+        const panel=$('team-view'),slots=$('team-slots'),detail=$('team-detail'),team=currentTeam();
+        panel.hidden=scene!=='room'||floorId!==team?.floor;
+        if(panel.hidden){slots.replaceChildren();detail.hidden=true;detail.replaceChildren();selectedSlot=null;return;}
+        // Only rebuild on navigation, never during polling: focus and selections survive.
+        if(slots.dataset.team!==selected||slots.children.length!==team.slots.length){
+            slots.dataset.team=selected;slots.replaceChildren();selectedSlot=null;
+            for(const slot of team.slots){
+                const b=node('button',undefined,'team-slot');b.type='button';b.dataset.slot=slot.id;
+                const art=svg('svg',{viewBox:'0 0 120 68',class:'team-desk','aria-hidden':'true'});
+                art.append(svg('path',{d:'M12 48L60 24L108 48L60 67Z',fill:'#152d40',stroke:'#42627a'}),
+                    svg('path',{d:'M20 35L65 12L103 31L58 54Z',fill:'#355168',stroke:'#577a91'}),
+                    svg('path',{d:'M20 35V44L58 63V54M58 54L103 31V40L58 63',fill:'#172b3e',stroke:'#42627a'}),
+                    svg('path',{d:'M64 12L88 1V20L64 32Z',class:'desk-screen',stroke:'#7895a7'}));
+                const robot=svg('g',{class:'desk-avatar',transform:'translate(44 43)'});
+                robot.append(svg('rect',{x:-6,y:-12,width:12,height:11,rx:2,fill:'#839eb4'}),svg('rect',{x:-8,y:-23,width:16,height:13,rx:4,fill:'#bccdd9'}),svg('rect',{x:-6,y:-20,width:12,height:6,rx:2,fill:'#102438'}),svg('circle',{cx:-2.5,cy:-17,r:1.4,class:'desk-eye'}),svg('circle',{cx:2.5,cy:-17,r:1.4,class:'desk-eye'}));art.append(robot);
+                b.append(art,node('b',slot.name),node('small','','slot-identity'),node('small','','slot-status'));
+                b.addEventListener('click',()=>{selectedSlot=slot.id;renderTeam();});slots.append(b);
+            }
+        }
+        for(const slot of team.slots){
+            const b=Array.from(slots.children).find(e=>e.dataset.slot===slot.id),a=teamAgent(slot);
+            const s=slot.agent?agentStatus(a):{state:'unassigned',detail:slot.kind==='automation'?'Automate graphique · non attribué':'Poste graphique · non attribué'};
+            b.dataset.activity=s.state;b.dataset.configured=String(Boolean(a));b.setAttribute('aria-pressed',String(selectedSlot===slot.id));
+            b.querySelector('.slot-identity').textContent=slot.agent?(a?slot.agent+' · repère':slot.agent+' · attribution prévue'):'Sans agent associé';
+            b.querySelector('.slot-status').textContent=s.detail;
+        }
+        const slot=team.slots.find(s=>s.id===selectedSlot);detail.hidden=!slot;detail.replaceChildren();
+        if(slot){
+            const a=teamAgent(slot);detail.append(node('h4',slot.name));
+            if(!data){detail.append(node('p','Données indisponibles.','muted'));return;}
+            if(!a){detail.append(node('p','Aucun agent configuré associé à cet emplacement. Aucun lancement ni réservation disponible.','muted'));return;}
+            detail.append(entry(a.id+' · '+a.role,agentStatus(a).detail),node('p','Tâches récentes de cet agent, tous services confondus (extrait global).','muted'));
+            const recent=data.tasks.filter(t=>t.agent===a.id).slice(0,5);
+            if(!recent.length)detail.append(node('p','Aucune tâche dans cet extrait.','muted'));
+            for(const t of recent)detail.append(entry('Tâche #'+t.id+' · mission #'+t.mission,t.state+' · '+mode(t.mode)));
+        }
+    }
+    function renderLiftStatus(){
+        const local=data?.buildings.find(b=>b.id===selected),state=local?buildingActivity(local):{state:'unknown',detail:'Données indisponibles'};
+        const info=$('lift-view').querySelector('.lift-activity');
+        if(info){info.dataset.activity=state.state;info.textContent='Bâtiment · '+(stateNames[state.state]||state.detail)+' · '+state.detail;}
+        const team=currentTeam();
+        for(const b of $('lift-view').querySelectorAll('[data-floor]')){
+            const marker=b.querySelector('.floor-activity');
+            if(!marker)continue;
+            if(b.dataset.floor===team?.floor){
+                marker.dataset.activity=state.state;
+                marker.textContent='Équipe de référence : '+(data?String(local?.agents.length||0)+' agent(s) configuré(s) · '+state.detail:'données indisponibles')+' · activité non localisée';
+            }else {marker.dataset.activity='unassigned';marker.textContent='Occupation non mesurée';}
+        }
     }
     function clearFlows(){clearTimeout(flowTimer);document.getElementById('live-flows')?.replaceChildren();}
     function renderActivity(){
@@ -127,12 +209,13 @@
         $('campus-map').hidden=scene!=='campus';$('lift-view').hidden=scene!=='lift';$('room-view').hidden=scene!=='room';
         $('campus-back').hidden=scene==='campus';$('lift-back').hidden=scene!=='room';
         document.querySelectorAll('#buildings button').forEach(btn=>btn.setAttribute('aria-pressed',String(btn.dataset.id===selected)));
+        renderTeam();
         if(scene==='campus'){$('scene-title').textContent='Campus · 7 bâtiments';$('scene-note').textContent='Sélectionne un bâtiment sur le campus ou dans la liste.';return;}
         if(scene==='lift'){
             $('scene-title').textContent='Ascenseur · '+labels[b.id];$('scene-note').textContent='Services du design · leur présence ne signifie pas qu’ils sont opérationnels.';
             const wrap=node('div',undefined,'lift-layout'),list=node('div',undefined,'floor-list');wrap.append(tower(b),list);
-            for(const f of [...b.floors].reverse()){const btn=node('button');btn.type='button';btn.dataset.floor=f.id;btn.append(node('b',levelLabel(f.level)+' · '+f.name),node('small',f.description),node('small',f.stations.some(hasModule)?'Accès métier partiel · occupation inconnue':'Service graphique · aucun accès métier associé'));btn.addEventListener('click',()=>openFloor(f.id));list.append(btn);}
-            $('lift-view').replaceChildren(wrap);return;
+            for(const f of [...b.floors].reverse()){const btn=node('button');btn.type='button';btn.dataset.floor=f.id;btn.append(node('b',levelLabel(f.level)+' · '+f.name),node('small',f.description),node('small',f.stations.some(hasModule)?'Accès métier partiel · occupation inconnue':'Service graphique · aucun accès métier associé'),node('small','','floor-activity'));btn.addEventListener('click',()=>openFloor(f.id));list.append(btn);}
+            $('lift-view').replaceChildren(node('p','','lift-activity'),wrap);renderLiftStatus();return;
         }
         $('scene-title').textContent=levelLabel(f.level)+' · '+f.name;$('scene-note').textContent='Décor du service · les données de droite sont celles du bâtiment, pas une mesure de l’occupation du service.';
         const room=$('room-view');room.replaceChildren();
@@ -156,6 +239,7 @@
         else out.append(node('p',hasModule(st)?'Données propres à ce poste non intégrées au campus. Le module existant est accessible ci-dessous.':'Fonction métier non raccordée à ce poste. Aucun résultat simulé ni action disponible.','station-pending'));
     }
     function renderBuilding(){
+        renderTeam();renderLiftStatus();
         if(!data){$('detail-title').textContent=labels[selected]+' · données indisponibles';$('agents').replaceChildren();$('tasks').replaceChildren();renderStation();return;}
         const b=data.buildings.find(x=>x.id===selected);if(!b)return;
         $('detail-title').textContent=labels[b.id]+' · agents du moteur';
@@ -170,12 +254,12 @@
         const agents=data.buildings.reduce((n,b)=>n+b.agents.length,0)+data.unmapped_agents.length;
         const count=m=>data.mission_counts.filter(x=>x.mode===m).reduce((n,x)=>n+x.count,0);
         $('metrics').replaceChildren(metric('Agents configurés',agents),metric('Missions CLOUD enregistrées',count('cloud')),metric('Missions SIMULATION enregistrées',count('demo')),metric('Engagement API local estimé (USD)',money(data.budget.committed_estimate_micro_usd)),metric('Plafond API local (USD)',money(data.budget.limit_micro_usd)),metric('Demandes en attente (tous modes)',data.pending_requests));
-        renderActivity();renderBuilding();
+        renderAlerts();renderActivity();renderBuilding();
         list('missions',data.missions,m=>entry('#'+m.id+' · '+m.title,m.state+' · '+mode(m.mode)+' · '+m.created));
         list('events',data.events,e=>entry(e.agent+' · '+e.action,'Mission #'+e.mission+' · '+mode(e.mode)+' · '+e.created+' · '+(e.ok===1?'OK':e.ok===0?'Échec':'Résultat inconnu')));
         list('artifacts',data.artifacts,a=>entry(a.name+' · V'+a.version,a.agent+' · mission #'+a.mission+' · '+mode(a.mode)));
     }
-    function clear(){window.AESCampusCommands.setOnline(false);window.AESNativeTools.reset();data=null;renderActivity();for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
+    function clear(){window.AESCampusCommands.setOnline(false);window.AESNativeTools.reset();data=null;renderAlerts();renderActivity();for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
     async function refresh(){
         if(busy)return;busy=true;$('refresh').disabled=true;
         const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);
@@ -183,12 +267,12 @@
             const r=await fetch('/campus/live-data',{method:'GET',headers:{'X-Campus-Session':token},cache:'no-store',credentials:'same-origin',signal:controller.signal});
             if(!r.ok)throw Error('HTTP '+r.status);
             const next=await r.json();
-            if(next.schema!=='aes.campus.read.v1'||next.source!=='local_sqlite'||next.read_only!==true||next.activity?.schema_version!==1||!Array.isArray(next.activity.delegations))throw Error('Source incompatible');
+            if(next.schema!=='aes.campus.read.v1'||next.source!=='local_sqlite'||next.read_only!==true||next.activity?.schema_version!==1||!Array.isArray(next.activity.delegations)||!Array.isArray(next.attention_missions))throw Error('Source incompatible');
             data=next;window.AESCampusCommands.setOnline(true);render();$('status').className='';$('status').textContent='Connecté · instantané local '+new Date(data.generated_at).toLocaleString('fr-FR');
         }catch(e){clear();$('status').className='error';$('status').textContent='Données indisponibles · aucune valeur de remplacement affichée.';}
         finally{clearTimeout(timer);busy=false;$('refresh').disabled=false;}
     }
-    restoreLocation();initMap();renderScene();renderActivity();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
+    restoreLocation();initMap();renderScene();renderAlerts();renderActivity();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
     document.addEventListener('campus-command-completed',refresh);
     $('refresh').addEventListener('click',refresh);document.addEventListener('visibilitychange',()=>{if(document.hidden){clearFlows();lastDelegation=null;}else refresh();});setInterval(()=>{if(!document.hidden)refresh();},15000);refresh();
 })();

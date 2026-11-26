@@ -53,6 +53,7 @@ def snapshot(path, agents, budget, version):
         mission_counts=rows("SELECT mode,state,COUNT(*) AS count FROM missions GROUP BY mode,state")
         used=db.execute("SELECT COALESCE(SUM(COALESCE(actual,reserved,0)),0) FROM ledger").fetchone()[0]
         waiting=db.execute("SELECT COUNT(*) FROM requests WHERE state='en attente'").fetchone()[0]
+        attention=rows("SELECT id,mode,state FROM missions WHERE state IN ('bloquée','en attente') ORDER BY id DESC LIMIT 20")
         return {'schema':'aes.campus.read.v1','version':version,'source':'local_sqlite',
             'generated_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
             'activity':{'schema_version':1,'delegations':delegations,'delegation_limit':30},
@@ -63,7 +64,7 @@ def snapshot(path, agents, budget, version):
             'unmapped_agents':[{'id':a,'role':role} for a,role in agents.items()
                 if not any(a in ids for ids in BUILDINGS.values())],
             'budget':{'currency':'USD','limit_micro_usd':budget,'committed_estimate_micro_usd':used},
-            'pending_requests':waiting,'mission_counts':mission_counts,
+            'pending_requests':waiting,'mission_counts':mission_counts,'attention_missions':attention,
             'missions':missions,'tasks':tasks,'events':events,'artifacts':artifacts}
     finally:
         db.close()

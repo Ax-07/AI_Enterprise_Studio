@@ -27,6 +27,7 @@ jobs:
           node --check interface/campus-registry.js
           node --check interface/live.js
           node --check interface/live-layout.js
+          node --check interface/live-teams.js
           node --check interface/live-modules.js
           node --check interface/live-tools.js
           node --check interface/live-commands.js

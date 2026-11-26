@@ -33,6 +33,13 @@ def smoke():
             # Static connected layout must stay aligned with the original D02 registry.
             page.add_script_tag(url=base+'/campus/live-layout.js')
             connected=page.evaluate("AESLiveLayout")
+            page.add_script_tag(url=base+'/campus/live-teams.js')
+            teams=page.evaluate("AESLiveTeams")
+            slots=[s for b in teams for s in b['slots']]
+            originals=[s for b in topology['buildings'] for s in b['slots']]
+            assert [(s['id'],s['kind'],s['name']) for s in slots]==[(s['id'],s['kind'],s['name']) for s in originals]
+            assigned=[s['agent'] for s in slots if s['agent']]
+            assert len(slots)==56 and len(set(assigned))==8
             page.add_script_tag(url=base+'/campus/live-modules.js')
             modules=page.evaluate("AESLiveModules")
             known={st['id'] for b in connected for f in b['floors'] for st in f['stations']}
@@ -122,6 +129,7 @@ def smoke_live():
                 page.goto(base+'/campus/live/')
                 expect(page.locator('#status')).to_contain_text('Connecté')
                 expect(page.locator('#buildings button')).to_have_count(7)
+                expect(page.locator('#alert-list')).to_contain_text('1 demande(s) en attente')
                 expect(page.locator('#campus-map [data-building]')).to_have_count(7)
                 expect(page.locator('#campus-map [data-building="CORE"]')).to_have_attribute('data-activity','running_recorded')
                 expect(page.locator('#campus-map [data-building="NEXUS"]')).to_have_attribute('data-activity','quiet')
@@ -140,9 +148,16 @@ def smoke_live():
                 page.locator('#campus-map [data-building="CORE"]').focus()
                 page.keyboard.press('Enter')
                 expect(page.locator('#lift-view [data-floor]')).to_have_count(5)
+                expect(page.locator('#lift-view [data-floor="CORE"] .floor-activity')).to_contain_text('2 agent(s) configuré(s)')
                 page.locator('#lift-view [data-floor="CORE"]').click()
                 expect(page.locator('#room-view [data-station]')).to_have_count(5)
                 expect(page.locator('#room-view img')).to_be_visible()
+                expect(page.locator('#team-slots [data-slot]')).to_have_count(8)
+                expect(page.locator('#team-slots [data-configured="true"]')).to_have_count(2)
+                page.locator('#team-slots [data-slot="CORE:1"]').click()
+                expect(page.locator('#team-detail')).to_contain_text('MNEMOS')
+                page.locator('#refresh').click()
+                expect(page.locator('#team-slots [data-slot="CORE:1"]')).to_have_attribute('aria-pressed','true')
                 expect(page.locator('#agents')).to_contain_text('MNEMOS')
                 expect(page.locator('#agents')).to_contain_text('PROMETHEUS')
                 expect(page.locator('#missions')).to_contain_text('SIMULATION enregistrée')
@@ -183,6 +198,7 @@ def smoke_live():
                 expect(page.locator('#metrics .metric')).to_have_count(0)
                 expect(page.locator('#campus-map [data-building="CORE"]')).to_have_attribute('data-activity','unknown')
                 expect(page.locator('#collaborations')).to_contain_text('Données indisponibles')
+                expect(page.locator('#alert-list')).to_contain_text('Données indisponibles')
                 expect(page.locator('#station-content')).to_contain_text('Données indisponibles')
                 assert not errors and not writes and not external,(errors,writes,external)
                 browser.close()
