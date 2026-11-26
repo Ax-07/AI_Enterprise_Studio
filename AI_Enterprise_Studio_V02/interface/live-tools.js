@@ -1,7 +1,7 @@
-/* D04.2: on-demand native read tools. No POST and no HTML rendering of stored content. */
+/* D04.2/D04.3: on-demand native read tools. No POST and no HTML rendering of stored content. */
 (() => {
     'use strict';
-    const names=Object.freeze({missions:'Missions',work:'Tâches',files:'Livrables',memory:'Mémoire collective',finance:'Dépenses API',opps:'Opportunités'});
+    const names=Object.freeze({missions:'Missions',work:'Tâches',files:'Livrables',memory:'Mémoire collective',finance:'Dépenses API',opps:'Opportunités',home:'Autopilote & campagnes',portfolio:'Portefeuille d’activités',laboratory:'Laboratoire',tools:'Connecteurs & outils',agents:'Organisation des agents',goals:'Objectifs & XP'});
     const token=document.querySelector('meta[name="campus-session"]').content;
     const panel=document.getElementById('native-tool');
     const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
@@ -27,6 +27,19 @@
             else if(tool==='memory'){e=entry('#'+r.id+' · '+r.agent,r.title+' · mission #'+r.mission+' · '+mode(r.mode));e.append(node('p',r.excerpt),button('Lire le rapport',()=>loadDetail('report',r.id)));}
             else if(tool==='finance'){e=entry(r.agent+' · '+mode(r.mode),r.calls+' appel(s) · '+money(r.committed_micro_usd)+' engagés (estimation)');e.append(node('small','Usage mesuré : '+money(r.measured_micro_usd)+' · Non mesuré / réservé : '+money(r.unmeasured_micro_usd)));}
             else if(tool==='opps'){e=entry('#'+r.id+' · '+r.title,r.status+' · mission #'+r.mission+' · '+mode(r.mode));e.append(node('p',r.body),node('small','Prochain test : '+(r.next_test||'Non renseigné')));}
+            else if(tool==='home'){
+                if(r.kind==='campaign'){e=entry('Campagne #'+r.id+' · '+r.goal,r.state+' · '+r.missions+' / '+r.max_missions+' missions');e.append(node('small',money(r.committed)+' / '+money(r.budget)+' engagés / plafond · quota Brave '+r.search_cap));}
+                else if(r.kind==='plan'){e=entry('Plan #'+r.id,r.state+' · '+r.campaigns+' / '+r.max_campaigns+' campagnes');e.append(node('small',money(r.committed)+' / '+money(r.budget)+' engagés / plafond · '+money(r.per_campaign)+' par campagne'));}
+                else {e=entry('Autorisation périodique #'+r.id,r.state+' · '+r.cadence+' · '+r.slots+' / '+r.periods+' périodes ouvertes');e.append(node('small','Plafond total '+money(r.total_budget)+' · par période '+money(r.period_budget)+' · expire '+new Date(r.expires*1000).toLocaleString('fr-FR')));}
+                if(r.reason)e.append(node('p',r.reason));
+            }
+            else if(tool==='portfolio'){e=entry('#'+r.id+' · '+r.title,r.state+' · '+r.missions+' mission(s) · '+r.artifacts+' livrable(s)');e.append(node('small','Engagements API estimés : '+money(r.committed)));}
+            else if(tool==='laboratory'){e=entry('Essai #'+r.id+' · '+r.name+' · V'+r.version,r.status+' · '+mode(r.mode)+' · '+r.created);e.append(node('small','Profil '+r.profile+' · révision '+r.revision+' · taille '+r.size+(r.campaign?' · campagne #'+r.campaign:'')));}
+            else if(tool==='tools'){
+                if(r.kind==='capability'){e=entry(r.label,r.provider+' · '+(r.implemented?'Implémenté':'Non implémenté')+' · '+(r.enabled?'Autorisé par politique':'Non autorisé'));e.append(node('small',r.policy_present?r.calls+' / '+r.max_calls+' tentatives · '+money(r.reserved)+' / '+money(r.budget)+' réservés / plafond':'Politique absente'));e.append(node('small','Disponibilité externe non testée'));}
+                else e=entry('Tentative #'+r.id+' · '+r.capability,r.actor+' · '+r.state+' · '+money(r.reserved)+' réservés · '+r.created);
+            }
+            else if(tool==='agents'||tool==='goals'){e=entry(r.id+' · '+r.xp+' XP',r.role);e.append(node('small','Tâches enregistrées : '+(Object.entries(r.task_counts).map(([m,n])=>n+' · '+mode(m)).join(' / ')||'aucune')));if(tool==='agents')e.append(node('p','Permissions moteur : '+r.permissions.join(', ')));}
             else {e=entry(tool==='artifact'?r.name+' · V'+r.version:'Rapport #'+r.id,r.agent+' · mission #'+r.mission+' · '+mode(r.mode));e.append(node('pre',r.content));if(tool==='artifact')e.append(button('Télécharger le fichier original',()=>download(r)));}
             out.append(e);
         }
@@ -35,7 +48,8 @@
         if(!station||!Object.hasOwn(names,tool))return;
         reset();active=tool;panel.hidden=false;
         const title=node('h3',names[tool]+' · consultation locale');
-        const desc=node('p',tool==='finance'?'Registre API local, tous modes. Les montants sont des estimations locales, pas des factures ni des revenus. Groupes limités à 100.':tool==='opps'?'Hypothèses enregistrées, pas des marchés ni des revenus validés. 100 dernières entrées.':tool==='memory'?'Recherche littérale dans les rapports enregistrés (50 résultats maximum ; insensibilité à la casse ASCII).': '100 dernières entrées du moteur, tous bâtiments et tous modes.','muted');
+        const descriptions={home:'États enregistrés des campagnes, plans et autorisations périodiques (15 de chaque). Aucun lancement ni reprise. Les montants sont des engagements locaux estimés.',portfolio:'100 dernières activités enregistrées. Aucune création de projet ni synchronisation automatique.',laboratory:'100 derniers essais enregistrés ; aucun test déclenché. Un statut ne constitue pas une validation commerciale.',tools:'Catalogue et politiques locales, 50 dernières tentatives. Aucun test de disponibilité ni appel de connecteur.',agents:'Rôles et permissions actuels du moteur, en consultation. Aucun agent créé.',goals:'XP enregistrés par le moteur et tâches par mode. Les XP ne donnent aucun droit ; les objectifs éditables restent dans le module historique.'};
+        const desc=node('p',descriptions[tool]|| (tool==='finance'?'Registre API local, tous modes. Les montants sont des estimations locales, pas des factures ni des revenus. Groupes limités à 100.':tool==='opps'?'Hypothèses enregistrées, pas des marchés ni des revenus validés. 100 dernières entrées.':tool==='memory'?'Recherche littérale dans les rapports enregistrés (50 résultats maximum ; insensibilité à la casse ASCII).': '100 dernières entrées du moteur, tous bâtiments et tous modes.'),'muted');
         const actions=node('div',undefined,'native-actions'),status=node('p','','muted'),out=node('div',undefined,'native-results');
         status.setAttribute('role','status');status.setAttribute('aria-live','polite');
         let last={};

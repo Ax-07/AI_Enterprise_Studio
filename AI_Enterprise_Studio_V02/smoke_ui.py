@@ -29,6 +29,19 @@ def smoke():
                 errors=[]
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                # Native pilotage tools on the actual initialized engine schema.
+                page.goto(base+'/campus/live/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A1')
+                expect(page.locator('#status')).to_contain_text('Connecté')
+                page.locator('[data-native="home"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune entrée correspondante')
+                page.goto(base+'/campus/live/?building=CORE&floor=INFRA&station=INFRA%3Astation%3A1')
+                page.locator('[data-native="tools"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('GitHub')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Disponibilité externe non testée')
+                page.goto(base+'/campus/live/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A2')
+                page.locator('[data-native="agents"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('PROMETHEUS')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('MNEMOS')
                 # Real round trip: legacy module opens on explicit click, return restores station.
                 writes=[]
                 page.on('request',lambda req:writes.append(req.url) if req.method=='POST' else None)
