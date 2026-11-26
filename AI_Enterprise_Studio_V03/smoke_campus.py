@@ -110,7 +110,7 @@ def smoke():
 def smoke_live():
     import tempfile
     from pathlib import Path
-    from test_campus_live import fixture
+    from test_campus_live import fixture, fixture_marketing
     # Optional visual evidence: fixture DB only, capture the scene (not private details).
     target=os.getenv('AES_CAMPUS_SCREENSHOTS')
     def capture(page,name):
@@ -118,7 +118,7 @@ def smoke_live():
         directory=Path(target);directory.mkdir(parents=True,exist_ok=True)
         page.locator('.scene-panel').screenshot(path=str(directory/(name+'.png')),animations='disabled',timeout=10000)
     with tempfile.TemporaryDirectory() as d:
-        path=Path(d)/'test.db';fixture(path)
+        path=Path(d)/'test.db';fixture(path);fixture_marketing(path)
         srv=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
         thread=threading.Thread(target=srv.serve_forever,daemon=True);thread.start()
         port=srv.server_address[1];base=f'http://127.0.0.1:{port}'

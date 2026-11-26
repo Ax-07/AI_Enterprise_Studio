@@ -31,7 +31,28 @@ def fixture(path):
         INSERT INTO requests VALUES('en attente','secret-test');
         """)
 
+def fixture_marketing(path):
+    """Extend the minimal campus fixture with the actual empty commercial schema."""
+    import portfolio, commercial, acquisition, hermes_acquisition, marketing
+    with sqlite3.connect(path) as db:
+        db.row_factory=sqlite3.Row
+        for module in (portfolio,commercial,acquisition,hermes_acquisition,marketing):
+            module.init(db)
+
 class CampusLiveTests(unittest.TestCase):
+    def test_marketing_fixture_read_only(self):
+        import campus_tools
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'test.db';fixture(path)
+            with self.assertRaises(sqlite3.OperationalError):
+                campus_tools.read(path,'marketing',{})
+            fixture_marketing(path)
+            before=path.read_bytes()
+            result=campus_tools.read(path,'marketing',{})
+            self.assertTrue(result['read_only'])
+            self.assertEqual(result['rows'],[])
+            self.assertEqual(path.read_bytes(),before)
+
     def test_projection_and_missing_database(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/'test.db';fixture(path);before=path.read_bytes()
