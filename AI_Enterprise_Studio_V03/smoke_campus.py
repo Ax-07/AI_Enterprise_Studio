@@ -466,10 +466,10 @@ def smoke_original():
                             expect(graphic).to_be_visible()
                             expect(graphic.locator('[data-room-station]')).to_have_count(5)
                             for i in range(5):
-                                target=graphic.locator('[data-room-station="'+floor['id']+':station:'+str(i)+'"]')
-                                target.focus()
+                                station_target=graphic.locator('[data-room-station="'+floor['id']+':station:'+str(i)+'"]')
+                                station_target.focus()
                                 page.keyboard.press('Enter')
-                                expect(target).to_have_attribute('aria-pressed','true')
+                                expect(station_target).to_have_attribute('aria-pressed','true')
                                 expect(page.locator('#station-title')).to_have_text(floor['stations'][i]['name'])
                             vector+=1
                             if floor['id'] in ('VIDEO183','ITOPS17','PEOPLE17'):
