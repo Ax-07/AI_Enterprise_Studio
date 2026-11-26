@@ -33,6 +33,13 @@ def smoke():
             # Static connected layout must stay aligned with the original D02 registry.
             page.add_script_tag(url=base+'/campus/live-layout.js')
             connected=page.evaluate("AESLiveLayout")
+            page.add_script_tag(url=base+'/campus/live-modules.js')
+            modules=page.evaluate("AESLiveModules")
+            known={st['id'] for b in connected for f in b['floors'] for st in f['stations']}
+            assert set(modules['stations'])<=known
+            assert {p for ps in modules['stations'].values() for p in ps}==set(modules['pages'])
+            assert len(modules['pages'])==14
+            assert 'VIDEO183:station:1' not in modules['stations']
             expected={f['id']:f for b in topology['buildings'] for f in b['floors']}
             actual={f['id']:f for b in connected for f in b['floors']}
             assert expected.keys()==actual.keys()
@@ -128,6 +135,7 @@ def smoke_live():
                 expect(page.locator('#artifacts')).to_contain_text('SIMULATION enregistrée')
                 page.locator('#room-view [data-station="CORE:station:2"]').click()
                 expect(page.locator('#station-content')).to_contain_text('MNEMOS')
+                expect(page.locator('#station-modules [data-module="agents"]')).to_have_attribute('href', '/?page=agents&campusBuilding=CORE&campusFloor=CORE&campusStation=CORE%3Astation%3A2')
                 page.locator('#lift-back').click()
                 page.locator('#buildings button[data-id="HERMES"]').click()
                 expect(page.locator('#lift-view [data-floor]')).to_have_count(8)
@@ -135,6 +143,7 @@ def smoke_live():
                 expect(page.locator('#room-view [data-station]')).to_have_count(5)
                 page.locator('#room-view [data-station="VIDEO183:station:1"]').click()
                 expect(page.locator('#station-content')).to_contain_text('non raccordée')
+                expect(page.locator('#station-modules a')).to_have_count(0)
                 page.route('**/campus/live-data',lambda r:r.fulfill(status=503,body='{}',content_type='application/json'))
                 page.locator('#refresh').click()
                 expect(page.locator('#status')).to_contain_text('Données indisponibles')

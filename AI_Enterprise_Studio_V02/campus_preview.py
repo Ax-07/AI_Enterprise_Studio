@@ -16,6 +16,7 @@ def read(root,route):
            '/campus/live':('live.html','text/html; charset=utf-8'),
            '/campus/live.js':('live.js','text/javascript; charset=utf-8'),
            '/campus/live-layout.js':('live-layout.js','text/javascript; charset=utf-8'),
+           '/campus/live-modules.js':('live-modules.js','text/javascript; charset=utf-8'),
            '/campus/live.css':('live.css','text/css; charset=utf-8')}
     match=re.fullmatch(r'/campus/assets/([A-Za-z0-9_]+\.webp)',route)
     try:

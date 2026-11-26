@@ -29,6 +29,24 @@ def smoke():
                 errors=[]
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
+                # Real round trip: legacy module opens on explicit click, return restores station.
+                writes=[]
+                page.on('request',lambda req:writes.append(req.url) if req.method=='POST' else None)
+                page.goto(base+'/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A3')
+                expect(page.locator('#station-title')).to_have_text('Situation financière')
+                page.locator('#station-modules [data-module="finance"]').click()
+                expect(page.locator('#page-finance')).to_be_visible()
+                expect(page.locator('#connection-text')).to_have_text('Serveur V0.5.0')
+                page.locator('#campus-return').click()
+                expect(page.locator('#station-title')).to_have_text('Situation financière')
+                assert not writes,writes
+                for module in ('home','portfolio','business','opps','decisions','finance','missions','work','files','laboratory','agents','memory','goals','tools'):
+                    page.goto(base+'/?page='+module)
+                    expect(page.locator('#page-'+module)).to_be_visible()
+                page.goto(base+'/?page=__proto__&campusBuilding=ATLAS&campusFloor=OWNER&campusStation=OWNER%3Astation%3A3')
+                expect(page.locator('#page-home')).to_be_visible()
+                expect(page.locator('#campus-return')).to_have_count(0)
+                assert not writes,writes
                 page.goto(base)
                 expect(page.locator('#connection-text')).to_have_text('Serveur V0.5.0')
                 expect(page.locator('#quick-products')).to_have_text('2')

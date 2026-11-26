@@ -33,6 +33,28 @@
         $('campus-map').replaceChildren(map);
         $('buildings').replaceChildren(...layout.map(b=>{const btn=node('button',labels[b.id]);btn.type='button';btn.dataset.id=b.id;btn.addEventListener('click',()=>openLift(b.id));return btn;}));
     }
+    const modules=window.AESLiveModules;
+    const hasModule=st=>Object.hasOwn(modules.stations,st.id)&&modules.stations[st.id].length>0;
+    function updateModuleLinks(st){
+        const out=$('station-modules');const sig=st?.id||'';
+        if(out.dataset.station===sig)return;out.dataset.station=sig;out.replaceChildren();
+        if(!st||!hasModule(st))return;
+        out.append(node('h3','Accès aux modules existants'),node('p','Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
+        const links=node('div',undefined,'module-links');
+        for(const page of modules.stations[st.id]){
+            if(!Object.hasOwn(modules.pages,page))continue;
+            const a=node('a',modules.pages[page]);a.dataset.module=page;
+            a.href='/?'+new URLSearchParams({page,campusBuilding:selected,campusFloor:floorId,campusStation:st.id});
+            links.append(a);
+        }out.append(links);
+    }
+    function restoreLocation(){
+        const q=new URLSearchParams(location.search),b=byId.get(q.get('building'));
+        if(!b)return;selected=b.id;scene='lift';
+        const f=b.floors.find(x=>x.id===q.get('floor'));if(!f)return;
+        scene='room';floorId=f.id;
+        const st=f.stations.find(x=>x.id===q.get('station'));stationId=st?.id||null;
+    }
     function currentFloor(){return byId.get(selected)?.floors.find(f=>f.id===floorId);}
     function openLift(id){if(!byId.has(id))return;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();$('lift-view').querySelector('button')?.focus();}
     function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;scene='room';floorId=id;stationId=null;renderScene();renderBuilding();$('lift-back').focus();}
@@ -63,11 +85,11 @@
         if(f.asset){const im=node('img',undefined,'room-image');im.src='/campus/assets/'+f.asset;im.alt='Décor original : '+f.name;room.append(im);}
         else room.append(node('div','Décor HD dédié non disponible dans la maquette originale. Les postes sont accessibles ci-dessous.','room-missing'));
         const buttons=node('div',undefined,'station-list');
-        for(const st of f.stations){const btn=node('button');btn.type='button';btn.dataset.station=st.id;btn.setAttribute('aria-pressed',String(stationId===st.id));btn.append(node('b',st.name),node('small',st.description));btn.addEventListener('click',()=>{stationId=st.id;buttons.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.station===stationId)));renderStation();});buttons.append(btn);}room.append(buttons);
+        for(const st of f.stations){const btn=node('button');btn.type='button';btn.dataset.station=st.id;btn.setAttribute('aria-pressed',String(stationId===st.id));btn.append(node('b',st.name),node('small',st.description));if(hasModule(st))btn.append(node('small','Module existant ↗','module-marker'));btn.addEventListener('click',()=>{stationId=st.id;buttons.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.station===stationId)));renderStation();});buttons.append(btn);}room.append(buttons);
     }
     function renderStation(){
         const st=currentFloor()?.stations.find(s=>s.id===stationId),panel=$('station-detail'),out=$('station-content');
-        panel.hidden=scene!=='room'||!st;if(panel.hidden){out.replaceChildren();return;}
+        panel.hidden=scene!=='room'||!st;updateModuleLinks(panel.hidden?null:st);if(panel.hidden){out.replaceChildren();return;}
         $('station-title').textContent=st.name;out.replaceChildren();
         if(!data){out.append(node('p','Données indisponibles.','muted'));return;}
         const b=data.buildings.find(b=>b.id===selected),ids=new Set(b?.agents.map(a=>a.id)||[]);
@@ -77,7 +99,7 @@
         else if(st.destination==='finance'){note('Registre API global uniquement. Revenus et bénéfices non raccordés.');out.append(entry('Engagement API estimé',money(data.budget.committed_estimate_micro_usd)),entry('Plafond local',money(data.budget.limit_micro_usd)));}
         else if(st.destination==='approval'){note('Demandes globales en attente, tous modes. Aucune validation possible depuis ce poste.');out.append(entry('Demandes en attente',String(data.pending_requests)));}
         else if(st.destination==='classic'){note('Agents configurés du moteur, tous bâtiments.');for(const a of data.buildings.flatMap(b=>b.agents))out.append(entry(a.id,a.role));}
-        else out.append(node('p','Fonction métier non raccordée à ce poste. Aucun résultat simulé ni action disponible.','station-pending'));
+        else out.append(node('p',hasModule(st)?'Données propres à ce poste non intégrées au campus. Le module existant est accessible ci-dessous.':'Fonction métier non raccordée à ce poste. Aucun résultat simulé ni action disponible.','station-pending'));
     }
     function renderBuilding(){
         if(!data){$('detail-title').textContent=labels[selected]+' · données indisponibles';$('agents').replaceChildren();$('tasks').replaceChildren();renderStation();return;}
@@ -112,6 +134,6 @@
         }catch(e){clear();$('status').className='error';$('status').textContent='Données indisponibles · aucune valeur de remplacement affichée.';}
         finally{clearTimeout(timer);busy=false;$('refresh').disabled=false;}
     }
-    initMap();renderScene();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
+    restoreLocation();initMap();renderScene();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
     $('refresh').addEventListener('click',refresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});setInterval(()=>{if(!document.hidden)refresh();},15000);refresh();
 })();
