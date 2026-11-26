@@ -2,7 +2,7 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
@@ -263,8 +263,8 @@ def plan_audit(c,cfg,pid):
         'limit':'Journal local potentiellement privé; vérifier avant partage. Aucun appel externe pour cet export.'}
 
 class Handler(BaseHTTPRequestHandler):
-    def send(self,data,status=200,typ='application/json'):
-        b=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type',typ); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store, no-cache, must-revalidate'); self.send_header('X-Enterprise-Version',VERSION); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer'); self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"); self.end_headers(); self.wfile.write(b)
+    def send(self,data,status=200,typ='application/json',csp=None):
+        b=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type',typ); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store, no-cache, must-revalidate'); self.send_header('X-Enterprise-Version',VERSION); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer'); self.send_header('Content-Security-Policy',csp or "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"); self.end_headers(); self.wfile.write(b)
     def route(self): return urllib.parse.urlsplit(self.path).path.rstrip('/') or '/'
     def missing(self):
         route=self.route()[:120]
@@ -274,6 +274,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.local(): return self.send({'error':'Hôte refusé'},403)
         try:
+            if self.route()=='/campus' or self.route().startswith('/campus/'):
+                asset=campus_preview.read(ROOT,self.route())
+                if asset is None:return self.missing()
+                data,typ=asset
+                return self.send(data,typ=typ,csp=campus_preview.CSP)
             if self.route()=='/api/health': return self.send({'application':'AI Enterprise Studio','version':VERSION,'resume_supported':True,'resume_route':'POST /api/resume','paid_call':False})
             if self.route()=='/': return self.send((ROOT/'index.html').read_text(encoding='utf8').replace('__SESSION__',SESSION).encode(),typ='text/html; charset=utf-8')
             if self.route()=='/api/status' and self.headers.get('X-Session')==SESSION: return self.send(status())
