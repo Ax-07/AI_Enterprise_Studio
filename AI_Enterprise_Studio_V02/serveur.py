@@ -600,6 +600,7 @@ def acquisition_control_loop(shutdown):
     while not shutdown.wait(30):
         if not POST_LOCK.acquire(blocking=False):continue
         try:
+            if shutdown.is_set():return
             acquisition_runtime.maintain(acquisition_runtime.database_path(DB),acquisition_restart_guard)
             acquisition_control.maintain(sys.modules[__name__])
             with db() as c:
@@ -623,6 +624,8 @@ if __name__=='__main__':
     except KeyboardInterrupt: pass
     finally:
         shutdown.set()
-        acquisition_runtime.stop()
-        acquisition_restart_guard()
-        server.server_close()
+        try:
+            with POST_LOCK:
+                acquisition_runtime.stop()
+                acquisition_restart_guard()
+        finally:server.server_close()
