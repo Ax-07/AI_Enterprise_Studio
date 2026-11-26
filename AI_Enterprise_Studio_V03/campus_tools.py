@@ -5,9 +5,10 @@ import campus_commercial
 import incidents
 import campus_quality
 import campus_infrastructure
+import campus_economy
 from pathlib import Path
 
-TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions','incidents','quality','infrastructure')) | campus_commercial.TOOLS
+TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions','incidents','quality','infrastructure','economy')) | campus_commercial.TOOLS
 MAX_ARTIFACT_BYTES=2*1024*1024
 MAX_REPORT_BYTES=256*1024
 
@@ -39,6 +40,8 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
         if tool in campus_commercial.TOOLS:
             result=campus_commercial.read(db,tool,ident)
             if tool in campus_commercial.DETAILS and not result:raise Missing('Dossier absent')
+        elif tool=='economy':
+            result=campus_economy.read(db,resources)
         elif tool=='infrastructure':
             result=campus_infrastructure.read(db,resources,registry)
         elif tool=='quality':
@@ -197,6 +200,6 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 substr(o.next_test,1,600) AS next_test,o.created,m.mode FROM opportunities o
                 JOIN missions m ON m.id=o.mission ORDER BY o.id DESC LIMIT 100""")
         return {'schema':'aes.campus.tool.v1','tool':tool,'read_only':True,'rows':result,
-            'limit':1+len(registry or {}) if tool=='infrastructure' else 101 if tool=='incidents' else 50 if tool=='memory' else 1 if tool in ('artifact','report') or tool in campus_commercial.DETAILS else 30 if tool=='marketing' else 81 if tool=='business' else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
+            'limit':31 if tool=='economy' else 1+len(registry or {}) if tool=='infrastructure' else 101 if tool=='incidents' else 50 if tool=='memory' else 1 if tool in ('artifact','report') or tool in campus_commercial.DETAILS else 30 if tool=='marketing' else 81 if tool=='business' else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
     finally:
         db.close()

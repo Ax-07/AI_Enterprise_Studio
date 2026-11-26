@@ -47,7 +47,7 @@ def smoke():
             known={st['id'] for b in connected for f in b['floors'] for st in f['stations']}
             assert set(modules['stations'])<=known
             assert set(modules['native'])<=known
-            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure'}
+            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure','economy'}
             assert {p for ps in modules['stations'].values() for p in ps}==set(modules['pages'])
             assert len(modules['pages'])==14
             assert 'VIDEO183:station:1' not in modules['stations']
@@ -563,6 +563,16 @@ def smoke_original():
                 expect(page.locator('#native-tool')).to_contain_text('Aperçu sans worker')
                 expect(page.locator('#native-tool')).to_contain_text('Sauvegarde actuelle non vérifiée')
                 capture('O02-infrastructure')
+                page.locator('#campus-back').click()
+                page.locator('#buildings button[data-id="MIDAS"]').click()
+                page.locator('#lift-view [data-floor="ECON"]').click()
+                page.locator('#tab-functions').click()
+                page.locator('[data-function-tool="economy"]').click()
+                expect(page.locator('#function-detail #native-tool h3')).to_contain_text('Pilotage économique')
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                expect(page.locator('#native-tool')).to_contain_text('CA vérifié, bénéfice, marge réelle et trésorerie : indisponibles')
+                expect(page.locator('#native-tool')).to_contain_text('TEST · exclus du CA réel')
+                capture('O02-economie')
                 page.locator('#campus-back').click()
                 page.locator('.top [data-view="finance"]').click()
                 expect(page.locator('#native-tool')).to_be_visible()

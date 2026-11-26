@@ -468,5 +468,53 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
   ],
   "SUPERVISION:station:3": [
     "infrastructure"
+  ],
+  "MIDAS:station:0": [
+    "economy"
+  ],
+  "MIDAS:station:1": [
+    "economy"
+  ],
+  "MIDAS:station:3": [
+    "economy"
+  ],
+  "MIDAS:station:4": [
+    "economy"
+  ],
+  "ECON:station:0": [
+    "economy"
+  ],
+  "ECON:station:1": [
+    "economy"
+  ],
+  "ECON:station:2": [
+    "economy"
+  ],
+  "ECON:station:3": [
+    "economy"
+  ],
+  "INVESTMENTS:station:0": [
+    "economy"
+  ],
+  "INVESTMENTS:station:1": [
+    "economy"
+  ],
+  "INVESTMENTS:station:2": [
+    "economy"
+  ],
+  "INVESTMENTS:station:3": [
+    "economy"
+  ],
+  "EXPAND:station:2": [
+    "economy"
+  ],
+  "OPPORTUNITIES:station:0": [
+    "economy"
+  ],
+  "OPPORTUNITIES:station:1": [
+    "economy"
+  ],
+  "OPPORTUNITIES:station:3": [
+    "economy"
   ]
 })});

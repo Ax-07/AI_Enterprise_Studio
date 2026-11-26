@@ -296,6 +296,8 @@ class Handler(BaseHTTPRequestHandler):
                                 'mission_budget':cfg['mission_budget'],'mission_calls':cfg['call_limit'],
                                 'openai_configured':bool(cfg['key']),'brave_configured':bool(cfg['brave']),
                                 'sandbox_enabled':cfg.get('html_sandbox_enabled',False)}
+                        elif tools[0]=='economy':
+                            resources={'budget':config()['budget']}
                         elif tools[0]=='infrastructure':
                             import campus_infrastructure
                             resources=campus_infrastructure.metadata(ROOT,VERSION,config(),n8n_bridge.configured(),self.campus_preview_mode)
