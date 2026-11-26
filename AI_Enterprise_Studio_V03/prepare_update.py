@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import release_paths
 
 ROOT=Path(__file__).resolve().parent
 DB_NAME='enterprise.sqlite3'
@@ -60,17 +61,15 @@ def assert_offline():
             sock.settimeout(.5)
             if sock.connect_ex(('127.0.0.1',port))==0:raise ValueError('Ferme les serveurs locaux avant la copie (port '+str(port)+')')
 def copy_runtime(candidate,target):
-    # Only known public code/assets; never carry a developer config, DB, or cache.
-    for f in candidate.iterdir():
-        if f.is_file() and not f.is_symlink() and (f.suffix in ('.py','.html','.md','.bat','.ps1','.sh') or f.name=='BUILD_INFO.json'):
-            if not f.name.startswith(('test_','smoke_')):shutil.copy2(f,target/f.name)
-    for name in ('interface','sandbox','n8n'):
-        d=candidate/name
-        if d.is_dir():
-            if d.is_symlink() or any(x.is_symlink() for x in d.rglob('*')):raise ValueError('Lien symbolique non autorisé dans le paquet')
-            shutil.copytree(d,target/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc','.env*','config.json','*.sqlite3*','*.db','*.pem','*.key'))
-    for name in ('serveur.py','index.html','preview_campus.py','LANCER_APERCU.bat','interface/live.html','interface/manifest.json'):
-        if not (target/name).is_file():raise ValueError('Paquet incomplet : '+name)
+    # The same allowlist as the builder; also accepts a local unpacked candidate.
+    names=release_paths.runtime_files(candidate)
+    for name in names:
+        source=candidate/name
+        if release_paths.file_type(source)!='file':
+            raise ValueError('Fichier candidat non régulier')
+        destination=target/name
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(source,destination)
 def init_copy(target):
     script="""import sys, pathlib
 def guard(event,args):
