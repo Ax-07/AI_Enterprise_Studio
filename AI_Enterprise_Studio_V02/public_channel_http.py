@@ -129,12 +129,16 @@ def managed_main(path,nonce):
     raw=sys.stdin.buffer.readline(100)
     if not re.fullmatch(rb'[0-9a-f]{64}\n',raw):raise ValueError('Invalid startup key')
     key=bytes.fromhex(raw.decode().strip())
-    app=application(path,key)
     class ManagedServer(WSGIServer):
+        last_purge=0
         def service_actions(self):
+            now=time.monotonic()
+            if now-self.last_purge<60:return
+            self.last_purge=now
             with closing(ch.connect(path)) as c:
                 c.execute('BEGIN IMMEDIATE');ch.purge(c,int(time.time()));c.commit()
-    with make_server('127.0.0.1',8765,app,server_class=ManagedServer,handler_class=QuietHandler) as server:
+    with make_server('127.0.0.1',8765,lambda env,start:[],server_class=ManagedServer,handler_class=QuietHandler) as server:
+        server.set_app(application(path,key))
         with closing(ch.connect(path)) as c:
             c.execute('BEGIN IMMEDIATE')
             for row in c.execute('SELECT id FROM channel_pages WHERE revoked IS NULL').fetchall():
