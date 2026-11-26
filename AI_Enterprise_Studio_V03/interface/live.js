@@ -189,7 +189,7 @@
             const a=X-9,c=X+w+9,e=Y-9,f=Y+d+9;
             for(const pts of [[[a,f,5],[c,f,5],[c,f,top],[a,f,top]],[[c,e,5],[c,f,5],[c,f,top],[c,e,top]],[[a,e,top],[c,e,top],[c,f,top],[a,f,top]],[[a,e,6],[c,e,6],[c,f,6],[a,f,6]]])g.append(polygon(pts,{class:'live-hit'}));
             const [px,py]=project(b.x,b.y,0);g.append(svg('ellipse',{class:'building-halo',cx:px,cy:py+3,rx:(w+d)*.48,ry:(w+d)*.23,fill:'none',stroke:b.color,'pointer-events':'none'}));
-            const labelHeight=fidelity?b.h:h;
+            const labelHeight=h;
             const y=Math.max(4,py-(b.type==='hq'?labelHeight+71:b.type==='core'?84:labelHeight+54)-12),x=px;
             const label=svg('g',fidelity?{class:'live-domain-label map-node domain15','data-id':b.id,style:'--accent:'+b.color,'aria-hidden':'true'}:{class:'live-domain-label','pointer-events':'none'});
             label.append(svg('path',{d:'M'+x+' '+(y+44)+'v12',stroke:b.color,'stroke-dasharray':'2 3',opacity:.8}),svg('rect',{class:fidelity?'live-label-bg tag label-bg':'live-label-bg',x:x-82,y,width:164,height:44,rx:5,stroke:b.color}),svg('rect',{x:x-78,y:y+5,width:2,height:34,fill:b.color}));
@@ -251,6 +251,21 @@
         }
         renderStation();
     }
+    function vectorRoomGraphic(b,f){
+        const frame=node('div',undefined,'original-vector-room');
+        frame.style.setProperty('--room',b.color);
+        const graphic=window.AESOriginalRooms.draw(b,f);
+        for(const g of graphic.querySelectorAll('[data-station]')){
+            const index=Number(g.dataset.station),st=f.stations[index];
+            g.removeAttribute('data-station');if(!st)continue;
+            g.dataset.roomStation=st.id;g.setAttribute('aria-pressed',String(stationId===st.id));
+            const label=graphic.querySelector('[data-label-station1631="'+index+'"]');
+            const lit=on=>label?.classList.toggle('linkedHover1631',on);
+            g.addEventListener('pointerenter',()=>lit(true));g.addEventListener('pointerleave',()=>lit(false));g.addEventListener('focus',()=>lit(true));g.addEventListener('blur',()=>lit(false));
+            g.addEventListener('click',()=>activateStation(st.id));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activateStation(st.id);}});
+        }
+        frame.append(graphic);return frame;
+    }
     function roomGraphic(b,f){
         const frame=node('div',undefined,'room-art-frame'),im=node('img',undefined,'room-image');
         im.src='/campus/assets/'+f.asset;im.alt='Décor original : '+f.name;frame.append(im);
@@ -297,6 +312,7 @@
         const room=$('room-view');room.replaceChildren();
         if(fidelity&&f.id===currentTeam()?.floor){const controls=node('div',undefined,'office-switch');const toggle=node('button',officeMode?'◈ Décor historique':'▦ Bureaux modulaires','secondary');toggle.type='button';toggle.addEventListener('click',()=>{officeMode=!officeMode;renderScene();renderBuilding();});controls.append(node('small','Disposition originale · rattachement graphique, pas présence physique.'),toggle);room.append(controls);if(officeMode){const host=node('div');host.id='original-office';room.append(host);renderOriginalOffice(currentTeam());}else if(f.asset)room.append(roomGraphic(b,f));}
         else if(f.asset){room.append(roomGraphic(b,f));}
+        else if(fidelity)room.append(vectorRoomGraphic(b,f));
         else room.append(node('div','Décor HD dédié non disponible dans la maquette originale. Les postes sont accessibles ci-dessous.','room-missing'));
         const buttons=node('div',undefined,'station-list');
         for(const st of f.stations){const btn=node('button');btn.type='button';btn.dataset.station=st.id;btn.setAttribute('aria-pressed',String(stationId===st.id));btn.append(node('b',st.name),node('small',st.description));if(hasModule(st))btn.append(node('small','Module existant ↗','module-marker'));btn.addEventListener('click',()=>activateStation(st.id));buttons.append(btn);}room.append(buttons);

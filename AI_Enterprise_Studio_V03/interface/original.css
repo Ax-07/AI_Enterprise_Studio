@@ -46,3 +46,8 @@
 .original-shell .liftHero181{border-bottom:1px solid #34516a}.original-shell .liftTower181 svg{width:100%;max-width:270px;max-height:450px}
 .original-shell .campus-map-svg{aspect-ratio:1000/600;max-height:600px}.original-shell .immersive .campus-map-svg{max-height:76vh}
 .original-shell #doorTransition{pointer-events:none}
+
+/* Native vector room geometry from the original 22.6, no fictitious motion. */
+.original-shell .original-vector-room svg{display:block;width:100%;max-height:580px}
+.original-shell .original-vector-room .station{cursor:pointer;outline:none}.original-shell .original-vector-room .station:hover,.original-shell .original-vector-room .station:focus-visible,.original-shell .original-vector-room .station[aria-pressed=true]{filter:brightness(1.22) drop-shadow(0 0 4px #83deff45)}
+.original-shell .original-vector-room .stationLabel1631 rect{fill:#091827;stroke:var(--room);stroke-opacity:.7}.original-shell .original-vector-room .stationLabel1631.linkedHover1631 rect{fill:#203c50;stroke-opacity:1;stroke-width:2.2}.original-shell .original-vector-room .room-screen{animation:none!important}

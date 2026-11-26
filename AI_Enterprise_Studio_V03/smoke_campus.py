@@ -420,6 +420,31 @@ def smoke_original():
                         page.keyboard.press('Enter')
                         expect(page.locator('#team-detail')).to_contain_text('MNEMOS')
                     page.locator('#campus-back').click()
+                # Every existing floor keeps its five station controls; the ten original
+                # vector-only services now expose their actual five interactive objects.
+                layout=page.evaluate('window.AESLiveLayout')
+                visited=0;vector=0
+                for building in layout:
+                    for floor in building['floors']:
+                        page.locator('#buildings button[data-id="'+building['id']+'"]').click()
+                        page.locator('#lift-view [data-floor="'+floor['id']+'"]').click()
+                        expect(page.locator('#room-view .station-list button')).to_have_count(5)
+                        if not floor['asset']:
+                            graphic=page.locator('#room-view .original-vector-room')
+                            expect(graphic).to_be_visible()
+                            expect(graphic.locator('[data-room-station]')).to_have_count(5)
+                            for i in range(5):
+                                target=graphic.locator('[data-room-station="'+floor['id']+':station:'+str(i)+'"]')
+                                target.focus()
+                                page.keyboard.press('Enter')
+                                expect(target).to_have_attribute('aria-pressed','true')
+                                expect(page.locator('#station-title')).to_have_text(floor['stations'][i]['name'])
+                            vector+=1
+                            if floor['id'] in ('VIDEO183','ITOPS17','PEOPLE17'):
+                                capture('F03-'+floor['id'])
+                        visited+=1
+                        page.locator('#campus-back').click()
+                assert (visited,vector)==(37,10),(visited,vector)
                 page.locator('.top [data-view="finance"]').click()
                 expect(page.locator('#native-tool')).to_be_visible()
                 expect(page.locator('#native-tool h3')).to_contain_text('Dépenses API')

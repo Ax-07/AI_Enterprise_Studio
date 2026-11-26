@@ -17,6 +17,7 @@ def read(root,route):
            '/campus/original':('original.html','text/html; charset=utf-8'),
            '/campus/original.css':('original.css','text/css; charset=utf-8'),
            '/campus/original-office.js':('original-office.js','text/javascript; charset=utf-8'),
+           '/campus/original-rooms.js':('original-rooms.js','text/javascript; charset=utf-8'),
            '/campus/live.js':('live.js','text/javascript; charset=utf-8'),
            '/campus/live-layout.js':('live-layout.js','text/javascript; charset=utf-8'),
            '/campus/live-teams.js':('live-teams.js','text/javascript; charset=utf-8'),

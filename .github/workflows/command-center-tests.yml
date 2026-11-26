@@ -32,6 +32,7 @@ jobs:
           node --check interface/live-teams.js
           node --check interface/live-art.js
           node --check interface/original-office.js
+          node --check interface/original-rooms.js
           node --check interface/live-modules.js
           node --check interface/live-tools.js
           node --check interface/live-commands.js
