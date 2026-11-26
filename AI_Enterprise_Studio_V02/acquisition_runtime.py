@@ -4,7 +4,6 @@ import secrets
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 PORT=8765
@@ -21,13 +20,13 @@ def managed():
     return _managed
 
 def runtime_key():
-    with _lock:
-        return _key if _process is not None and _process.poll() is None and _state=='ready' else None
+    process,key,state=_process,_key,_state
+    return key if process is not None and process.poll() is None and state=='ready' else None
 
 def status():
-    with _lock:
-        return {'managed':_managed,'ready':runtime_key() is not None,'state':_state,
-                'attempts':_attempts,'max_attempts':MAX_STARTS,'mode':'test','port':PORT}
+    ready=runtime_key() is not None
+    return {'managed':_managed,'ready':ready,'state':'unavailable' if _state=='ready' and not ready else _state,
+            'attempts':_attempts,'max_attempts':MAX_STARTS,'mode':'test','port':PORT}
 
 def child_environment():
     # No inherited OpenAI, Brave, n8n, proxy, PYTHONPATH or other application secrets.
@@ -56,9 +55,9 @@ def _start(path):
     key=secrets.token_bytes(32)
     nonce=secrets.token_hex(16)
     path=Path(path).resolve()
-    path.parent.mkdir(parents=True,exist_ok=True)
     process=None
     try:
+        path.parent.mkdir(parents=True,exist_ok=True)
         process=subprocess.Popen([sys.executable,'-I',str(Path(__file__).resolve().with_name('public_channel_http.py')),
                                   '--managed-test',str(path),nonce],
                                  stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
