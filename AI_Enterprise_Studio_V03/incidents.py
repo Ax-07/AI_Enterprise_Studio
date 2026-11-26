@@ -3,6 +3,30 @@ import re
 TRANSIENT=('HTTP 502','HTTP 503','HTTP 504')
 LIMIT='Une reprise par campagne de plan, réservations conservées. Timeout, HTTP 429, refus, authentification, quota, résultat incertain et effet outil non rejoués automatiquement.'
 
+def classify(state,error,pending,unreconciled):
+    """Local diagnostic only. Never changes state or grants a retry."""
+    error=error if isinstance(error,str) else ''
+    if pending or state=='en attente':
+        category='decision'
+    elif state=='interrompue':
+        category='interrupted'
+    elif unreconciled:
+        category='unreconciled'
+    elif error in ('Budget logiciel insuffisant pour réserver cet appel.','Budget de mission insuffisant pour réserver cet appel.','Enveloppe Autopilote insuffisante pour réserver cet appel.'):
+        category='budget'
+    elif error in ('Clé OpenAI manquante','Clé OpenAI manquante.'):
+        category='configuration'
+    elif re.fullmatch(r'Plafond de tours atteint pour la tâche #[0-9]+',error) or error in ('Plafond des appels IA de mission atteint.','Plafond d’actions de mission atteint'):
+        category='limit'
+    elif re.fullmatch(r'Trois outils refusés/échoués de suite sur tâche #[0-9]+',error) or error.startswith('Action identique répétée trois fois; tâche #'):
+        category='repeated_failure'
+    elif error=='Tâches non résolues.':
+        category='dependency'
+    else:
+        category='unknown'
+    return {'category':category,'pending_requests':pending,'unreconciled_calls':unreconciled,
+            'automatic_retry_authorized':False}
+
 def init(c):
     c.execute("""CREATE TABLE IF NOT EXISTS incident_recoveries(
         campaign INTEGER PRIMARY KEY REFERENCES campaigns(id),mission INTEGER NOT NULL REFERENCES missions(id),

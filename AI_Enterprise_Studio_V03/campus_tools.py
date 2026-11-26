@@ -57,9 +57,13 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
             counts=rows("SELECT mode,state,COUNT(*) AS count FROM missions WHERE state IN ('bloquée','en attente','interrompue') GROUP BY mode,state")
             result=[{'kind':'summary','counts':counts,'recovery_policy':incidents.LIMIT,
                      'recovery_count':db.execute("SELECT COUNT(*) FROM incident_recoveries").fetchone()[0]}]
-            result.extend({'kind':'mission',**r} for r in rows("""SELECT id,title,mode,state,created
-                FROM missions WHERE state IN ('bloquée','en attente','interrompue')
-                ORDER BY id DESC LIMIT 50"""))
+            for r in rows("""SELECT m.id,m.title,m.mode,m.state,m.created,m.error,
+                (SELECT COUNT(*) FROM requests q WHERE q.mission=m.id AND q.state='en attente') AS pending,
+                (SELECT COUNT(*) FROM ledger l WHERE l.mission=m.id AND l.state='à rapprocher' AND l.actual IS NULL) AS unreconciled
+                FROM missions m WHERE m.state IN ('bloquée','en attente','interrompue')
+                ORDER BY m.id DESC LIMIT 50"""):
+                diagnostic=incidents.classify(r['state'],r.pop('error'),r.pop('pending'),r.pop('unreconciled'))
+                result.append({'kind':'mission',**r,**diagnostic})
             for r in rows("""SELECT campaign,mission,task,ledger,diagnostic,created
                 FROM incident_recoveries ORDER BY created DESC,campaign DESC LIMIT 50"""):
                 # A historical recovery is not proof that the mission completed.

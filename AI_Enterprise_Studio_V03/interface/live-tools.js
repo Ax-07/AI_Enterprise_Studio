@@ -91,7 +91,11 @@
                     for(const c of r.counts)e.append(node('small',mode(c.mode)+' · '+c.state+' : '+c.count));
                     if(!r.counts.length)e.append(node('small','Aucune mission bloquée, en attente ou interrompue enregistrée.'));
                     e.append(node('p',r.recovery_policy));
-                }else if(r.kind==='mission')e=entry('Mission #'+r.id+' · '+r.title,r.state+' · '+mode(r.mode)+' · '+r.created);
+                }else if(r.kind==='mission'){
+                    e=entry('Mission #'+r.id+' · '+r.title,r.state+' · '+mode(r.mode)+' · '+r.created);
+                    const labels={decision:'Décision à examiner',interrupted:'Interruption enregistrée',unreconciled:'Appel à rapprocher · coût incertain',budget:'Enveloppe insuffisante enregistrée',configuration:'Configuration manquante',limit:'Plafond moteur atteint',repeated_failure:'Échecs ou répétitions successifs',dependency:'Tâches non résolues',unknown:'Cause non classée · diagnostic requis'};
+                    e.append(node('b',labels[r.category]||labels.unknown),node('small',r.pending_requests+' demande(s) en attente · '+r.unreconciled_calls+' appel(s) à rapprocher'),node('small','Ce diagnostic ne déclenche ni n’autorise aucune reprise. Les règles du moteur restent applicables.'));
+                }
                 else e=entry('Reprise enregistrée · campagne #'+r.campaign,r.diagnostic+' · mission #'+r.mission+' · tâche #'+r.task+' · réservation #'+r.ledger+' · '+r.created);
             }
             else if(tool==='home'){

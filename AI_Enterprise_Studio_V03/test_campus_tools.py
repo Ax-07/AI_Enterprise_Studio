@@ -33,7 +33,11 @@ class CampusToolTests(unittest.TestCase):
                 db.executescript("""
                 CREATE TABLE incident_recoveries(campaign INTEGER PRIMARY KEY,mission INTEGER,task INTEGER,ledger INTEGER,diagnostic TEXT,created TEXT);
                 INSERT INTO incident_recoveries VALUES(1,1,1,1,'HTTP 503','2026-01-01'),(2,1,1,2,'secret diagnostic','2026-01-02');
-                UPDATE missions SET state='bloquée' WHERE id=1;
+                ALTER TABLE missions ADD COLUMN error TEXT DEFAULT '';
+                ALTER TABLE requests ADD COLUMN mission INTEGER;
+                ALTER TABLE ledger ADD COLUMN state TEXT DEFAULT '';
+                UPDATE missions SET state='bloquée',error='secret error' WHERE id=1;
+                UPDATE ledger SET actual=NULL,state='à rapprocher' WHERE mission=1;
                 """)
             before=p.read_bytes()
             r=t.read(p,'incidents',{})
@@ -42,8 +46,33 @@ class CampusToolTests(unittest.TestCase):
             self.assertEqual(r['rows'][0]['counts'],[{'mode':'cloud','state':'bloquée','count':1}])
             self.assertEqual(r['rows'][0]['recovery_count'],2)
             self.assertEqual(r['rows'][1]['kind'],'mission')
+            self.assertEqual(r['rows'][1]['category'],'unreconciled')
+            self.assertEqual(r['rows'][1]['unreconciled_calls'],1)
+            self.assertFalse(r['rows'][1]['automatic_retry_authorized'])
+            self.assertNotIn('secret error',str(r))
             self.assertEqual(r['rows'][2]['diagnostic'],'Diagnostic hors liste')
             self.assertEqual(r['rows'][3]['diagnostic'],'HTTP 503')
             self.assertNotIn('secret diagnostic',str(r))
             self.assertEqual(p.read_bytes(),before)
             with self.assertRaises(t.BadQuery):t.read(p,'incidents',{'replay':['true']})
+
+    def test_incident_classification(self):
+        import incidents
+        for state,error,pending,uncertain,expected in [
+            ('bloquée','secret',1,1,'decision'),
+            ('en attente','',0,0,'decision'),
+            ('interrompue','',0,1,'interrupted'),
+            ('bloquée','HTTP 503',0,1,'unreconciled'),
+            ('bloquée','Budget logiciel insuffisant pour réserver cet appel.',0,0,'budget'),
+            ('bloquée','Clé OpenAI manquante',0,0,'configuration'),
+            ('bloquée','Plafond de tours atteint pour la tâche #12',0,0,'limit'),
+            ('bloquée','Trois outils refusés/échoués de suite sur tâche #9',0,0,'repeated_failure'),
+            ('bloquée','Tâches non résolues.',0,0,'dependency'),
+            ('bloquée','secret error',0,0,'unknown')]:
+            with self.subTest(expected=expected):
+                r=incidents.classify(state,error,pending,uncertain)
+                self.assertEqual(r['category'],expected)
+                self.assertEqual(r['pending_requests'],pending)
+                self.assertEqual(r['unreconciled_calls'],uncertain)
+                self.assertFalse(r['automatic_retry_authorized'])
+                self.assertNotIn('secret',str(r))
