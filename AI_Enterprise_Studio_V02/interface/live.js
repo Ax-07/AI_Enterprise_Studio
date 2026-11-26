@@ -44,6 +44,7 @@
         out.append(node('h3','Accès aux modules existants'),node('p','Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
         const links=node('div',undefined,'module-links');
         if(st.id.startsWith('OWNER:station:')){const dashboard=node('button','Tableau de direction');dashboard.type='button';dashboard.dataset.native='owner';dashboard.addEventListener('click',()=>window.AESNativeTools.open('owner'));links.append(dashboard);}
+        if(selected==='HERMES'&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId)&&modules.stations[st.id].includes('business')){const m=node('button','Dossiers HERMES & marketing · préparation interne');m.type='button';m.dataset.native='marketing';m.addEventListener('click',()=>window.AESNativeTools.open('marketing'));links.append(m);}
         for(const page of modules.stations[st.id]){
             if(!Object.hasOwn(modules.pages,page))continue;
             const a=node('a',modules.pages[page]);a.dataset.module=page;

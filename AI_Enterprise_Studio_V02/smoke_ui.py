@@ -55,6 +55,15 @@ def smoke():
                 page.locator('[data-native="decisions"]').click()
                 expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune entrée correspondante')
                 assert not owner_writes,owner_writes
+                page.goto(base+'/campus/live/?building=HERMES&floor=SHOWROOM&station=SHOWROOM%3Astation%3A0')
+                page.locator('[data-native="business"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Recettes réelles vérifiées : indisponibles')
+                page.goto(base+'/campus/live/?building=HERMES&floor=VIDEO183&station=VIDEO183%3Astation%3A0')
+                page.locator('[data-native="marketing"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune entrée correspondante')
+                page.locator('#room-view [data-station="VIDEO183:station:1"]').click()
+                expect(page.locator('[data-native="marketing"]')).to_have_count(0)
+                assert not owner_writes,owner_writes
                 # Real round trip: legacy module opens on explicit click, return restores station.
                 writes=[]
                 page.on('request',lambda req:writes.append(req.url) if req.method=='POST' else None)

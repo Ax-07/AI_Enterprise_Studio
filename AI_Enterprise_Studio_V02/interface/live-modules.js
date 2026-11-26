@@ -316,5 +316,56 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
   "ARCHIVES:station:1": [
     "missions",
     "memory"
+  ],
+  "SHOWROOM:station:2": [
+    "business"
+  ],
+  "SHOWROOM:station:4": [
+    "business"
+  ],
+  "SUPPORT17:station:2": [
+    "business"
+  ],
+  "SUPPORT17:station:4": [
+    "business"
+  ],
+  "ADS183:station:2": [
+    "business"
+  ],
+  "ADS183:station:3": [
+    "business"
+  ],
+  "VIDEO183:station:0": [
+    "business"
+  ],
+  "VIDEO183:station:4": [
+    "business"
+  ],
+  "PUBLISH183:station:0": [
+    "business"
+  ],
+  "PUBLISH183:station:1": [
+    "business"
+  ],
+  "PUBLISH183:station:2": [
+    "business"
+  ],
+  "PUBLISH183:station:4": [
+    "business"
+  ],
+  "ANALYTICS183:station:0": [
+    "business"
+  ],
+  "ANALYTICS183:station:1": [
+    "business"
+  ],
+  "ANALYTICS183:station:2": [
+    "business"
+  ],
+  "ANALYTICS183:station:3": [
+    "business"
+  ],
+  "ANALYTICS183:station:4": [
+    "business"
   ]
 })});

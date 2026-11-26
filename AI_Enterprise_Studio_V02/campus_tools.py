@@ -1,9 +1,10 @@
 """D04.2/D04.3: explicit, bounded read tools, no engine actions."""
 import json
 import sqlite3
+import campus_commercial
 from pathlib import Path
 
-TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions'))
+TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions')) | campus_commercial.TOOLS
 MAX_ARTIFACT_BYTES=2*1024*1024
 MAX_REPORT_BYTES=256*1024
 
@@ -13,11 +14,11 @@ class TooLarge(ValueError): pass
 
 def read(path, tool, params, *, roles=None, permissions=None, registry=None, resources=None):
     if tool not in TOOLS: raise BadQuery('Outil inconnu')
-    allowed={'id'} if tool in ('artifact','report') else {'q'} if tool=='memory' else set()
+    allowed={'id'} if tool in ('artifact','report') or tool in campus_commercial.DETAILS else {'q'} if tool=='memory' else set()
     if set(params)-allowed or any(len(v)!=1 for v in params.values()):
         raise BadQuery('Paramètres invalides')
     ident=None
-    if tool in ('artifact','report'):
+    if tool in ('artifact','report') or tool in campus_commercial.DETAILS:
         raw=params.get('id',[''])[0]
         if not raw.isascii() or not raw.isdecimal() or len(raw)>18 or int(raw)<1:
             raise BadQuery('Identifiant invalide')
@@ -32,7 +33,10 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
         db.execute('BEGIN')
         def rows(sql,args=()):
             return [dict(r) for r in db.execute(sql,args)]
-        if tool=='missions':
+        if tool in campus_commercial.TOOLS:
+            result=campus_commercial.read(db,tool,ident)
+            if tool in campus_commercial.DETAILS and not result:raise Missing('Dossier absent')
+        elif tool=='missions':
             result=rows("SELECT id,title,mode,state,created FROM missions ORDER BY id DESC LIMIT 100")
         elif tool=='work':
             result=rows("""SELECT t.id,t.mission,t.agent,t.state,t.created,m.mode,substr(t.goal,1,500) AS goal
@@ -173,6 +177,6 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 substr(o.next_test,1,600) AS next_test,o.created,m.mode FROM opportunities o
                 JOIN missions m ON m.id=o.mission ORDER BY o.id DESC LIMIT 100""")
         return {'schema':'aes.campus.tool.v1','tool':tool,'read_only':True,'rows':result,
-            'limit':50 if tool=='memory' else 1 if tool in ('artifact','report') else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
+            'limit':50 if tool=='memory' else 1 if tool in ('artifact','report') or tool in campus_commercial.DETAILS else 30 if tool=='marketing' else 81 if tool=='business' else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
     finally:
         db.close()
