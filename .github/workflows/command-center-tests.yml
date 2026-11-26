@@ -80,7 +80,7 @@ jobs:
       - name: Upload candidate package (public source only)
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Enterprise-Studio-V3.0.0
+          name: AI-Enterprise-Studio-candidate
           path: ${{ runner.temp }}/AI_Enterprise_Studio_V03.zip
           if-no-files-found: error
           retention-days: 14

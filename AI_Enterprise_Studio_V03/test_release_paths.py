@@ -15,6 +15,8 @@ class ReleasePathsTests(unittest.TestCase):
     def fixture(self, root):
         files = {name: b'fixture' for name in p.REQUIRED}
         files.update({
+            'serveur.py': b'VERSION="3.0.0"\n',
+            'release_version.json': "{\"schema\":\"aes.release.version.v1\",\"engine_version\":\"3.0.0\",\"release_version\":\"3.1.0\",\"phase\":\"R02.3\",\"status\":\"candidate\"}".encode('utf-8'),
             'core/agents/__init__.py': b'',
             'core/agents/registry.py': b'public-source',
             'departments/nexus/service.py': b'public-service',
@@ -57,6 +59,7 @@ class ReleasePathsTests(unittest.TestCase):
             self.git(repo, 'add', '.')
             self.git(repo, 'commit', '-qm', 'fixture')
             sha = self.git(repo, 'rev-parse', 'HEAD').decode().strip()
+            (root/'release_version.json').write_bytes(b'INVALID LOCAL VERSION')
             (root/'core/agents/registry.py').write_bytes(b'UNCOMMITTED')
             (root/'core/agents/extra.py').write_bytes(b'UNTRACKED')
             dest = base/'release.zip'
@@ -74,6 +77,9 @@ class ReleasePathsTests(unittest.TestCase):
             meta = json.loads(actual.pop('BUILD_INFO.json'))
             self.assertEqual(meta['commit'], sha)
             self.assertFalse(meta['contains_local_data'])
+            self.assertEqual(meta['release_version'], '3.1.0')
+            self.assertEqual(meta['engine_version'], '3.0.0')
+            self.assertEqual(meta['status'], 'candidate')
             self.assertEqual(actual, expected)
             self.assertFalse(any(b'PRIVATE' in data for data in actual.values()))
 

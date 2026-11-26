@@ -8,6 +8,7 @@ import sys
 import zipfile
 
 import release_paths as paths
+import release_metadata
 
 ROOT = Path(__file__).resolve().parent
 
@@ -42,15 +43,16 @@ def build(dest, root=None):
             raise ValueError('Chemin Git dupliqué')
         selected[name] = oid
     names = paths.checked_names(selected)
+    metadata = release_metadata.build_info(
+        git(repo, 'cat-file', 'blob', selected['release_version.json']),
+        git(repo, 'cat-file', 'blob', selected['serveur.py']), revision)
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(dest, 'w', compression=zipfile.ZIP_DEFLATED) as z:
         for name in names:
             data = git(repo, 'cat-file', 'blob', selected[name])
             z.writestr('AI_Enterprise_Studio_V03/'+name, data)
-        z.writestr('AI_Enterprise_Studio_V03/BUILD_INFO.json', json.dumps({
-            'candidate': 'V3.0.0', 'version': '3.0.0', 'phase': 'D08.3',
-            'commit': revision, 'contains_local_data': False}, indent=2))
+        z.writestr('AI_Enterprise_Studio_V03/BUILD_INFO.json', json.dumps(metadata, indent=2))
     print('SHA256 '+hashlib.sha256(dest.read_bytes()).hexdigest()+'  '+dest.name)
 
 

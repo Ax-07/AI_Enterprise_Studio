@@ -23,7 +23,7 @@ ASSET_SUFFIXES = {
     'docs': frozenset(('.md', '.txt')),
 }
 REQUIRED = frozenset(('serveur.py', 'index.html', 'prepare_update.py',
-                      'release_paths.py', 'LANCER_CAMPUS.bat', 'LANCER_APERCU.bat',
+                      'release_paths.py', 'release_metadata.py', 'release_version.json', 'LANCER_CAMPUS.bat', 'LANCER_APERCU.bat',
                       'preview_campus.py', 'interface/live.html', 'interface/manifest.json'))
 _RESERVED = frozenset(('con', 'prn', 'aux', 'nul', 'conin$', 'conout$') +
                       tuple('com'+str(i) for i in range(1, 10)) +
@@ -54,7 +54,7 @@ def allowed(name, *, metadata=False):
         return False
     p = PurePosixPath(name)
     if len(parts) == 1:
-        return (p.suffix in ROOT_SUFFIXES or name in ROOT_TEXT
+        return (p.suffix in ROOT_SUFFIXES or name in ROOT_TEXT or name == 'release_version.json'
                 or (metadata and name == 'BUILD_INFO.json'))
     top = parts[0]
     if top in CODE_DIRS:
