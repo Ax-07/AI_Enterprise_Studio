@@ -1,0 +1,91 @@
+AI ENTERPRISE STUDIO V0.2.0 — DISCOVERY & AUTONOMY
+================================================
+Mise à niveau depuis V0.1.2 (Windows, Python 3.10+ recommandé).
+
+1. Fermer le serveur actuel avec Ctrl+C. Si le port 8790 reste occupé,
+   vérifier le processus avec netstat -ano | findstr :8790 avant de l'arrêter.
+2. Faire une copie complète du dossier actuel (serveur arrêté).
+3. Décompresser le ZIP dans un nouveau dossier, ou remplacer dans le dossier
+   actuel les trois fichiers serveur.py, moteur.py et index.html.
+   Si nouveau dossier, copier le config.json et le dossier donnees de l'ancien.
+   NE PAS écraser config.json ni donnees. Le ZIP ne contient ni clés ni base.
+4. Lancer Demarrer_Enterprise.bat. Le serveur annonce V0.2.0.
+   Diagnostic gratuit : http://127.0.0.1:8790/api/health
+5. Actualiser http://127.0.0.1:8790 avec Ctrl+F5. Vérifier les anciennes
+   missions et dépenses. La migration SQLite ajoute des tables/colonnes.
+   Pour revenir à V0.1.2, utiliser la copie de sauvegarde complète.
+6. Lancer Simulation gratuite. Attendu : cinq tâches terminées, 13 actions,
+   une opportunité marquée SIMULATION, un CSV exemple.csv dans Production,
+   aucune dépense nouvelle ni XP. Les anciennes simulations restent visibles.
+7. Ensuite, avec OpenAI et Brave configurés, lancer UNE mission cloud ciblée.
+   Le texte proposé dans Missions permet de reprendre la piste du kit numérique
+   de la mission #3 grâce à la recherche dans l'historique. Modifiable librement.
+   Observer Tâches & activité, Production, Opportunités, Finances, Décisions.
+
+BUDGETS (configuration existante conservée)
+==========================================
+Les paramètres ci-dessous sont facultatifs. Ils ont ces valeurs par défaut.
+Ouvrir config.json seulement si besoin; garder les clés secrètes.
+
+mission_budget_usd: 0.75       plafond supplémentaire par nouvelle mission
+mission_max_calls: 24         appels OpenAI, relances incluses
+mission_max_tasks: 8          tâches racine comprise
+task_max_turns: 10            actions max par tâche
+mission_max_searches: 6       tentatives Brave par nouvelle mission
+mission_max_pages: 8          tentatives de lecture de pages par mission
+
+openai_budget_usd: plafond cumulatif existant (2 USD si absent).
+brave_max_searches: plafond cumulatif existant (10 si absent).
+Les anciens coûts et tentatives restent comptés. Les plafonds ne se réinitialisent
+pas mensuellement. Les modèles nouveaux utilisent les mêmes tarifs de référence
+que V0.1.2; les estimations locales ne remplacent pas les limites du fournisseur.
+La réservation peut bloquer un appel avant d'atteindre exactement le plafond.
+Un échec API peut conserver une réservation à rapprocher manuellement.
+Ne pas augmenter les limites avant de vérifier les dépenses fournisseur.
+Les recherches peuvent être payantes selon ton compte Brave.
+
+NOUVEAU FONCTIONNEMENT
+======================
+ATLAS délègue une tâche à un agent choisi, celui-ci utilise les outils autorisés
+par le serveur, puis remet un rapport. ATLAS reprend après ses sous-tâches.
+Pas de scénario fixe à cinq étapes pour les nouvelles missions.
+Les agents peuvent rechercher via Brave, lire une page publique HTTPS obtenue
+par Brave dans la mission, calculer, interroger la mémoire lexicale, enregistrer
+une opportunité ou demander des ressources. NEXUS/HERMES produisent des fichiers
+internes versionnés dans SQLite; export via Production. Les autres agents
+peuvent les lire et certains peuvent contrôler leur syntaxe/cohérence.
+Les pages dynamiques, PDF, redirections, sites bloqués et contenus trop longs
+peuvent être indisponibles ou partiels; le résultat est explicitement signalé.
+Aucune adresse privée, clé API, terminal ou compte externe accessible aux agents.
+Les textes des sites sont traités comme données, jamais comme instructions.
+Le logiciel ne garantit pas l'innocuité d'un contenu généré : examiner les
+brouillons avant ouverture dans un autre logiciel, ne pas exécuter de code inconnu.
+
+Demandes V0.2 : accepter ou refuser peut reprendre automatiquement la mission,
+avec confirmation des appels payants éventuels. Une acceptation autorise seulement
+l'étude, pas l'achat, la création d'un compte ou une action commerciale. Les
+anciennes demandes V0.1.x restent archivées et ne déclenchent pas une mission.
+Si une autre mission travaille, terminer celle-ci avant de traiter la demande.
+Reprise après arrêt ou panne : manuelle, rapports et tâches conservés, aucun appel
+au démarrage. Les appels interrompus peuvent avoir été facturés.
+
+LIMITES
+=======
+- File séquentielle dynamique; ATLAS délègue directement, pas encore de hiérarchie
+  récursive, de planification quotidienne ni de fonctionnement permanent autonome.
+- Contrôles statiques Python, JSON et CSV, pas d'exécution de code généré ni de
+  test fonctionnel arbitraire. Les autres extensions : présence de texte seulement.
+- Récompense expérimentale : 10 XP pour le premier contrôle statique réussi de
+  SENTINEL sur un fichier d'une mission cloud; aucun XP en simulation. Pas un score
+  de rentabilité ou de compétence; aucun droit supplémentaire.
+- Mémoire lexicale et rapports archivés, pas de RAG vectoriel pour l'instant.
+- Gmail, GitHub, Stripe et n8n restent non intégrés. Aucune action commerciale réelle.
+- Les huit rôles sont disponibles sur demande; ils ne tournent pas en permanence.
+- Les anciennes missions utilisent toujours leur ancien moteur si reprises.
+
+TESTS
+=====
+Dans le dossier du programme : py -3 -m unittest discover -v
+Les tests utilisent une base temporaire et des API simulées; pas de crédit consommé.
+23 tests réussis lors de la livraison, et parcours UI Chromium avec relais local.
+Les appels réels OpenAI/Brave et la lecture de sites depuis ton PC restent à tester.

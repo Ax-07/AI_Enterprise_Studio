@@ -1,0 +1,61 @@
+{
+  "name": "AES v1 — Comparaison de marchés",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aes-v1-market-compare",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "id": "15a1c210-9c00-4dd1-8000-000000000003",
+      "name": "Webhook AES",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "25a1c210-9c00-4dd1-8000-000000000003"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$input.first().json.body;\nif (!b || typeof b !== 'object' || Array.isArray(b) || Object.keys(b).sort().join(',') !== 'input,protocol,request_id' || b.protocol !== 'aes-n8n-v1' || typeof b.request_id !== 'string' || !/^[a-f0-9]{32}$/.test(b.request_id)) throw new Error('Invalid AES envelope');\nconst d=b.input;\nif (!d || typeof d !== 'object' || Array.isArray(d) || Object.keys(d).join(',') !== 'rows' || !Array.isArray(d.rows) || d.rows.length<2 || d.rows.length>3) throw new Error('Invalid market input');\nfor (const r of d.rows) {\n if (!r || typeof r!=='object' || Array.isArray(r) || Object.keys(r).sort().join(',')!=='country,internet_bp,population' || typeof r.country!=='string' || !/^[A-Z]{3}$/.test(r.country) || !Number.isSafeInteger(r.population) || r.population<0 || r.population>2000000000 || !Number.isSafeInteger(r.internet_bp) || r.internet_bp<0 || r.internet_bp>10000) throw new Error('Invalid market row');\n}\nif (new Set(d.rows.map(r=>r.country)).size!==d.rows.length) throw new Error('Duplicate country');\nconst markets=d.rows.map(r=>({country:r.country,estimated_users:Math.floor(r.population*r.internet_bp/10000)})).sort((a,b)=>b.estimated_users-a.estimated_users || (a.country<b.country?-1:a.country>b.country?1:0));\nreturn [{json:{protocol:'aes-n8n-v1',request_id:b.request_id,execution_id:String($execution.id),result:{markets}}}];"
+      },
+      "id": "35a1c210-9c00-4dd1-8000-000000000003",
+      "name": "Contrat AES",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook AES": {
+      "main": [
+        [
+          {
+            "node": "Contrat AES",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "executionTimeout": 15
+  },
+  "pinData": {},
+  "tags": []
+}

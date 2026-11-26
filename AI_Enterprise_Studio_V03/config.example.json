@@ -1,0 +1,23 @@
+{
+  "openai_api_key": "",
+  "brave_api_key": "",
+  "openai_budget_usd": 2,
+  "brave_max_searches": 10,
+  "models": {
+    "ATLAS": "gpt-6.2-sol",
+    "ORION": "gpt-6-luna",
+    "MIDAS": "gpt-6.1-terra",
+    "SENTINEL": "gpt-6.1-terra",
+    "NEXUS": "gpt-6.1-terra",
+    "HERMES": "gpt-6-luna",
+    "PROMETHEUS": "gpt-6-luna",
+    "MNEMOS": "gpt-6-luna"
+  },
+  "mission_budget_usd": 0.75,
+  "mission_max_calls": 24,
+  "mission_max_tasks": 8,
+  "task_max_turns": 10,
+  "mission_max_searches": 6,
+  "mission_max_pages": 8,
+  "html_sandbox_enabled": false
+}

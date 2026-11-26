@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: AI_Enterprise_Studio_V02
+        working-directory: AI_Enterprise_Studio_V03
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,20 +55,22 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Verify preserved V2 tree
+        run: test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD:AI_Enterprise_Studio_V02)" = "26562e73d6871837216290f0fa51acc539de3013"
       - name: Offline upgrade from stable main snapshot
         run: |
           mkdir -p "$RUNNER_TEMP/aes-stable"
           git -C "$GITHUB_WORKSPACE" archive 3dbfe4c382e9008d54e6f3df8db14cd1299b1218 AI_Enterprise_Studio_V02 | tar -x -C "$RUNNER_TEMP/aes-stable"
           python -I -c "import sys; sys.path.insert(0,sys.argv[1]); import serveur as s; s.init(); c=s.db(); db=c.__enter__(); mid=db.execute(\"INSERT INTO missions(title,mode,state,engine) VALUES('historical fixture','cloud','terminée','dynamic')\").lastrowid; db.execute(\"INSERT INTO ledger(mission,model,reserved,actual,state) VALUES(?,'test',1000,500,'mesuré')\",(mid,)); c.__exit__(None,None,None)" "$RUNNER_TEMP/aes-stable/AI_Enterprise_Studio_V02"
-          python build_candidate.py "$RUNNER_TEMP/AI_Enterprise_Studio_Campus_D08.2.zip"
-          python -m zipfile -e "$RUNNER_TEMP/AI_Enterprise_Studio_Campus_D08.2.zip" "$RUNNER_TEMP/aes-package"
-          python "$RUNNER_TEMP/aes-package/AI_Enterprise_Studio_V02/prepare_update.py" --source "$RUNNER_TEMP/aes-stable/AI_Enterprise_Studio_V02" --destination "$RUNNER_TEMP/aes-upgrade" --confirm-offline
-          python -c "import json,sys; from pathlib import Path; r=json.loads(Path(sys.argv[1]).read_text()); assert r['protected_tables']['ledger']==1 and not r['started']" "$RUNNER_TEMP/aes-upgrade/PREPARATION.json"
+          python build_candidate.py "$RUNNER_TEMP/AI_Enterprise_Studio_V03.zip"
+          python -m zipfile -e "$RUNNER_TEMP/AI_Enterprise_Studio_V03.zip" "$RUNNER_TEMP/aes-package"
+          python "$RUNNER_TEMP/aes-package/AI_Enterprise_Studio_V03/prepare_update.py" --source "$RUNNER_TEMP/aes-stable/AI_Enterprise_Studio_V02" --destination "$RUNNER_TEMP/AI_Enterprise_Studio_V03" --confirm-offline
+          python -c "import json,sys; from pathlib import Path; r=json.loads(Path(sys.argv[1]).read_text()); assert r['protected_tables']['ledger']==1 and not r['started']" "$RUNNER_TEMP/AI_Enterprise_Studio_V03/PREPARATION.json"
       - name: Upload candidate package (public source only)
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Enterprise-Studio-Campus-D08.2
-          path: ${{ runner.temp }}/AI_Enterprise_Studio_Campus_D08.2.zip
+          name: AI-Enterprise-Studio-V3.0.0
+          path: ${{ runner.temp }}/AI_Enterprise_Studio_V03.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -87,7 +89,7 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: AI_Enterprise_Studio_V02
+        working-directory: AI_Enterprise_Studio_V03
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -101,7 +103,7 @@ jobs:
     timeout-minutes: 3
     defaults:
       run:
-        working-directory: AI_Enterprise_Studio_V02
+        working-directory: AI_Enterprise_Studio_V03
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

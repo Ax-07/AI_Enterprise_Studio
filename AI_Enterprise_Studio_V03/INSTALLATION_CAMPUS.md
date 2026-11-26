@@ -1,15 +1,15 @@
-# Candidat D08.2 — installation parallèle (pas encore une version stable)
+# AI Enterprise Studio V3.0.0 — installation parallèle (candidat)
 
-Ce paquet contient les sources publiques et le Design 22.6. Il n'embarque ni config.json local ni base de données. Le serveur conserve son numéro moteur 0.5.0 ; BUILD_INFO.json identifie le candidat par son commit. Python 3.11+ requis.
+Ce paquet contient les sources publiques et le Design 22.6. Il n'embarque ni config.json local ni base de données. Le serveur annonce la version 3.0.0 ; BUILD_INFO.json identifie le candidat par son commit. Les versions des schémas de données et des protocoles internes sont conservées. Python 3.11+ requis.
 
 ## Préparer sans démarrer
 
 1. Arrêter toutes les missions et campagnes si possible, fermer le serveur historique avec Ctrl+C et attendre sa fermeture. Arrêter également le service TEST local. Ne pas utiliser les deux versions simultanément.
 2. Extraire le ZIP dans un dossier temporaire distinct de l'installation actuelle.
-3. Depuis le dossier extrait AI_Enterprise_Studio_V02, lancer (exemple Windows, chemins à adapter) :
+3. Depuis le dossier extrait AI_Enterprise_Studio_V03, lancer (exemple Windows, chemins à adapter) :
 
 ```powershell
-py -3 prepare_update.py --source "C:\\AI_Enterprise_Studio_V02" --destination "C:\\AI_Enterprise_Studio_Campus" --confirm-offline
+py -3 prepare_update.py --source "C:\\AI_Enterprise_Studio_V02" --destination "C:\\AI_Enterprise_Studio_V03" --confirm-offline
 ```
 
 Le script refuse un dossier cible existant. Il crée une sauvegarde SQLite cohérente, copie config.json localement s'il existe, initialise une **copie** avec les transports réseau interdits, vérifie l'intégrité et l'identité des écritures protégées. Les états actifs sont suspendus par les règles historiques de récupération. Les répertoires source et de sauvegarde restent disponibles. Le script ne lance aucun serveur.
@@ -24,4 +24,4 @@ Pour le premier contrôle, lancer LANCER_APERCU.bat dans le nouveau dossier (ou 
 
 Avant toute nouvelle écriture métier dans le candidat : fermer le nouveau serveur et relancer l'ancien dossier, qui n'a pas été écrasé. Si des missions, dépenses, décisions ou transactions ont été enregistrées depuis la bascule, **ne pas repartir de l'ancienne base sans rapprochement** : cela effacerait les nouveaux engagements du point de vue du moteur. Garder les deux bases, arrêter les traitements et établir une procédure de rapprochement. Ne jamais écraser une base active ni réinitialiser un budget.
 
-Le candidat n'est pas encore fusionné dans main. Les fonctionnalités historiques non encore migrées restent accessibles, notamment les modes spécialisés et certains formulaires commerciaux. Aucune vente ou diffusion réelle n'est activée par la mise à jour.
+Le candidat est développé sur feature/v3.0.0-campus. main et archive/v2-stable conservent la V2 stable, et le dossier V02 reste intact dans la branche V3. Les fonctionnalités historiques non encore migrées restent accessibles, notamment les modes spécialisés et certains formulaires commerciaux. Aucune vente ou diffusion réelle n'est activée par la mise à jour.

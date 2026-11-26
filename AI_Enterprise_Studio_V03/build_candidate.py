@@ -29,7 +29,7 @@ def build(dest):
     dest=Path(dest);dest.parent.mkdir(parents=True,exist_ok=True)
     with zipfile.ZipFile(dest,'w',compression=zipfile.ZIP_DEFLATED) as z:
         for f in sorted(selected):
-            z.write(root/f,'AI_Enterprise_Studio_V02/'+f.as_posix())
-        z.writestr('AI_Enterprise_Studio_V02/BUILD_INFO.json',json.dumps({'candidate':'D08.2','commit':revision,'contains_local_data':False},indent=2))
+            z.write(root/f,'AI_Enterprise_Studio_V03/'+f.as_posix())
+        z.writestr('AI_Enterprise_Studio_V03/BUILD_INFO.json',json.dumps({'candidate':'V3.0.0','version':'3.0.0','phase':'D08.3','commit':revision,'contains_local_data':False},indent=2))
     print('SHA256 '+hashlib.sha256(dest.read_bytes()).hexdigest()+'  '+dest.name)
 if __name__=='__main__':build(sys.argv[1])

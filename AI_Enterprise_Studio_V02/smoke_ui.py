@@ -29,63 +29,6 @@ def smoke():
                 errors=[]
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.route('**/*',lambda route:route.continue_() if route.request.url.startswith(base+'/') else route.abort())
-                # Native pilotage tools on the actual initialized engine schema.
-                page.goto(base+'/campus/live/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A1')
-                expect(page.locator('#status')).to_contain_text('Connecté')
-                page.locator('[data-native="home"]').click()
-                expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune entrée correspondante')
-                page.goto(base+'/campus/live/?building=CORE&floor=INFRA&station=INFRA%3Astation%3A1')
-                page.locator('[data-native="tools"]').click()
-                expect(page.locator('#native-tool .native-results')).to_contain_text('GitHub')
-                expect(page.locator('#native-tool .native-results')).to_contain_text('Disponibilité externe non testée')
-                page.goto(base+'/campus/live/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A2')
-                page.locator('[data-native="agents"]').click()
-                expect(page.locator('#native-tool .native-results')).to_contain_text('PROMETHEUS')
-                expect(page.locator('#native-tool .native-results')).to_contain_text('MNEMOS')
-                # D05.1: owner resources and decision list; no authorization or POST on navigation.
-                owner_writes=[]
-                page.on('request',lambda req:owner_writes.append(req.url) if req.method=='POST' else None)
-                page.goto(base+'/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A0')
-                expect(page.locator('#status')).to_contain_text('Connecté')
-                page.locator('[data-native="owner"]').click()
-                expect(page.locator('#native-tool .native-results')).to_contain_text('Solde local estimé')
-                expect(page.locator('#native-tool .native-results')).to_contain_text('OpenAI : configuré')
-                expect(page.locator('#native-tool .native-results')).not_to_contain_text('fake-test-key')
-                page.locator('#room-view [data-station="OWNER:station:4"]').click()
-                page.locator('[data-native="decisions"]').click()
-                expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune entrée correspondante')
-                assert not owner_writes,owner_writes
-                page.goto(base+'/campus/live/?building=HERMES&floor=SHOWROOM&station=SHOWROOM%3Astation%3A0')
-                page.locator('[data-native="business"]').click()
-                expect(page.locator('#native-tool .native-results')).to_contain_text('Recettes réelles vérifiées : indisponibles')
-                page.locator('[data-commands="business"]').click()
-                expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
-                expect(page.locator('#campus-commands')).to_contain_text('Aucune commande commerciale applicable')
-                assert not owner_writes,owner_writes
-                page.goto(base+'/campus/live/?building=HERMES&floor=VIDEO183&station=VIDEO183%3Astation%3A0')
-                page.locator('[data-native="marketing"]').click()
-                expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune entrée correspondante')
-                page.locator('#room-view [data-station="VIDEO183:station:1"]').click()
-                expect(page.locator('[data-native="marketing"]')).to_have_count(0)
-                assert not owner_writes,owner_writes
-                # Real round trip: legacy module opens on explicit click, return restores station.
-                writes=[]
-                page.on('request',lambda req:writes.append(req.url) if req.method=='POST' else None)
-                page.goto(base+'/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A3')
-                expect(page.locator('#station-title')).to_have_text('Situation financière')
-                page.locator('#station-modules [data-module="finance"]').click()
-                expect(page.locator('#page-finance')).to_be_visible()
-                expect(page.locator('#connection-text')).to_have_text('Serveur V0.5.0')
-                page.locator('#campus-return').click()
-                expect(page.locator('#station-title')).to_have_text('Situation financière')
-                assert not writes,writes
-                for module in ('home','portfolio','business','opps','decisions','finance','missions','work','files','laboratory','agents','memory','goals','tools'):
-                    page.goto(base+'/?page='+module)
-                    expect(page.locator('#page-'+module)).to_be_visible()
-                page.goto(base+'/?page=__proto__&campusBuilding=ATLAS&campusFloor=OWNER&campusStation=OWNER%3Astation%3A3')
-                expect(page.locator('#page-home')).to_be_visible()
-                expect(page.locator('#campus-return')).to_have_count(0)
-                assert not writes,writes
                 page.goto(base)
                 expect(page.locator('#connection-text')).to_have_text('Serveur V0.5.0')
                 expect(page.locator('#quick-products')).to_have_text('2')
