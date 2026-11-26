@@ -1,5 +1,6 @@
 """Managed TEST child process. No provider secrets, no public bind, no real activation."""
 import os
+import hashlib
 import secrets
 import subprocess
 import sys
@@ -27,6 +28,11 @@ def status():
     ready=runtime_key() is not None
     return {'managed':_managed,'ready':ready,'state':'unavailable' if _state=='ready' and not ready else _state,
             'attempts':_attempts,'max_attempts':MAX_STARTS,'mode':'test','port':PORT}
+
+def database_path(enterprise_db):
+    root=Path(os.environ.get('LOCALAPPDATA') or Path.home()/'.local'/'share')
+    identity=hashlib.sha256(str(Path(enterprise_db).resolve()).encode()).hexdigest()[:24]
+    return root/'AIEnterpriseStudio'/'acquisition-test'/identity/'channel.sqlite3'
 
 def child_environment():
     # No inherited OpenAI, Brave, n8n, proxy, PYTHONPATH or other application secrets.
@@ -87,11 +93,11 @@ def maintain(path,before_restart):
     """Do not resume old grants after a child failure. Callback must durably stop local links."""
     global _process,_key,_state
     with _lock:
-        if not _managed or runtime_key() is not None:return
+        if not _managed or _state=='stopped' or runtime_key() is not None:return
         _key=None
         _close(_process);_process=None
-        if _attempts>=MAX_STARTS:_state='retry_limit';return
         before_restart()
+        if _attempts>=MAX_STARTS:_state='retry_limit';return
         _start(path)
 
 def stop():
