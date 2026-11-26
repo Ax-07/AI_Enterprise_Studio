@@ -160,3 +160,8 @@ O04.3 CI 45887669205 réussie ; O04.4 commit 68e3ba71, CI 45888309281 en cours l
 
 ### O04.5 — consultation des preuves d'amélioration continue
 Réutilisation du moteur improvement existant : projection des 50 derniers cycles de comparaison, état, référence actuelle, empreintes des deux versions, résultats de rejeu et non-régression enregistrés. Aucun contenu, objectif brut, protocole ou résultat brut exposé ; aucune promotion, test ou appel fournisseur. Accès depuis LAB 3 et ACADEMY 1 (deux postes déjà raccordés), sans assimiler l'amélioration produit à la formation des agents. Aucun simulateur pédagogique ni apprentissage de modèle activé. Test sur schéma réel, altération de candidate détectée, lecture sans mutation. CI requise. 135/185.
+
+O04.4 CI 45888309281 réussie ; O04.5 commit 1110a80a, CI 45891344783 en cours lors de la préparation.
+
+### O04.6 — validation intégrée du pilotage
+Test transversal sur schéma réel isolé : exécution réelle du moteur en simulation gratuite, mission Cloud bloquée sans clé (aucun fournisseur), quatre délégations et cinq tâches simulation, une tâche Cloud bloquée, preuves d'expérience séparées, absence de note de compétence et de cycle/formation inventés, coût nul et lectures sans mutation. Navigation Académie dans la vue originale en aperçu, preuves et historique vides explicites. Aucun code de production ni nouveau droit. CI requise avant clôture O04 ; autonomie commerciale, formation réelle, centre de mobilisation dédié et 50 postes non raccordés hors validation présente. O05 : validation générale, inventaire réconcilié et procédure de déploiement préservant V2/V3 ; installation réelle non testée.
