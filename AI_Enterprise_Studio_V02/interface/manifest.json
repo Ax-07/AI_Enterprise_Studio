@@ -1,6 +1,6 @@
 {
   "design": "22.6",
-  "phase": "D01",
+  "phase": "D02",
   "source_sha256": "4363ed9dda34d6b90ef94393481d2b023ba9aa8cb3d2736ac13fb936a192612e",
   "assets": [
     "campus_1_0.webp",
@@ -40,5 +40,6 @@
     "room_NOTIFICATIONS.webp"
   ],
   "mode": "simulation",
-  "api": false
+  "api": false,
+  "registry_schema": 1
 }

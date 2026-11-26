@@ -9,7 +9,8 @@ def read(root,route):
     directory=(Path(root)/'interface').resolve()
     files={'/campus':('index.html','text/html; charset=utf-8'),
            '/campus/design.css':('design.css','text/css; charset=utf-8'),
-           '/campus/design.js':('design.js','text/javascript; charset=utf-8')}
+           '/campus/design.js':('design.js','text/javascript; charset=utf-8'),
+           '/campus/campus-registry.js':('campus-registry.js','text/javascript; charset=utf-8')}
     match=re.fullmatch(r'/campus/assets/([A-Za-z0-9_]+\.webp)',route)
     try:
         if match:

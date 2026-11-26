@@ -25,14 +25,31 @@ def smoke():
                     unexpected.append(route.request.url);route.abort()
             page.route('**/*',guard)
             page.goto(base+'/campus/')
-            expect(page.locator('.demo')).to_contain_text('D01')
+            expect(page.locator('.demo')).to_contain_text('D02')
             expect(page.locator('#buildings [data-id]')).to_have_count(7)
             expect(page.locator('#hdDecor image')).to_have_count(1)
+            topology=page.evaluate("AESCampusRegistry.snapshot()")
+            assert topology['phase']=='D02' and not topology['operational']
+            assert len(topology['buildings'])==7
+            floors=[f for b in topology['buildings'] for f in b['floors']]
+            assert len(floors)==len({f['id'] for f in floors})==37
+            assert all(f['stations'] and not f['operational'] for f in floors)
+            stations=[st for f in floors for st in f['stations']]
+            assert len(stations)==len({st['id'] for st in stations})
+            assert all(not st['operational'] for st in stations)
+            assert sum(len(b['slots']) for b in topology['buildings'])==56
+            assert page.evaluate("AESCampusRegistry.service('UNKNOWN') === null")
+            assert page.evaluate("AESCampusRegistry.station('OWNER', 999) === null")
+            assert page.evaluate("Object.isFrozen(AESCampusRegistry.snapshot().buildings[0].floors)")
+            assert page.evaluate("AESCampusRegistry.service('OWNER').buildingId === 'ATLAS'")
+            assert page.evaluate("AESCampusRegistry.service('VIDEO183').integration === 'future_or_unmapped'")
             campus=page.locator('#buildings [data-id="HERMES"]').first
             campus.focus()
             campus.press('Enter')
             expect(page.locator('#elevator181')).to_be_visible()
             expect(page.locator('#elevator181 [data-floor181]')).to_have_count(8)
+            page.evaluate("goFloor181('LAB')")
+            expect(page.locator('#elevator181')).to_be_visible()
             page.locator('#roster [data-agent="NEXUS"]').click()
             expect(page.locator('#elevator181 [data-floor181]')).to_have_count(5)
             page.locator('#elevator181 [data-floor181="LAB"]').click()
@@ -40,6 +57,15 @@ def smoke():
             expect(page.locator('#roomScene svg')).to_have_count(1)
             page.locator('#backCampus').click()
             expect(page.locator('#campusSvg')).to_be_visible()
+            # Real design controls: add/remove a simulated reserve, preserving OWNER identity.
+            page.locator('#build11').click(force=True) if page.locator('#build11').is_visible() else page.evaluate("openModal('Plan', plan221())")
+            page.locator('#building221').select_option('ATLAS')
+            page.locator('[data-add221]').click()
+            assert page.evaluate("AESCampusRegistry.snapshot().buildings.find(b=>b.id==='ATLAS').floors.filter(f=>f.kind==='reserve').length === 1")
+            assert page.evaluate("AESCampusRegistry.service('OWNER').level === 9")
+            assert page.evaluate("AESCampusRegistry.service('RESERVE221_ATLAS_1') === null")
+            page.locator('[data-remove221]').click()
+            assert page.evaluate("AESCampusRegistry.service('OWNER').level === 8")
             page.wait_for_timeout(500)
             assert not errors,errors
             assert not unexpected,unexpected
@@ -47,6 +73,6 @@ def smoke():
             assert all(status<400 for status,url in responses),responses
             browser.close()
     finally:srv.shutdown();srv.server_close();thread.join()
-    print('Campus D01 smoke passed')
+    print('Campus D02 smoke passed')
 
 if __name__=='__main__':smoke()

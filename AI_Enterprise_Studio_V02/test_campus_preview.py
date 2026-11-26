@@ -14,6 +14,8 @@ class CampusPreviewTests(unittest.TestCase):
         manifest=json.loads((root/'interface'/'manifest.json').read_text(encoding='utf8'))
         self.assertEqual(manifest['design'],'22.6')
         self.assertFalse(manifest['api'])
+        self.assertEqual(manifest['phase'],'D02')
+        self.assertEqual(manifest['registry_schema'],1)
         self.assertEqual(len(set(manifest['assets'])),35)
         html,typ=preview.read(root,'/campus')
         self.assertIn('text/html',typ)
@@ -23,6 +25,11 @@ class CampusPreviewTests(unittest.TestCase):
         js,typ=preview.read(root,'/campus/design.js')
         self.assertNotIn(b'data:image/webp;base64,',js)
         self.assertNotIn(b'/api/',js)
+        registry,typ=preview.read(root,'/campus/campus-registry.js')
+        self.assertIn(b'AESCampusRegistry',registry)
+        self.assertIn(b'/campus/campus-registry.js',html)
+        self.assertIn('javascript',typ)
+        self.assertNotIn(b'/api/',registry)
         for asset in manifest['assets']:
             data,typ=preview.read(root,'/campus/assets/'+asset)
             self.assertEqual(typ,'image/webp')
@@ -45,6 +52,9 @@ class CampusPreviewTests(unittest.TestCase):
                     self.assertIn("connect-src 'none'",r.headers['Content-Security-Policy'])
                     self.assertIn("img-src 'self'",r.headers['Content-Security-Policy'])
                     self.assertNotIn(s.SESSION.encode(),r.read())
+                with urllib.request.urlopen(base+'/campus/campus-registry.js') as r:
+                    self.assertIn('javascript',r.headers['Content-Type'])
+                    self.assertIn(b'AESCampusRegistry',r.read())
                 with urllib.request.urlopen(base+'/campus/assets/campus_2_0.webp') as r:
                     self.assertEqual(r.headers['Content-Type'],'image/webp')
                 with urllib.request.urlopen(base+'/') as r:
