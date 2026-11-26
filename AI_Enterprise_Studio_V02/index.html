@@ -342,7 +342,8 @@ function renderBusiness(s){
  const sync=s.acquisition_sync||{links:[],configured:false};
  const ctl=s.acquisition_control||{channels:[],configured:false};
  const hermes=s.hermes_acquisition||{packets:[]};
- const sig=JSON.stringify([d,ac,sync,ctl,hermes,busy]);if(sig===businessSig)return;businessSig=sig;
+ const runtime=s.acquisition_runtime||{managed:false,ready:false,state:'not_started',attempts:0,max_attempts:3};
+ const sig=JSON.stringify([d,ac,sync,ctl,hermes,runtime,busy]);if(sig===businessSig)return;businessSig=sig;
  const channels=ctl.channels.map(x=>{
    const n=el('article',undefined,'request');
    n.append(el('h3','Canal TEST · Brouillon #'+x.draft),el('p',x.state+' · expiration '+new Date(x.expires*1000).toLocaleString()),el('p',x.last_error||'Aucune erreur de confirmation enregistrée'));
@@ -355,7 +356,7 @@ function renderBusiness(s){
    if(['published','collecting'].includes(x.state)&&x.reference_valid)n.append(el('p','Adresse locale de test : http://127.0.0.1:8765/p/'+x.page));
    return n;
  });
- fill('acquisition-test-control',channels.length?channels:[empty(ctl.configured?'Aucun canal TEST autorisé.':'Service TEST non configuré; aucune activation.')]);
+ fill('acquisition-test-control',[el('p',runtime.ready?'Service TEST autonome prêt — local uniquement':'Service TEST : '+runtime.state+' · '+runtime.attempts+'/'+runtime.max_attempts+' démarrages. Aucune activation si indisponible.'),...(channels.length?channels:[empty(ctl.configured?'Aucun canal TEST autorisé.':'Service TEST non configuré; aucune activation.')])]);
  const links=sync.links.map(x=>{
    const n=el('article',undefined,'request');
    n.append(el('h3','Canal TEST · Brouillon #'+x.draft),
