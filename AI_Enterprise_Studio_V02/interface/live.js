@@ -37,6 +37,7 @@
     const hasModule=st=>Object.hasOwn(modules.stations,st.id)&&modules.stations[st.id].length>0;
     function updateModuleLinks(st){
         const out=$('station-modules');const sig=st?.id||'';
+        window.AESNativeTools.setStation(sig||null);
         if(out.dataset.station===sig)return;out.dataset.station=sig;out.replaceChildren();
         if(!st||!hasModule(st))return;
         out.append(node('h3','Accès aux modules existants'),node('p','Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
@@ -45,6 +46,9 @@
             if(!Object.hasOwn(modules.pages,page))continue;
             const a=node('a',modules.pages[page]);a.dataset.module=page;
             a.href='/?'+new URLSearchParams({page,campusBuilding:selected,campusFloor:floorId,campusStation:st.id});
+            if(Object.hasOwn(window.AESNativeTools.names,page)){
+                const btn=node('button','Consulter ici · '+window.AESNativeTools.names[page]);btn.type='button';btn.dataset.native=page;btn.addEventListener('click',()=>window.AESNativeTools.open(page));links.append(btn);
+            }
             links.append(a);
         }out.append(links);
     }
@@ -121,7 +125,7 @@
         list('events',data.events,e=>entry(e.agent+' · '+e.action,'Mission #'+e.mission+' · '+mode(e.mode)+' · '+e.created+' · '+(e.ok===1?'OK':e.ok===0?'Échec':'Résultat inconnu')));
         list('artifacts',data.artifacts,a=>entry(a.name+' · V'+a.version,a.agent+' · mission #'+a.mission+' · '+mode(a.mode)));
     }
-    function clear(){data=null;for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
+    function clear(){window.AESNativeTools.reset();data=null;for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
     async function refresh(){
         if(busy)return;busy=true;$('refresh').disabled=true;
         const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);

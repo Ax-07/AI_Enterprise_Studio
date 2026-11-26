@@ -2,7 +2,7 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, campus_tools, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
@@ -275,12 +275,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.local(): return self.send({'error':'Hôte refusé'},403)
         try:
-            if self.route()=='/campus/live-data':
+            if self.route() in ('/campus/live-data','/campus/read'):
                 origin=self.headers.get('Origin')
                 if (not secrets.compare_digest(self.headers.get('X-Campus-Session','').encode(),CAMPUS_READ_SESSION.encode())
                     or origin not in (None,'http://'+self.headers.get('Host',''))
                     or self.headers.get('Sec-Fetch-Site') not in (None,'same-origin')):
                     return self.send({'error':'Accès lecture campus refusé'},403)
+                if self.route()=='/campus/read':
+                    try:
+                        q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=4)
+                        tools=q.pop('tool',[])
+                        if len(tools)!=1:raise campus_tools.BadQuery('Outil requis')
+                        return self.send(campus_tools.read(DB,tools[0],q))
+                    except campus_tools.Missing as e:return self.send({'error':str(e)},404)
+                    except campus_tools.TooLarge as e:return self.send({'error':str(e)},413)
+                    except ValueError:return self.send({'error':'Paramètres de lecture invalides'},400)
+                    except Exception:return self.send({'error':'Outil de lecture indisponible'},503)
                 try:
                     return self.send(campus_live.snapshot(DB,AGENTS,config()['budget'],VERSION))
                 except Exception:

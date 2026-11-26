@@ -17,13 +17,17 @@ def fixture(path):
         CREATE TABLE tasks(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,state TEXT,created TEXT,goal TEXT);
         CREATE TABLE events(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,action TEXT,ok INTEGER,created TEXT,args TEXT);
         CREATE TABLE artifacts(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,name TEXT,version INTEGER,created TEXT,content TEXT);
-        CREATE TABLE ledger(actual INTEGER,reserved INTEGER);
+        CREATE TABLE ledger(actual INTEGER,reserved INTEGER,mission INTEGER,agent TEXT);
+        CREATE TABLE reports(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,report TEXT,created TEXT);
+        CREATE TABLE opportunities(id INTEGER PRIMARY KEY,mission INTEGER,title TEXT,body TEXT,next_test TEXT,status TEXT,created TEXT);
         CREATE TABLE requests(state TEXT,body TEXT);
         INSERT INTO missions VALUES(1,'Mission moteur','cloud','en cours','2026-01-01'),(2,'Mission démo','demo','terminée','2026-01-01');
         INSERT INTO tasks VALUES(1,1,'MNEMOS','en cours','2026-01-01','secret-test'),(2,2,'PROMETHEUS','en cours','2026-01-01','secret-test');
         INSERT INTO events VALUES(1,1,'MNEMOS','indexer',1,'2026-01-01','secret-test');
         INSERT INTO artifacts VALUES(1,2,'NEXUS','Exemple',1,'2026-01-01','secret-test');
-        INSERT INTO ledger VALUES(1000,2000),(NULL,3000);
+        INSERT INTO ledger VALUES(1000,2000,1,'MNEMOS'),(NULL,3000,2,'NEXUS');
+        INSERT INTO reports VALUES(1,1,'MNEMOS','{"rapport":"Recherche de marché test"}','2026-01-01');
+        INSERT INTO opportunities VALUES(1,1,'Hypothèse test','Analyse','Vérifier','hypothèse','2026-01-01');
         INSERT INTO requests VALUES('en attente','secret-test');
         """)
 
@@ -79,6 +83,23 @@ class CampusLiveTests(unittest.TestCase):
                     denied('/api/start',{'X-Session':s.CAMPUS_READ_SESSION,'Content-Type':'application/json'},403,b'{}')
                     with get('/campus/live-data',token) as r:
                         self.assertEqual(json.load(r)['source'],'local_sqlite')
+                    denied('/campus/read?tool=files',{},403)
+                    denied('/campus/read?tool=files',{'X-Session':s.SESSION},403)
+                    denied('/campus/read?tool=files',{**token,'Origin':'https://evil.example'},403)
+                    denied('/campus/read?tool=delete',token,400)
+                    denied('/campus/read?tool=artifact&id=0',token,400)
+                    denied('/campus/read?tool=artifact&id=999',token,404)
+                    denied('/campus/read?tool=memory&q=x',token,400)
+                    denied('/campus/read?tool=files',token,403,b'{}')
+                    for name in ('missions','work','files','finance','opps'):
+                        with get('/campus/read?tool='+name,token) as r:
+                            result=json.load(r);self.assertTrue(result['read_only']);self.assertTrue(result['rows'])
+                    with get('/campus/read?tool=artifact&id=1',token) as r:
+                        self.assertEqual(json.load(r)['rows'][0]['content'],'secret-test')
+                    with get('/campus/read?tool=memory&q=marche',token) as r:
+                        self.assertEqual(json.load(r)['rows'],[])
+                    with get('/campus/read?tool=report&id=1',token) as r:
+                        self.assertEqual(json.load(r)['rows'][0]['content'],'Recherche de marché test')
                     with patch.object(s,'DB',Path(d)/'missing.db'):
                         denied('/campus/live-data',token,503)
             finally:srv.shutdown();srv.server_close();thread.join()
