@@ -428,7 +428,8 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
     "quality"
   ],
   "LAB:station:3": [
-    "quality"
+    "quality",
+    "improvements"
   ],
   "LAB:station:4": [
     "quality"
@@ -585,6 +586,7 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
     "workforce"
   ],
   "ACADEMY:station:1": [
-    "workforce"
+    "workforce",
+    "improvements"
   ]
 })});

@@ -155,3 +155,8 @@ O04.2 CI 45877051214 entièrement réussie ; O04.3 commit 7e5874b2, CI 458876692
 
 ### O04.4 — diagnostic déterministe des blocages
 Extension du module incidents existant : classification sur état persistant, demandes en attente, appels non rapprochés et messages moteur reconnus (plafond, budget, configuration, répétitions, tâches non résolues, inconnu). Aucun message brut renvoyé, aucun appel réseau ni changement d'état ; classification recalculée à la consultation, sans surveillance en arrière-plan. Les reprises automatiques préexistantes du planificateur pour incidents transitoires restent inchangées ; ce diagnostic n'est jamais une autorisation de reprise. Tests des catégories, priorités, confidentialité, non-mutation. CI requise ; 135/185 sans nouveau raccordement.
+
+O04.3 CI 45887669205 réussie ; O04.4 commit 68e3ba71, CI 45888309281 en cours lors de la préparation.
+
+### O04.5 — consultation des preuves d'amélioration continue
+Réutilisation du moteur improvement existant : projection des 50 derniers cycles de comparaison, état, référence actuelle, empreintes des deux versions, résultats de rejeu et non-régression enregistrés. Aucun contenu, objectif brut, protocole ou résultat brut exposé ; aucune promotion, test ou appel fournisseur. Accès depuis LAB 3 et ACADEMY 1 (deux postes déjà raccordés), sans assimiler l'amélioration produit à la formation des agents. Aucun simulateur pédagogique ni apprentissage de modèle activé. Test sur schéma réel, altération de candidate détectée, lecture sans mutation. CI requise. 135/185.

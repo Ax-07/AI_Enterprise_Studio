@@ -47,7 +47,7 @@ def smoke():
             known={st['id'] for b in connected for f in b['floors'] for st in f['stations']}
             assert set(modules['stations'])<=known
             assert set(modules['native'])<=known
-            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure','economy','business','marketing','workforce'}
+            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure','economy','business','marketing','workforce','improvements'}
             assert {p for ps in modules['stations'].values() for p in ps}==set(modules['pages'])
             assert len(modules['pages'])==14
             assert 'VIDEO183:station:1' not in modules['stations']
