@@ -1,3 +1,4 @@
+import os
 import re
 """Real local HTTP + Chromium: the design is still a detached simulation."""
 import threading
@@ -108,6 +109,12 @@ def smoke_live():
     import tempfile
     from pathlib import Path
     from test_campus_live import fixture
+    # Optional visual evidence: fixture DB only, capture the scene (not private details).
+    target=os.getenv('AES_CAMPUS_SCREENSHOTS')
+    def capture(page,name):
+        if not target:return
+        directory=Path(target);directory.mkdir(parents=True,exist_ok=True)
+        page.locator('.scene-panel').screenshot(path=str(directory/(name+'.png')),animations='disabled',timeout=10000)
     with tempfile.TemporaryDirectory() as d:
         path=Path(d)/'test.db';fixture(path)
         srv=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
@@ -132,8 +139,10 @@ def smoke_live():
                 expect(page.locator('#buildings button')).to_have_count(7)
                 expect(page.locator('#alert-list')).to_contain_text('1 demande(s) en attente')
                 expect(page.locator('#campus-decor')).to_have_attribute('href','/campus/assets/campus_1_1.webp')
+                capture(page,'01-campus-jour')
                 page.locator('#day-toggle').click()
                 expect(page.locator('#campus-decor')).to_have_attribute('href','/campus/assets/campus_1_0.webp')
+                capture(page,'02-campus-nuit')
                 page.locator('#day-toggle').click()
                 page.locator('#focus-toggle').click()
                 expect(page.locator('#scene-layout')).to_have_class('layout scene-expanded')
@@ -162,13 +171,17 @@ def smoke_live():
                 expect(page.locator('#lift-view [data-floor="CORE"] .floor-activity')).to_contain_text('2 agent(s) configuré(s)')
                 page.locator('#lift-view [data-floor="CORE"]').hover()
                 expect(page.locator('#lift-view [data-level-id="CORE"]')).to_have_class(re.compile('focus181'))
+                capture(page,'03-ascenseur-core')
                 page.locator('#lift-view [data-floor="CORE"]').click()
                 expect(page.locator('#room-view [data-station]')).to_have_count(5)
                 expect(page.locator('#room-view img')).to_be_visible()
+                page.wait_for_function("document.querySelector('#room-view img')?.naturalWidth > 0")
+                capture(page,'04-bureau-core')
                 expect(page.locator('#team-slots [data-slot]')).to_have_count(8)
                 expect(page.locator('#team-slots [data-configured="true"]')).to_have_count(2)
                 page.locator('#team-slots [data-slot="CORE:1"]').click()
                 expect(page.locator('#team-detail')).to_contain_text('MNEMOS')
+                capture(page,'05-equipe-core')
                 page.locator('#refresh').click()
                 expect(page.locator('#team-slots [data-slot="CORE:1"]')).to_have_attribute('aria-pressed','true')
                 expect(page.locator('#agents')).to_contain_text('MNEMOS')

@@ -40,8 +40,18 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Chromium smoke (no external API)
         run: python smoke_ui.py
-      - name: Chromium campus D02 / D03 (local read-only)
+      - name: Chromium campus (local fixtures, no paid API)
+        env:
+          AES_CAMPUS_SCREENSHOTS: ${{ runner.temp }}/aes-campus-visual
         run: python smoke_campus.py
+      - name: Upload campus visual evidence (fixture only)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: campus-22.6-visual-check
+          path: ${{ runner.temp }}/aes-campus-visual/*.png
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Build optional HTML sandbox
         run: docker build -t aes-verifier:0.3.0 sandbox
