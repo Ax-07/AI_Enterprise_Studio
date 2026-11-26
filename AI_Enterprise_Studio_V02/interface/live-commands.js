@@ -17,7 +17,7 @@
  function setStation(id){if(station!==id){reset();station=id;}}
  function setOnline(value){online=value;if(!value)reset();}
  function open(kind){
-  if(!station||!online||pending||!['home','missions','decisions','business'].includes(kind)||(kind==='decisions'&&!isOwner())||(kind==='business'&&!isCommercial()))return;
+  if(!token||!station||!online||pending||!['home','missions','decisions','business'].includes(kind)||(kind==='decisions'&&!isOwner())||(kind==='business'&&!isCommercial()))return;
   reset();active=kind;panel.hidden=false;
   const status=node('p','','muted');status.setAttribute('role','status');
   const out=node('div',undefined,'command-results');
@@ -128,7 +128,7 @@
    }catch(e){if(n===seq){out.replaceChildren();status.textContent='États indisponibles. Aucune commande proposée.';lock(true);}}
   }
   async function send(body,message){
-   if(!online||pending||active!==kind||(paid.has(body.action)&&!isOwner())||(commercialActions.has(body.action)&&!isCommercial())||!confirm(message))return;
+   if(!token||!online||pending||active!==kind||(paid.has(body.action)&&!isOwner())||(commercialActions.has(body.action)&&!isCommercial())||!confirm(message))return;
    pending=true;lock(true);const n=++seq;status.textContent='Transmission de la commande…';
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
    try{

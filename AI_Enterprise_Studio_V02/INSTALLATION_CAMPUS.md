@@ -1,4 +1,4 @@
-# Candidat D08.1 — installation parallèle (pas encore une version stable)
+# Candidat D08.2 — installation parallèle (pas encore une version stable)
 
 Ce paquet contient les sources publiques et le Design 22.6. Il n'embarque ni config.json local ni base de données. Le serveur conserve son numéro moteur 0.5.0 ; BUILD_INFO.json identifie le candidat par son commit. Python 3.11+ requis.
 
@@ -18,7 +18,7 @@ PREPARATION.json contient uniquement des compteurs et indicateurs, pas de clé o
 
 ## Essais locaux (après validation du candidat)
 
-Lancer LANCER_CAMPUS.bat dans le nouveau dossier (ou python serveur.py). Ouvrir http://127.0.0.1:8790/campus/live/. L'interface historique reste à la racine. Comparer l'historique, le registre des coûts et les livrables. Ne pas lancer une mission Cloud ni accorder une autorisation avant vérification. La reprise des activités payantes requiert une commande explicite. Les canaux TEST précédents ne sont pas réactivés automatiquement ; leur stockage distinct peut rester dans l'ancien emplacement.
+Pour le premier contrôle, lancer LANCER_APERCU.bat dans le nouveau dossier (ou python preview_campus.py). Ouvrir http://127.0.0.1:8790/campus/live/. Ce serveur ne démarre aucun worker et refuse toutes les commandes ; l'interface historique est désactivée. Après validation locale, fermer cet aperçu et lancer LANCER_CAMPUS.bat (ou python serveur.py) pour passer en mode opérationnel. L'interface historique reste à la racine en mode opérationnel. Comparer l'historique, le registre des coûts et les livrables. Ne pas lancer une mission Cloud ni accorder une autorisation avant vérification. La reprise des activités payantes requiert une commande explicite. Les canaux TEST précédents ne sont pas réactivés automatiquement ; leur stockage distinct peut rester dans l'ancien emplacement.
 
 ## Retour à la version précédente
 

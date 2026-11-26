@@ -2,6 +2,8 @@
     'use strict';
     const $=id=>document.getElementById(id);
     const token=document.querySelector('meta[name="campus-session"]').content;
+    const preview=document.querySelector('meta[name="campus-mode"]').content==='preview';
+    if(preview){$('preview-notice').hidden=false;$('legacy-entry').hidden=true;$('operational-footer').textContent='Aperçu en lecture seule · toutes les commandes sont désactivées. Les listes sont limitées aux entrées les plus récentes.';}
     let data=null, selected='ATLAS', busy=false;
     const labels={ATLAS:'Direction',ORION:'Recherche',NEXUS:'Production',MIDAS:'Finance',HERMES:'Commerce',SENTINEL:'Sécurité',CORE:'DATA CORE'};
     const mode=m=>m==='demo'?'SIMULATION enregistrée':m==='cloud'?'CLOUD · moteur':('Mode '+String(m??'inconnu'));
@@ -40,7 +42,7 @@
         const count=state=>data.mission_counts.filter(x=>x.state===state).reduce((n,x)=>n+x.count,0);
         const alert=(state,title,detail,href,label)=>{
             const e=node('div',undefined,'owner-alert');e.dataset.activity=state;e.append(node('b',title),node('small',detail));
-            if(href){const a=node('a',label);a.href=href;e.append(a);}out.append(e);
+            if(href&&(!preview||href.startsWith('/campus/'))){const a=node('a',label);a.href=href;e.append(a);}out.append(e);
         };
         const owner='/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A';
         const pending=data.pending_requests,blocked=count('bloquée'),waiting=count('en attente');
@@ -176,7 +178,7 @@
         window.AESCampusCommands.setStation(sig||null);
         if(out.dataset.station===sig)return;out.dataset.station=sig;out.replaceChildren();
         if(!st||!hasModule(st))return;
-        out.append(node('h3','Accès aux modules existants'),node('p','Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
+        out.append(node('h3','Accès aux modules existants'),node('p',preview?'Aperçu : consultation native seulement, les liens historiques et commandes sont désactivés.':'Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
         const links=node('div',undefined,'module-links');
         if(st.id.startsWith('OWNER:station:')){const dashboard=node('button','Tableau de direction');dashboard.type='button';dashboard.dataset.native='owner';dashboard.addEventListener('click',()=>window.AESNativeTools.open('owner'));links.append(dashboard);}
         if(selected==='HERMES'&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId)&&modules.stations[st.id].includes('business')){const m=node('button','Dossiers HERMES & marketing · préparation interne');m.type='button';m.dataset.native='marketing';m.addEventListener('click',()=>window.AESNativeTools.open('marketing'));links.append(m);}
@@ -187,8 +189,8 @@
             if(Object.hasOwn(window.AESNativeTools.names,page)){
                 const btn=node('button','Consulter ici · '+window.AESNativeTools.names[page]);btn.type='button';btn.dataset.native=page;btn.addEventListener('click',()=>window.AESNativeTools.open(page));links.append(btn);
             }
-            if(page==='home'||page==='missions'||(st.id.startsWith('OWNER:station:')&&page==='decisions')||(selected==='HERMES'&&page==='business'&&['HERMES','SHOWROOM','ADS183','PUBLISH183','ANALYTICS183'].includes(floorId))){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
-            links.append(a);
+            if(!preview&&(page==='home'||page==='missions'||(st.id.startsWith('OWNER:station:')&&page==='decisions')||(selected==='HERMES'&&page==='business'&&['HERMES','SHOWROOM','ADS183','PUBLISH183','ANALYTICS183'].includes(floorId)))){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
+            if(!preview)links.append(a);
         }out.append(links);
     }
     function restoreLocation(){
@@ -200,7 +202,7 @@
     }
     function currentFloor(){return byId.get(selected)?.floors.find(f=>f.id===floorId);}
     function openLift(id){if(!byId.has(id))return;clearFlows();if(id!==selected)lastFloor=null;else if(scene==='room')lastFloor=floorId;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-view').querySelector('button')?.focus();}
-    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;if(id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
+    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;if(!preview&&id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
     function openCampus(){scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();document.querySelector('[data-building="'+selected+'"]')?.focus();}
     function tower(b){return art.tower(b,lastFloor);}
     function highlightFloor(id){

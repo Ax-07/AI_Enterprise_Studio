@@ -304,8 +304,46 @@ def smoke_commands():
         finally:srv.shutdown();srv.server_close();thread.join()
     print('Campus D04.4 command smoke passed')
 
+def smoke_preview():
+    import tempfile
+    from pathlib import Path
+    from preview_campus import PreviewHandler
+    with tempfile.TemporaryDirectory() as d,patch.object(s,'DB',Path(d)/'db.sqlite3'):
+        s.init()
+        before=s.DB.read_bytes()
+        srv=s.ThreadingHTTPServer(('127.0.0.1',0),PreviewHandler)
+        th=threading.Thread(target=srv.serve_forever,daemon=True);th.start()
+        port=srv.server_address[1];base=f'http://127.0.0.1:{port}'
+        try:
+            with patch.object(s,'PORT',port),patch.object(s,'request',side_effect=AssertionError('No provider')) as network,sync_playwright() as pw:
+                browser=pw.chromium.launch(headless=True)
+                page=browser.new_page()
+                errors=[];posts=[]
+                page.on('pageerror',lambda e:errors.append(str(e)))
+                page.on('request',lambda r:posts.append(r.url) if r.method=='POST' else None)
+                page.route('**/*',lambda r:r.continue_() if r.request.url.startswith(base+'/') else r.abort())
+                page.goto(base+'/campus/live/')
+                expect(page.locator('#status')).to_contain_text('Connecté')
+                expect(page.locator('#preview-notice')).to_be_visible()
+                expect(page.locator('#legacy-entry')).to_be_hidden()
+                page.locator('#campus-map [data-building="ATLAS"]').focus()
+                page.keyboard.press('Enter')
+                page.locator('#lift-view [data-floor="OWNER"]').click()
+                page.locator('#room-view [data-station="OWNER:station:2"]').click()
+                expect(page.locator('[data-commands]')).to_have_count(0)
+                expect(page.locator('[data-module]')).to_have_count(0)
+                page.locator('[data-native="owner"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Solde local estimé')
+                assert not posts and not errors,(posts,errors)
+                network.assert_not_called()
+                browser.close()
+                assert s.DB.read_bytes()==before
+        finally:srv.shutdown();srv.server_close();th.join()
+    print('D08.2 read-only preview smoke passed')
+
 if __name__=='__main__':
     smoke()
     smoke_live()
     smoke_commands()
+    smoke_preview()
 

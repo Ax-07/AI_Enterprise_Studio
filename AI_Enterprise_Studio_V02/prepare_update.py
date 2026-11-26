@@ -1,4 +1,5 @@
 """Offline, side-by-side upgrade: local copies only. Python 3.11+."""
+from contextlib import closing
 import argparse
 import hashlib
 import json
@@ -24,12 +25,12 @@ def readonly(path):
 def quote(name):
     return '"'+name.replace('"','""')+'"'
 def integrity(path):
-    with readonly(path) as db:
+    with closing(readonly(path)) as db:
         if db.execute('PRAGMA integrity_check').fetchall()!=[('ok',)]:
             raise ValueError('Intégrité SQLite non confirmée')
 def fingerprint(path,columns=None):
     result={}
-    with readonly(path) as db:
+    with closing(readonly(path)) as db:
         names={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         for name,excluded in PROTECTED.items():
             if name not in names:
@@ -49,7 +50,7 @@ def clone_db(src,dst):
     deadline=time.monotonic()+60
     def progress(status,remaining,total):
         if time.monotonic()>deadline:raise TimeoutError('Sauvegarde SQLite trop longue')
-    with readonly(src) as old,sqlite3.connect(dst) as new:
+    with closing(readonly(src)) as old,closing(sqlite3.connect(dst)) as new:
         old.backup(new,pages=128,progress=progress,sleep=.05)
     integrity(dst)
 def assert_offline():
@@ -68,7 +69,7 @@ def copy_runtime(candidate,target):
         if d.is_dir():
             if d.is_symlink() or any(x.is_symlink() for x in d.rglob('*')):raise ValueError('Lien symbolique non autorisé dans le paquet')
             shutil.copytree(d,target/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc','.env*','config.json','*.sqlite3*','*.db','*.pem','*.key'))
-    for name in ('serveur.py','index.html','interface/live.html','interface/manifest.json'):
+    for name in ('serveur.py','index.html','preview_campus.py','LANCER_APERCU.bat','interface/live.html','interface/manifest.json'):
         if not (target/name).is_file():raise ValueError('Paquet incomplet : '+name)
 def init_copy(target):
     script="""import sys, pathlib

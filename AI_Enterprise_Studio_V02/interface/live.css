@@ -58,3 +58,5 @@
 .team-slot:hover,.team-slot:focus-visible{background:#20374d;border-color:#92dcff;filter:brightness(1.12)}
 @media(max-width:620px){.lift-layout{grid-template-columns:1fr}.lift-tower{max-height:190px}.floor-list button{min-height:44px}}
 @media(prefers-reduced-motion:reduce){.live-hit,.building-halo,.live-label-bg,.room-hit,.floor-list button,.lift-tower .level181{transition:none}.floor-list button:hover,.floor-list button:focus-visible{transform:none}}
+
+.preview-notice{border:1px solid #e9bd66;color:#ffe4a2;background:#30291b;font-weight:650}.preview-notice[hidden],#legacy-entry[hidden]{display:none!important}
