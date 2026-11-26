@@ -40,6 +40,30 @@ def fixture_marketing(path):
             module.init(db)
 
 class CampusLiveTests(unittest.TestCase):
+    def test_workforce_projection(self):
+        import campus_tools
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'test.db';fixture(path)
+            with sqlite3.connect(path) as db:
+                db.execute("INSERT INTO tasks(id,mission,agent,state,created,goal,parent) VALUES(3,1,'ORION','prête','2026-01-01','secret-child',1)")
+                db.execute("UPDATE tasks SET state='prête' WHERE id=1")
+                db.execute("UPDATE missions SET step=3 WHERE id=1")
+            before=path.read_bytes()
+            result=campus_tools.read(path,'workforce',{},roles=s.moteur.ROLES,permissions=s.moteur.PERMS)
+            self.assertTrue(result['read_only'])
+            summary=result['rows'][0]
+            self.assertEqual(summary['configured'],8)
+            self.assertEqual(summary['unresolved'],2)
+            self.assertEqual(summary['delegation_count'],1)
+            agents={r['id']:r for r in result['rows'] if r['kind']=='agent'}
+            self.assertEqual(agents['MNEMOS']['load'],[{'mode':'cloud','category':'dependency','count':1}])
+            self.assertEqual(agents['ORION']['load'],[{'mode':'cloud','category':'selected','count':1}])
+            self.assertEqual(agents['PROMETHEUS']['load'],[])
+            edge=result['rows'][-1]
+            self.assertEqual((edge['from_agent'],edge['to_agent']),('MNEMOS','ORION'))
+            self.assertNotIn('secret-',json.dumps(result))
+            self.assertEqual(path.read_bytes(),before)
+
     def test_marketing_fixture_read_only(self):
         import campus_tools
         with tempfile.TemporaryDirectory() as d:

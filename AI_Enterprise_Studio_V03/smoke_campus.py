@@ -47,7 +47,7 @@ def smoke():
             known={st['id'] for b in connected for f in b['floors'] for st in f['stations']}
             assert set(modules['stations'])<=known
             assert set(modules['native'])<=known
-            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure','economy','business','marketing'}
+            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure','economy','business','marketing','workforce'}
             assert {p for ps in modules['stations'].values() for p in ps}==set(modules['pages'])
             assert len(modules['pages'])==14
             assert 'VIDEO183:station:1' not in modules['stations']
@@ -218,6 +218,12 @@ def smoke_live():
                 with page.expect_download() as dl:
                     page.locator('#native-tool button',has_text='Télécharger le fichier original').click()
                 assert Path(dl.value.path()).read_text()=='secret-test'
+                page.locator('#buildings button[data-id="ATLAS"]').click()
+                page.locator('#lift-view [data-floor="PEOPLE17"]').click()
+                page.locator('#room-view [data-station="PEOPLE17:station:0"]').click()
+                page.locator('[data-native="workforce"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('MNEMOS → ORION')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Sélectionnée par le moteur')
                 page.locator('#buildings button[data-id="HERMES"]').click()
                 expect(page.locator('#lift-view [data-floor]')).to_have_count(8)
                 page.locator('#lift-view [data-floor="VIDEO183"]').click()

@@ -135,3 +135,8 @@ O03.2 CI 45871476244 entièrement réussie ; O03.3 commit 4779c4d9, CI 458731033
 
 ### O03.4 — validation intégrée du bureau propriétaire
 Complément aux tests HTTP, Python et Chromium précédents : scénario navigateur exécuté par les deux vues live/original, avec campagne et plan liés à une autorisation suspendue, dépenses mesurées et réservées, quota Brave. Lecture de la filiation et avertissement de non-addition, pas de divulgation de requête, aucune reprise manuelle proposée ; annulation de la révocation sans POST ni mutation, confirmation de la révocation via route existante, conservation de l'historique et des engagements. Aucun appel fournisseur ; aucun code de production modifié. CI complète requise avant de déclarer O03 achevée. La validation sur l'installation réelle du propriétaire reste distincte.
+
+O03.3 CI 45873103366 réussie ; O03.4 commit 011db26f, CI 45873857610 en cours lors de la préparation.
+
+### O04.1 — charge et collaborations enregistrées
+Le moteur actuel délègue via ATLAS uniquement et sélectionne les tâches prêtes dont les enfants sont terminés ; quotas et protections restent inchangés. Projection workforce en lecture seule : charge par agent et mode, états bloqués/en attente/dépendance/sélection, 50 dernières délégations persistées et total, permissions statiques distinctes de compétences et de disponibilité. Aucune affectation ni appel IA, aucun objectif, résultat ou texte de tâche exposé. Quatre postes enrichis (PEOPLE17 0/1 et COMMS 0/1), deux nouvellement raccordés, 135/185. Mobilisation, mesure de compétences et formation restent à développer. Test fixture et navigation Chromium ajoutés. CI requise avant fusion.
