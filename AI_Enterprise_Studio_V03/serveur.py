@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from infrastructure.configuration import load_config
 from infrastructure.database import transaction
-from infrastructure import providers, security
+from infrastructure import providers, security, diagnostics
 import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, campus_tools, campus_commands, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
@@ -99,7 +99,7 @@ def call_model(mid, agent, prompt, cfg, maxout=8192, stage=None, *, schema=None,
     if refused_budget is not None:raise RuntimeError(refused_budget)
     try: r=request('https://api.openai.com/v1/responses',{'Authorization':'Bearer '+cfg['key']},body)
     except Exception as e:
-        diag='HTTP '+str(e.code) if isinstance(e,urllib.error.HTTPError) else type(e).__name__
+        diag=diagnostics.transport_error(e)
         with db() as c: c.execute("UPDATE ledger SET state='à rapprocher',diagnostic=? WHERE id=?",(diag,rid))
         raise RuntimeError(agent+' : appel OpenAI non confirmé; réservation conservée. '+diag) from None
     it,ot,rt,reason,status_api,refused,diag=providers.response_usage(r)
@@ -109,7 +109,7 @@ def call_model(mid, agent, prompt, cfg, maxout=8192, stage=None, *, schema=None,
     else:
         with db() as c: c.execute("UPDATE ledger SET state='à rapprocher',diagnostic=? WHERE id=?",(diag+' / usage absent',rid))
         raise RuntimeError(agent+' : usage API absent; réservation conservée. '+diag)
-    detail=f'{agent} : {diag} ; sortie {ot}/{maxout} tokens ; raisonnement {rt if rt is not None else "non communiqué"}. Aucun rapport accepté.'
+    detail=diagnostics.token_detail(agent+' : '+diag,ot,maxout,rt)+'. Aucun rapport accepté.'
     if refused: raise RuntimeError(detail)
     if status_api=='incomplete' and reason=='max_output_tokens': raise TokenLimit(detail)
     if status_api!='completed': raise RuntimeError(detail)
@@ -118,13 +118,13 @@ def call_model(mid, agent, prompt, cfg, maxout=8192, stage=None, *, schema=None,
     if not text.strip(): failure='sortie texte vide ou absente'
     else:
         try: value=json.loads(text)
-        except json.JSONDecodeError as e: failure=f'JSON non décodable (ligne {e.lineno}, colonne {e.colno})'
+        except json.JSONDecodeError as e: failure=diagnostics.invalid_json(e)
         else:
             valid=validator(value) if validator is not None else isinstance(value,dict) and set(value)=={'rapport','requetes','demandes'} and isinstance(value['rapport'],str) and value['rapport'].strip() and isinstance(value['requetes'],list) and all(isinstance(q,str) for q in value['requetes']) and isinstance(value['demandes'],list) and all(isinstance(d,dict) and set(d)=={'objet','justification','cout_estime','risques'} and all(isinstance(v,str) for v in d.values()) for d in value['demandes'])
             if not valid: failure='JSON décodable mais schéma non respecté'
     if failure:
         # Record only structural diagnostics, never the raw model output or secrets.
-        diagnostic=f'{failure} ; sortie {ot}/{maxout} tokens ; raisonnement {rt if rt is not None else "non communiqué"}'
+        diagnostic=diagnostics.token_detail(failure,ot,maxout,rt)
         with db() as c: c.execute('UPDATE ledger SET diagnostic=? WHERE id=?',(diagnostic,rid))
         raise InvalidModelOutput(agent+' : '+diagnostic+' ; aucune action acceptée.')
     return value
@@ -299,12 +299,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.route()=='/api/mission_diagnostic' and security.legacy_session_allowed(self.headers,SESSION):
                 mid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:
-                    mission=c.execute('SELECT * FROM missions WHERE id=?',(mid,)).fetchone()
-                    if not mission: raise ValueError('Mission absente')
-                    events=[dict(r) for r in c.execute('SELECT id,task,agent,action,substr(args,1,600) AS args,substr(result,1,800) AS result,ok,created FROM events WHERE mission=? ORDER BY id DESC LIMIT 100',(mid,))]
-                    tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=?',(mid,))]
-                    calls,cost=c.execute('SELECT COUNT(*),COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger WHERE mission=?',(mid,)).fetchone()
-                return self.send({'mission':dict(mission),'tasks':tasks,'events':events,'calls':calls,'estimated_usd':cost/1e6,'limit':'Extraits de journal local; vérifier avant partage.'})
+                    result=diagnostics.mission(c,mid)
+                return self.send(result)
             if self.route()=='/api/n8n_template' and security.legacy_session_allowed(self.headers,SESSION):
                 cap=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('capability',[''])[0]
                 files={n8n_bridge.HEALTH:'aes_health.json',n8n_bridge.METRICS:'aes_metrics.json',n8n_bridge.COMPARE:'aes_market_compare.json'}
