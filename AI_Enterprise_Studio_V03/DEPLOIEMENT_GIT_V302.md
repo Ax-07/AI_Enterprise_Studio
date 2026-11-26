@@ -16,8 +16,10 @@ Ces commandes constituent un modèle de procédure à exécuter uniquement aprè
 ~~~powershell
 $ErrorActionPreference = 'Stop'
 if ((git branch --show-current) -ne 'main') { throw 'Branche locale incorrecte' }
-if (git status --porcelain --untracked-files=no) { throw 'Modifications suivies présentes' }
-if (git ls-files -- AI_Enterprise_Studio_V03/config.json AI_Enterprise_Studio_V03/donnees) {
+$trackedStatus = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $trackedStatus) { throw 'État Git non confirmé ou modifications suivies présentes' }
+$trackedPrivate = git ls-files -- AI_Enterprise_Studio_V03/config.json AI_Enterprise_Studio_V03/donnees
+if ($LASTEXITCODE -ne 0 -or $trackedPrivate) {
     throw 'Données privées suivies : arrêt'
 }
 $old = (git rev-parse HEAD).Trim()
@@ -55,7 +57,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Intégrité SQLite non confirmée' }
 Write-Host 'Copie locale vérifiée ; aucune mise à jour ni aucun serveur démarré.'
 ~~~
 
-Le contrôle porte sur les fichiers copiés et SQLite, pas sur une restauration fonctionnelle complète. Les données supplémentaires, notamment le stockage TEST, restent au même emplacement dans l'installation. Si PowerShell, Python, Git ou les chemins ne correspondent pas, s'arrêter : ne pas contourner un échec. Aucun script de copie ne remplace la confirmation que toutes les écritures sont arrêtées.
+Le contrôle porte sur les fichiers copiés et SQLite, pas sur une restauration fonctionnelle complète. Les données supplémentaires, notamment le stockage TEST, restent au même emplacement dans l'installation. Si PowerShell, Python, Git ou les chemins ne correspondent pas, s'arrêter : ne pas contourner un échec. Un fichier OneDrive non hydraté ou un point de réanalyse peut provoquer un refus ; vérifier localement la disponibilité des fichiers et le type de lien avant de reprendre. Ne pas désactiver le contrôle. Aucun script de copie ne remplace la confirmation que toutes les écritures sont arrêtées.
 
 ## Mise à jour après livraison (pas avant)
 
@@ -70,8 +72,9 @@ if ($expected -notmatch '^[0-9a-f]{40}$') { throw 'Commit de livraison non confi
 if ((git rev-parse origin/main).Trim() -ne $expected) { throw 'Commit distant différent' }
 git merge-base --is-ancestor HEAD $expected
 if ($LASTEXITCODE -ne 0) { throw 'Historique divergent : aucune bascule' }
-if (git status --porcelain --untracked-files=no) { throw 'Changements locaux' }
-git merge --ff-only $expected
+$trackedStatus = git status --porcelain --untracked-files=no
+if ($LASTEXITCODE -ne 0 -or $trackedStatus) { throw 'État Git non confirmé ou changements locaux' }
+git merge --ff-only --no-overwrite-ignore $expected
 if ($LASTEXITCODE -ne 0) { throw 'Mise à jour refusée' }
 if ((git rev-parse HEAD).Trim() -ne $expected) { throw 'HEAD différent' }
 ~~~

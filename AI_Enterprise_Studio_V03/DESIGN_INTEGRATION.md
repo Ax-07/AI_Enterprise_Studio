@@ -173,3 +173,8 @@ Audit statique de live-layout et live-modules : 7 bâtiments, 37 étages, 185 po
 
 ### O05.2 — procédure de déploiement Git V03
 Documentation candidate adaptée à V03 déjà suivie : préconditions de livraison, arrêt effectif, copie privée complète hors dépôt, comparaison des empreintes et intégrité SQLite, mise à jour fast-forward au SHA livré uniquement, aperçu LANCER_DESIGN, décision distincte de démarrage opérationnel, repli sans perte d'engagements. Installation parallèle historique conservée et explicitement distinguée. Aucun script exécuté sur Windows, aucune sauvegarde réelle, aucune fusion ni mise à jour locale. Les commandes documentées restent à vérifier sur l'installation réelle ; ne pas les exécuter avant décision de livraison. O05.3 : bilan final et conditions de livraison.
+
+O04.6 : CI 45891834011 entièrement réussie, O04 validée en CI. O05.1 commit 80a8a16c, CI 45892267597 en cours lors de la rédaction ; O05.2 commit 3fccfdbc préparé hors branche.
+
+### O05.3 — bilan candidat et conditions de livraison
+BILAN_V302.md conserve le périmètre, les références, les validations acquises et les critères de décision. Aucune fusion ou mise en service implicite. Renforcement de la procédure documentaire : merge fast-forward sans écrasement des fichiers ignorés et arrêt explicite sur erreur des contrôles Git ; points de réanalyse OneDrive à examiner. Les commandes Windows ne sont pas testées localement. CI du candidat final requise, puis autorisation distincte de fusion et validation réelle. Aucun code moteur, schéma ou budget modifié.
