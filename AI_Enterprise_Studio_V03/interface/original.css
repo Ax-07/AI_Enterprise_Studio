@@ -1,0 +1,73 @@
+/* Original design.css remains authoritative. Only additions for real local data. */
+.original-shell #campus-map,.original-shell #lift-view,.original-shell #roomScene{width:100%;min-width:0}
+.original-shell .campus-map-svg{display:block;width:100%;max-height:600px;overflow:visible}
+/* Design 18.1 already applies the original day filter on .map-wrap. Do not apply it twice. */
+.original-shell .live-hd-art{filter:contrast(1.07) saturate(1.13);pointer-events:none}
+.original-shell .live-map-node{cursor:pointer;outline:none}
+.original-shell .live-hit{fill:transparent;stroke:transparent;stroke-width:1.8;pointer-events:all;transition:stroke .2s,fill .2s}
+.original-shell .live-map-node:hover .live-hit,.original-shell .live-map-node:focus-visible .live-hit{stroke:var(--accent);fill:var(--accent);fill-opacity:.07}
+.original-shell .building-halo{opacity:.1;transition:opacity .2s}
+.original-shell .live-map-node:hover .building-halo,.original-shell .live-map-node:focus-visible .building-halo{opacity:.8}
+.original-shell .live-domain-label{pointer-events:auto;cursor:pointer}.original-shell .live-domain-label text{pointer-events:none}.original-shell .live-label-bg{fill:#081625;fill-opacity:.96;stroke-width:1.1}
+.original-shell .live-map-node:hover .live-label-bg,.original-shell .live-map-node:focus-visible .live-label-bg{fill:#18374a;filter:drop-shadow(0 0 6px #6cdfff99)}
+.original-shell .map-label,.original-shell .map-subtitle,.original-shell .activity-label{text-anchor:middle;font-weight:750;fill:var(--accent);font-size:11.5px}.original-shell .map-subtitle{font-size:10.4px}
+.original-shell .activity-label{fill:#d0dfef;font-size:9px;font-weight:400}
+.original-shell [data-activity=selected],.original-shell [data-activity=running_recorded]{--state-color:#70dfb6}
+.original-shell [data-activity=queued]{--state-color:#79bdff}.original-shell [data-activity=waiting]{--state-color:#edc474}.original-shell [data-activity=blocked]{--state-color:#ff9988}.original-shell [data-activity=unknown]{--state-color:#788797}
+.original-shell #buildings .agent[aria-pressed=true]{background:#1b2c42;border-color:#34506c}.original-shell #buildings small{color:var(--state-color,var(--muted))}
+.original-shell .metric strong{color:var(--cyan);font-size:clamp(18px,2vw,25px)}.original-shell .metric small{display:block;letter-spacing:.07em;text-transform:uppercase;font-size:10px}
+.original-shell .entry{padding:8px 0;border-bottom:1px solid #22354a80;overflow-wrap:anywhere}.original-shell .entry b,.original-shell .entry small{display:block;font-size:11px}.original-shell .entry small,.original-shell .muted{font-size:10px;color:var(--muted)}
+.original-shell .owner-alert{margin:7px 0;border-left:2px solid var(--state-color,#8496a7);padding-left:6px}.original-shell .owner-alert b,.original-shell .owner-alert small,.original-shell .owner-alert a{display:block;font-size:10px}
+.original-shell a{color:#9ceaff}.original-shell .original-collaboration{margin-top:12px}.original-shell #collaborations,.original-shell #events,.original-shell #missions,.original-shell #artifacts{max-height:220px;overflow:auto}
+.original-shell #lift-view{padding:16px 20px 22px;background:radial-gradient(ellipse at 24% 45%,#16314a,#091522 64%)}
+.original-shell .lift-layout{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(215px,1.3fr);gap:14px;align-items:center}
+.original-shell .lift-tower-box{display:flex;flex-direction:column;align-items:center;min-width:0}.original-shell .lift-tower{width:100%;max-width:270px;max-height:450px;overflow:visible}.original-shell .lift-preview,.original-shell .lift-activity{font-size:11px;color:var(--muted);text-align:center}
+.original-shell .level181{opacity:.78;transition:filter .15s,opacity .15s}.original-shell .level181.focus181{filter:brightness(1.8) drop-shadow(0 0 5px var(--lift));opacity:1}
+.original-shell .floor-list{display:grid;gap:5px}.original-shell .floor-list button{width:100%;text-align:left;display:grid;grid-template-columns:41px minmax(0,1fr) 14px;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;border:1px solid #31465c;background:linear-gradient(120deg,#12263a,#0d1b2d);min-height:43px;transition:background .15s,border-color .15s,transform .15s}
+.original-shell .floor-list button:hover,.original-shell .floor-list button:focus-visible{background:#20374d;border-color:var(--lift);transform:translateX(-3px)}.original-shell .floor-list b,.original-shell .floor-list small{display:block;font-size:12px}.original-shell .floor-list small{font-size:10px;color:#9eb5c9}
+.original-shell .floor-number{height:31px;display:grid;place-items:center;border:1px solid #3d526c;border-radius:5px;background:#101a29;color:var(--lift);font-weight:700;font-size:12px}.original-shell .floor-arrow{color:var(--lift);font-size:18px}
+.original-shell #original-office>svg{width:100%;display:block;max-height:580px}.original-shell .office-switch{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 14px}.original-shell .office-switch small{font-size:10px;color:var(--muted)}
+.original-shell .seatScene16[aria-pressed=true]{filter:brightness(1.3) drop-shadow(0 0 5px #83deff80)}.original-shell .bot16,.original-shell .eye16,.original-shell .screenPulse16{animation:none!important}
+.original-shell #team-view{padding:10px 13px;border-top:1px solid #284258}.original-shell #team-view h3{font-size:12px;margin:0 0 5px}.original-shell #team-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:5px}
+.original-shell .team-slot,.original-shell .station-list button,.original-shell .native-actions button,.original-shell #native-tool button,.original-shell .module-links button{background:#101d30;border:1px solid #30445c;color:#b5c9df;border-radius:6px;padding:6px 8px;font-size:10px;text-align:left}
+.original-shell .team-slot svg{display:none}.original-shell .team-slot b,.original-shell .team-slot small,.original-shell .station-list b,.original-shell .station-list small{display:block;overflow-wrap:anywhere}.original-shell .team-slot small,.original-shell .station-list small{font-size:9px;color:var(--muted)}
+.original-shell .team-slot[aria-pressed=true],.original-shell .station-list button[aria-pressed=true]{border-color:#92dcff}.original-shell .station-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));padding:8px 12px;gap:5px}.original-shell .room-missing{padding:25px;color:var(--muted);text-align:center}
+.original-shell .room-art-frame{position:relative;aspect-ratio:1000/565}.original-shell .room-image{display:block;width:100%;height:100%;object-fit:fill;pointer-events:none}.original-shell .room-overlay{position:absolute;inset:0;width:100%;height:100%}.original-shell .room-hit{fill:transparent;stroke:transparent;stroke-width:1.8;pointer-events:all}.original-shell .live-room-station:hover .room-hit,.original-shell .live-room-station:focus-visible .room-hit,.original-shell .live-room-station[aria-pressed=true] .room-hit{stroke:var(--room);fill:var(--room);fill-opacity:.07}
+.original-shell .live-room-label{pointer-events:none}.original-shell .live-room-label rect{fill:#091827;stroke:var(--room)}.original-shell .live-room-label.lit rect{fill:#203c50;stroke-width:2}
+.original-shell .module-links,.original-shell .native-actions,.original-shell .native-form{display:flex;flex-wrap:wrap;gap:5px}.original-shell .native-results{max-height:400px;overflow:auto}.original-shell .native-results pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px}.original-shell #native-tool input{max-width:100%;background:#0e1b2b;border:1px solid #30445c;color:var(--text);padding:6px}
+.original-shell .flow-cloud{color:#79ebc5}.original-shell .flow-demo{color:#b8b0ff}.original-shell .flow-path{stroke:currentColor;stroke-width:2.5;stroke-dasharray:5 4}
+.original-shell .immersive .main{grid-template-columns:1fr}.original-shell .immersive .campus-map-svg{max-height:76vh}
+@media(max-width:620px){.original-shell .lift-layout{grid-template-columns:1fr}.original-shell .lift-tower{max-height:190px}}
+@media(prefers-reduced-motion:reduce){.original-shell .live-hit,.original-shell .level181,.original-shell .floor-list button{transition:none}.original-shell .floor-list button:hover{transform:none}.original-shell #live-flows{display:none}}
+
+/* Original 18.1 layer hierarchy and highlight, not a new visual treatment. */
+.original-shell .domain15.lit181 .tag{stroke-width:2.2;fill:#1c3549}.original-shell .domain15.lit181 text{filter:brightness(1.35)}
+.original-shell .live-map-node[aria-pressed=true] .building-halo{opacity:.5}.original-shell .live-map-node[aria-pressed=true]:hover .building-halo{opacity:.8}
+.original-shell .liftHero181{border-bottom:1px solid #34516a}.original-shell .liftTower181 svg{width:100%;max-width:270px;max-height:450px}
+.original-shell .campus-map-svg{aspect-ratio:1000/600;max-height:600px}.original-shell .immersive .campus-map-svg{max-height:76vh}
+.original-shell #doorTransition{pointer-events:none}
+
+/* Native vector room geometry from the original 22.6, no fictitious motion. */
+.original-shell .original-vector-room svg{display:block;width:100%;max-height:580px}
+.original-shell .original-vector-room .station{cursor:pointer;outline:none}.original-shell .original-vector-room .station:hover,.original-shell .original-vector-room .station:focus-visible,.original-shell .original-vector-room .station[aria-pressed=true]{filter:brightness(1.22) drop-shadow(0 0 4px #83deff45)}
+.original-shell .original-vector-room .stationLabel1631 rect{fill:#091827;stroke:var(--room);stroke-opacity:.7}.original-shell .original-vector-room .stationLabel1631.linkedHover1631 rect{fill:#203c50;stroke-opacity:1;stroke-width:2.2}.original-shell .original-vector-room .room-screen{animation:none!important}
+
+/* F04: original label ancestors are passive; explicitly enable the clickable face. */
+.original-shell #original-signs .domain15 .label-bg{pointer-events:all;cursor:pointer}
+.original-shell #original-signs .domain15 text{pointer-events:none}
+.original-shell #roomScene[data-tab161=scene] #team-slots{display:none}
+.original-shell #roomScene[data-tab161=scene] #team-view{padding:9px 14px}
+.original-shell #roomScene[data-tab161=team] #team-slots{display:grid}
+.original-shell #roomScene .room-caption strong{color:var(--cyan)}
+.original-shell #function-detail #station-detail{margin-top:16px;padding:14px;border:1px solid #365166;border-radius:9px;background:#0c1928}
+.original-shell #function-detail .native-results{max-height:520px}
+.original-shell #roomScene .action161 b,.original-shell #roomScene .action161 small{display:block;overflow-wrap:anywhere}
+.original-shell #roomScene .action161 b{font-size:12px}.original-shell #roomScene .action161 small{margin-top:5px;font-size:11px;color:#a8bfd1}.original-shell #roomScene .action161 .actionMeta161{font-size:10px;color:var(--cyan)}
+.original-shell #function-summary{font-size:12px;color:#9be2f5}.original-shell #roomScene .actionArrow161{color:var(--cyan);font-size:18px}
+.original-shell #function-detail #native-tool button{font-size:12px}.original-shell #function-detail .entry b,.original-shell #function-detail .entry small{font-size:12px}
+
+/* Global navigation: the original full-width view, using the same native read panel. */
+.original-shell #otherView .native-results{max-height:65vh;overflow:auto}.original-shell #otherView .entry b,.original-shell #otherView .entry small{font-size:13px}.original-shell #otherView .native-actions button,.original-shell #otherView #native-tool button{font-size:12px;padding:9px 12px}.original-shell #otherView #station-title{display:none}.original-shell #otherView #native-tool h3{font-size:16px}.original-shell #otherView .native-results pre{font-size:12px}
+
+/* Original five economy cards plus a matching operational band, no fabricated revenue. */
+.original-shell .kpi-heading{margin:0 0 5px 2px;color:#9ab7cf}.original-shell .kpi-band .metrics{margin-bottom:9px}.original-shell .kpi-band .metric{min-width:0;overflow-wrap:anywhere}.original-shell .kpi-band .metric strong{font-size:clamp(18px,2vw,25px)}.original-shell .kpi-band .metric strong.green{color:var(--green)}.original-shell .kpi-band .metric strong.gold{color:var(--gold)}.original-shell .kpi-band .metric strong.cyan{color:var(--cyan)}.original-shell .kpi-band .metric strong.kpi-unavailable{color:var(--muted)}.original-shell .kpi-band .track{margin:5px 0}

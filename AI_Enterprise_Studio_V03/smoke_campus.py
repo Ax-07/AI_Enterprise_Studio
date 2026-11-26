@@ -341,9 +341,201 @@ def smoke_preview():
         finally:srv.shutdown();srv.server_close();th.join()
     print('D08.2 read-only preview smoke passed')
 
+def smoke_original():
+    import tempfile
+    from pathlib import Path
+    from preview_campus import PreviewHandler
+    with tempfile.TemporaryDirectory() as d,patch.object(s,'DB',Path(d)/'db.sqlite3'):
+        s.init()
+        before=s.DB.read_bytes()
+        srv=s.ThreadingHTTPServer(('127.0.0.1',0),PreviewHandler)
+        th=threading.Thread(target=srv.serve_forever,daemon=True);th.start()
+        port=srv.server_address[1];base=f'http://127.0.0.1:{port}'
+        try:
+            with patch.object(s,'PORT',port),patch.object(s,'request',side_effect=AssertionError('No provider')) as network,sync_playwright() as pw:
+                browser=pw.chromium.launch(headless=True)
+                page=browser.new_page(viewport={'width':1600,'height':1000})
+                errors=[];posts=[];requests=[]
+                page.on('pageerror',lambda e:errors.append(str(e)))
+                page.on('request',lambda r:(requests.append(r.url),posts.append(r.url) if r.method=='POST' else None))
+                page.route('**/*',lambda r:r.continue_() if r.request.url.startswith(base+'/') else r.abort())
+                page.goto(base+'/campus/original/')
+                expect(page.locator('#status')).to_contain_text('Connecté')
+                expect(page.locator('.main > aside')).to_have_count(2)
+                expect(page.locator('#metrics .metric')).to_have_count(5)
+                expect(page.locator('#economic-metrics .metric')).to_have_count(5)
+                for k in ('revenue','profit','api-today'):
+                    expect(page.locator('[data-kpi="'+k+'"] strong')).to_have_text('—')
+                expect(page.locator('[data-kpi="workforce"] strong')).to_have_text('8')
+                expect(page.locator('[data-kpi="campaigns"] strong')).to_have_text('0 / 0')
+                expect(page.locator('[data-kpi="budget"] strong')).not_to_have_text('—')
+                expect(page.locator('[data-kpi="commitment"] [role="meter"]')).to_have_count(1)
+                expect(page.locator('#buildings .agent')).to_have_count(7)
+                expect(page.locator('script[src="/campus/design.js"]')).to_have_count(0)
+                assert page.locator('meta[name="campus-command-session"]').get_attribute('content')==''
+                target=os.getenv('AES_CAMPUS_SCREENSHOTS')
+                def capture(name):
+                    if target:
+                        directory=Path(target);directory.mkdir(parents=True,exist_ok=True)
+                        page.screenshot(path=str(directory/(name+'.png')),animations='disabled',full_page=True)
+                capture('F01-campus-original')
+                # Exact original 22.6 label geometry, layer separation and day/night source.
+                compare=browser.new_page(viewport={'width':1600,'height':1000})
+                compare.route('**/*',lambda r:r.continue_() if r.request.url.startswith(base+'/') else r.abort())
+                compare.goto(base+'/campus/')
+                expect(compare.locator('#labels .domain15')).to_have_count(7)
+                for building in ['ATLAS','ORION','NEXUS','MIDAS','HERMES','SENTINEL','CORE']:
+                    ref=compare.locator('#labels [data-id="'+building+'"] .label-bg')
+                    actual=page.locator('#original-signs [data-id="'+building+'"] .label-bg')
+                    for attr in ['x','y','width','height','rx']:
+                        assert abs(float(ref.get_attribute(attr))-float(actual.get_attribute(attr)))<.001,(building,attr)
+                # Paired real browser evidence: same viewport, same original art, no
+                # numerical pixel threshold on legitimate differences in business data.
+                if 'day' not in (compare.locator('#campusPanel').get_attribute('class') or '').split():
+                    compare.locator('#dayBtn').click()
+                expect(compare.locator('#hdDecor image')).to_have_attribute('href','/campus/assets/campus_1_1.webp')
+                assert page.locator('#original-skyline path').count()==compare.locator('#skyline path').count()
+                assert page.locator('#original-skyline rect').count()==compare.locator('#skyline rect').count()
+                expect(page.locator('#original-skyline > g')).to_have_attribute('opacity','0.4')
+                for prop in ['background-image','filter']:
+                    assert compare.locator('#mapWrap').evaluate('(e,p)=>getComputedStyle(e)[p]',prop)==page.locator('#mapWrap').evaluate('(e,p)=>getComputedStyle(e)[p]',prop),prop
+                if target:
+                    compare.screenshot(path=str(Path(target)/'F05-reference-jour.png'),animations='disabled',full_page=True)
+                capture('F05-connecte-jour')
+                compare.locator('#dayBtn').click()
+                expect(compare.locator('#hdDecor image')).to_have_attribute('href','/campus/assets/campus_1_0.webp')
+                if target:
+                    compare.screenshot(path=str(Path(target)/'F05-reference-nuit.png'),animations='disabled',full_page=True)
+                page.locator('#day-toggle').click()
+                expect(page.locator('#original-skyline > g')).to_have_attribute('opacity','0.8')
+                capture('F05-connecte-nuit')
+                page.locator('#day-toggle').click()
+                # Original tower and interior on the same department as the connected one.
+                compare.locator('#roster [data-agent="NEXUS"]').click()
+                # Original roster may only select when on campus; use the real building control.
+                if not compare.locator('#elevator181').is_visible():
+                    compare.locator('#buildings [data-id="NEXUS"]').first.focus()
+                    compare.keyboard.press('Enter')
+                expect(compare.locator('#elevator181')).to_be_visible()
+                if target:
+                    compare.screenshot(path=str(Path(target)/'F05-reference-ascenseur.png'),animations='disabled',full_page=True)
+                compare.locator('#elevator181 [data-floor181="NEXUS"]').click()
+                expect(compare.locator('#roomScene svg.office16')).to_be_visible()
+                if target:
+                    compare.screenshot(path=str(Path(target)/'F05-reference-bureau.png'),animations='disabled',full_page=True)
+                compare.close()
+                page.locator('#day-toggle').click()
+                expect(page.locator('#campus-decor')).to_have_attribute('href','/campus/assets/campus_1_0.webp')
+                capture('F02-campus-nuit')
+                page.locator('#day-toggle').click()
+                expect(page.locator('#campus-decor')).to_have_attribute('href','/campus/assets/campus_1_1.webp')
+                sign=page.locator('#original-signs [data-id="NEXUS"]')
+                page.locator('#campus-map [data-building="NEXUS"]').focus()
+                expect(sign).to_have_class(re.compile('lit181'))
+                capture('F02-campus-survol')
+                sign.locator('.label-bg').click()
+                expect(page.locator('#lift-view .liftHero181')).to_contain_text('ACCÈS VERTICAL / NEXUS')
+                page.locator('#lift-view [data-floor="NEXUS"]').hover()
+                expect(page.locator('#lift-view [data-level-id="NEXUS"]')).to_have_class(re.compile('focus181'))
+                capture('F02-ascenseur')
+                capture('F05-connecte-ascenseur')
+                page.locator('#campus-back').click()
+                page.locator('#focus-toggle').click()
+                expect(page.locator('#campusView')).to_have_class(re.compile('immersive'))
+                capture('F02-immersion')
+                page.locator('#focus-toggle').click()
+                for building,floor,count in [('NEXUS','NEXUS',8),('CORE','CORE',7)]:
+                    page.locator('#buildings button[data-id="'+building+'"]').click()
+                    page.locator('#lift-view [data-floor="'+floor+'"]').click()
+                    expect(page.locator('#original-office svg.office16')).to_be_visible()
+                    expect(page.locator('#original-office [data-seat16]')).to_have_count(count)
+                    if building=='NEXUS':
+                        capture('F01-bureau-nexus')
+                        capture('F05-connecte-bureau')
+                        page.locator('#original-office [data-seat16="director"]').focus()
+                        page.keyboard.press('Enter')
+                        expect(page.locator('#team-detail')).to_contain_text('NEXUS')
+                        page.locator('.office-switch button').click()
+                        expect(page.locator('#room-view img')).to_be_visible()
+                    else:
+                        capture('F01-bureau-core')
+                        page.locator('#original-office [data-seat16="1"]').focus()
+                        page.keyboard.press('Enter')
+                        expect(page.locator('#team-detail')).to_contain_text('MNEMOS')
+                    page.locator('#campus-back').click()
+                # Every existing floor keeps its five station controls; the ten original
+                # vector-only services now expose their actual five interactive objects.
+                layout=page.evaluate('window.AESLiveLayout')
+                visited=0;vector=0
+                for building in layout:
+                    for floor in building['floors']:
+                        page.locator('#buildings button[data-id="'+building['id']+'"]').click()
+                        page.locator('#lift-view [data-floor="'+floor['id']+'"]').click()
+                        expect(page.locator('#room-view .station-list button')).to_have_count(5)
+                        if not floor['asset']:
+                            graphic=page.locator('#room-view .original-vector-room')
+                            expect(graphic).to_be_visible()
+                            expect(graphic.locator('[data-room-station]')).to_have_count(5)
+                            for i in range(5):
+                                station_target=graphic.locator('[data-room-station="'+floor['id']+':station:'+str(i)+'"]')
+                                station_target.focus()
+                                page.keyboard.press('Enter')
+                                expect(station_target).to_have_attribute('aria-pressed','true')
+                                expect(page.locator('#station-title')).to_have_text(floor['stations'][i]['name'])
+                            vector+=1
+                            if floor['id'] in ('VIDEO183','ITOPS17','PEOPLE17'):
+                                capture('F03-'+floor['id'])
+                        visited+=1
+                        page.locator('#campus-back').click()
+                assert (visited,vector)==(37,10),(visited,vector)
+                page.locator('#buildings button[data-id="ATLAS"]').click()
+                page.locator('#lift-view [data-floor="ATLAS"]').click()
+                expect(page.locator('#room-tabs [role="tab"]:not([hidden])')).to_have_count(4)
+                page.locator('#tab-scene').focus()
+                page.keyboard.press('ArrowRight')
+                expect(page.locator('#tab-functions')).to_have_attribute('aria-selected','true')
+                expect(page.locator('#room-functions')).to_be_visible()
+                expect(page.locator('#room-view')).to_be_hidden()
+                expect(page.locator('#function-cards [data-function-tool="missions"]')).to_have_count(1)
+                page.locator('#function-cards [data-function-tool="missions"]').click()
+                expect(page.locator('#function-detail #native-tool')).to_be_visible()
+                expect(page.locator('#native-tool h3')).to_contain_text('Missions')
+                expect(page.locator('#native-tool [role="status"]')).to_contain_text('résultat')
+                capture('F04-fonctions-metier')
+                page.locator('#tab-team').click()
+                expect(page.locator('#team-view')).to_be_visible()
+                expect(page.locator('#room-functions')).to_be_hidden()
+                capture('F04-equipe')
+                page.locator('#tab-settings').click()
+                expect(page.locator('#room-options')).to_be_visible()
+                page.locator('#room-options summary').click()
+                expect(page.locator('#option-stations button')).to_have_count(5)
+                capture('F04-options')
+                page.locator('#tab-scene').click()
+                expect(page.locator('#room-view')).to_be_visible()
+                page.locator('#campus-back').click()
+                page.locator('.top [data-view="finance"]').click()
+                expect(page.locator('#native-tool')).to_be_visible()
+                expect(page.locator('#native-tool h3')).to_contain_text('Dépenses API')
+                expect(page.locator('#otherView')).to_be_visible()
+                expect(page.locator('#campusView')).to_be_hidden()
+                expect(page.locator('#top-tool-host #native-tool')).to_be_visible()
+                capture('F05-navigation-finances')
+                page.locator('#back-top-tool').click()
+                expect(page.locator('#campusView')).to_be_visible()
+                expect(page.locator('#otherView')).to_be_hidden()
+                assert not posts and not errors,(posts,errors)
+                assert not any('/campus/design.js' in url for url in requests)
+                network.assert_not_called()
+                browser.close()
+                assert s.DB.read_bytes()==before
+        finally:srv.shutdown();srv.server_close();th.join()
+    print('F01 original design smoke passed')
+
 if __name__=='__main__':
     smoke()
     smoke_live()
     smoke_commands()
     smoke_preview()
+    smoke_original()
 

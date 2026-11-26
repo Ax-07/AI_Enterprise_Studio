@@ -54,6 +54,22 @@ def snapshot(path, agents, budget, version):
         used=db.execute("SELECT COALESCE(SUM(COALESCE(actual,reserved,0)),0) FROM ledger").fetchone()[0]
         waiting=db.execute("SELECT COUNT(*) FROM requests WHERE state='en attente'").fetchone()[0]
         attention=rows("SELECT id,mode,state FROM missions WHERE state IN ('bloquée','en attente') ORDER BY id DESC LIMIT 20")
+        # Financial indicators are deliberately not inferred from TEST receipts,
+        # API reservations or an incomplete accounting ledger. No provider calls.
+        tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('business_receipts','campaigns')")}
+        declared=None
+        if 'business_receipts' in tables:
+            receipt=db.execute("""SELECT COUNT(*) AS count,
+                COALESCE(SUM(CASE WHEN kind='payment' THEN amount_cents ELSE -amount_cents END),0) AS net
+                FROM business_receipts WHERE mode='owner_declared_live' AND kind IN ('payment','refund')""").fetchone()
+            declared={'count':receipt['count'],'net_cents':receipt['net']}
+        campaigns=None
+        if 'campaigns' in tables:
+            campaign=db.execute("SELECT COUNT(*) AS total,COALESCE(SUM(CASE WHEN state='actif' THEN 1 ELSE 0 END),0) AS active FROM campaigns").fetchone()
+            campaigns={'active':campaign['active'],'total':campaign['total']}
+        kpi={'currency':'EUR','verified_revenue_cents':None,'net_profit_cents':None,
+             'net_margin_percent':None,'declared_receipts_all_time':declared,
+             'campaigns':campaigns,'api_today_micro_usd':None}
         return {'schema':'aes.campus.read.v1','version':version,'source':'local_sqlite',
             'generated_at':datetime.now(timezone.utc).isoformat(),'read_only':True,
             'activity':{'schema_version':1,'delegations':delegations,'delegation_limit':30},
@@ -64,6 +80,7 @@ def snapshot(path, agents, budget, version):
             'unmapped_agents':[{'id':a,'role':role} for a,role in agents.items()
                 if not any(a in ids for ids in BUILDINGS.values())],
             'budget':{'currency':'USD','limit_micro_usd':budget,'committed_estimate_micro_usd':used},
+            'enterprise_kpi':kpi,
             'pending_requests':waiting,'mission_counts':mission_counts,'attention_missions':attention,
             'missions':missions,'tasks':tasks,'events':events,'artifacts':artifacts}
     finally:

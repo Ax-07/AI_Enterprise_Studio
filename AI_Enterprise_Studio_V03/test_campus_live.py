@@ -49,11 +49,31 @@ class CampusLiveTests(unittest.TestCase):
             self.assertEqual(snap['budget']['committed_estimate_micro_usd'],4000)
             self.assertEqual(snap['artifacts'][0]['mode'],'demo')
             self.assertEqual(snap['pending_requests'],1)
+            self.assertIsNone(snap['enterprise_kpi']['campaigns'])
+            self.assertIsNone(snap['enterprise_kpi']['declared_receipts_all_time'])
             self.assertNotIn('secret-test',json.dumps(snap))
             self.assertEqual(path.read_bytes(),before)
             missing=Path(d)/'missing.db'
             with self.assertRaises(sqlite3.OperationalError):campus_live.snapshot(missing,s.AGENTS,0,s.VERSION)
             self.assertFalse(missing.exists())
+
+    def test_enterprise_kpi_excludes_test_and_unknowns(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'test.db';fixture(path)
+            with sqlite3.connect(path) as db:
+                db.executescript("""
+                CREATE TABLE campaigns(state TEXT);
+                INSERT INTO campaigns VALUES('actif'),('terminé'),('interrompu');
+                CREATE TABLE business_receipts(mode TEXT,kind TEXT,amount_cents INTEGER);
+                INSERT INTO business_receipts VALUES('test','payment',999999),('owner_declared_live','payment',3500),('owner_declared_live','refund',500);
+                """)
+            before=path.read_bytes()
+            k=campus_live.snapshot(path,s.AGENTS,4000000,s.VERSION)['enterprise_kpi']
+            self.assertEqual(k['campaigns'],{'active':1,'total':3})
+            self.assertEqual(k['declared_receipts_all_time'],{'count':2,'net_cents':3000})
+            for key in ('verified_revenue_cents','net_profit_cents','net_margin_percent','api_today_micro_usd'):
+                self.assertIsNone(k[key])
+            self.assertEqual(path.read_bytes(),before)
 
     def test_http_read_only_boundary(self):
         with tempfile.TemporaryDirectory() as d:

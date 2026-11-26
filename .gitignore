@@ -1,0 +1,27 @@
+# Private local runtime data (never publish)
+**/config.json
+**/donnees/
+**/PREPARATION.json
+**/BUILD_INFO.json
+**/__pycache__/
+*.py[cod]
+**/.env
+**/.env.*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.pem
+*.key
+*.pfx
+*.p12
+*.dpapi
+# Local migration, patch and attachment copies
+/AI_Enterprise_Studio_V03_TEMP/
+/AI_Enterprise_Studio_V03-sauvegarde*/
+/AI_Enterprise_Studio_V03-rattachement*/
+/CORRECTIF_V301/
+/.aes-update-*/
+/.aes-design-backup-*/

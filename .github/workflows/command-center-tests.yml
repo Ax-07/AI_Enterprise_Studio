@@ -3,7 +3,7 @@ on:
   push:
     branches: [main, 'feature/**', 'fix/**']
   pull_request:
-    branches: [main, 'feature/v0.5.1-acquisition']
+    branches: [main, 'feature/v0.5.1-acquisition', 'feature/v3.0.0-campus']
 permissions:
   contents: read
 jobs:
@@ -31,6 +31,8 @@ jobs:
           node --check interface/live-layout.js
           node --check interface/live-teams.js
           node --check interface/live-art.js
+          node --check interface/original-office.js
+          node --check interface/original-rooms.js
           node --check interface/live-modules.js
           node --check interface/live-tools.js
           node --check interface/live-commands.js
@@ -83,6 +85,30 @@ jobs:
         run: docker tag aes-verifier:0.3.0 aes-lab:0.3.8
       - name: Laboratory real browser benchmark
         run: python smoke_laboratory.py
+      - name: Design patch against exact V3.0.0 files
+        run: |
+          mkdir -p "$RUNNER_TEMP/aes-design-baseline"
+          git -C "$GITHUB_WORKSPACE" archive f97478171bc865fdfa156b25090cc5a61e3615e6 AI_Enterprise_Studio_V03 | tar -x -C "$RUNNER_TEMP/aes-design-baseline"
+          target="$RUNNER_TEMP/aes-design-baseline/AI_Enterprise_Studio_V03"
+          cp -r "$RUNNER_TEMP/AI_Enterprise_Studio_V03/donnees" "$target/"
+          cp "$RUNNER_TEMP/AI_Enterprise_Studio_V03/PREPARATION.json" "$target/"
+          printf '{"fixture":"private-local-config"}' > "$target/config.json"
+          sha256sum "$target/donnees/enterprise.sqlite3" "$target/config.json" "$target/PREPARATION.json" > "$RUNNER_TEMP/design-private.sha256"
+          python build_design_patch.py "$RUNNER_TEMP/AI_Enterprise_Studio_V3.0.1_Design.zip"
+          python -m zipfile -e "$RUNNER_TEMP/AI_Enterprise_Studio_V3.0.1_Design.zip" "$RUNNER_TEMP/design-patch"
+          python "$RUNNER_TEMP/design-patch/apply_design_patch.py" --target "$target" --confirm-offline
+          sha256sum -c "$RUNNER_TEMP/design-private.sha256"
+          python "$RUNNER_TEMP/design-patch/apply_design_patch.py" --target "$target" --confirm-offline --restore
+          sha256sum -c "$RUNNER_TEMP/design-private.sha256"
+          test ! -f "$target/interface/original.html"
+      - name: Upload tested design patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Enterprise-Studio-V3.0.1-Design
+          path: ${{ runner.temp }}/AI_Enterprise_Studio_V3.0.1_Design.zip
+          if-no-files-found: error
+          retention-days: 14
+
 
   n8n-integration:
     runs-on: ubuntu-24.04
