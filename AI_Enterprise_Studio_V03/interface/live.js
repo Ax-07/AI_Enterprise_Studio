@@ -213,7 +213,7 @@
         $('buildings').replaceChildren(...layout.map(b=>{const btn=node('button',labels[b.id]);btn.type='button';btn.dataset.id=b.id;btn.dataset.activity='unknown';if(fidelity){btn.className='agent';btn.style.setProperty('--c',b.color);btn.replaceChildren();const avatar=node('span',undefined,'avatar'),av=svg('svg',{viewBox:'-20 -40 40 45','aria-hidden':'true'});av.append(art.robot(b.color,.8));avatar.append(av);const desc=node('span');desc.append(node('span',window.AESOriginalOffice.departments[b.id].title,'name'),node('small','Données indisponibles'));btn.append(avatar,desc);}else btn.append(node('small','Données indisponibles'));btn.addEventListener('click',()=>openLift(b.id));return btn;}));
     }
     const modules=window.AESLiveModules;
-    const hasModule=st=>Object.hasOwn(modules.stations,st.id)&&modules.stations[st.id].length>0;
+    const hasModule=st=>(modules.stations[st.id]||[]).length>0||(modules.native?.[st.id]||[]).length>0;
     function updateModuleLinks(st){
         const out=$('station-modules');const sig=st?.id||'';
         window.AESNativeTools.setStation(sig||null);
@@ -223,8 +223,12 @@
         out.append(node('h3','Accès aux modules existants'),node('p',preview?'Aperçu : consultation native seulement, les liens historiques et commandes sont désactivés.':'Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
         const links=node('div',undefined,'module-links');
         if(st.id.startsWith('OWNER:station:')){const dashboard=node('button','Tableau de direction');dashboard.type='button';dashboard.dataset.native='owner';dashboard.addEventListener('click',()=>window.AESNativeTools.open('owner'));links.append(dashboard);}
-        if(selected==='HERMES'&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId)&&modules.stations[st.id].includes('business')){const m=node('button','Dossiers HERMES & marketing · préparation interne');m.type='button';m.dataset.native='marketing';m.addEventListener('click',()=>window.AESNativeTools.open('marketing'));links.append(m);}
-        for(const page of modules.stations[st.id]){
+        if(selected==='HERMES'&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId)&&(modules.stations[st.id]||[]).includes('business')){const m=node('button','Dossiers HERMES & marketing · préparation interne');m.type='button';m.dataset.native='marketing';m.addEventListener('click',()=>window.AESNativeTools.open('marketing'));links.append(m);}
+        for(const tool of modules.native?.[st.id]||[]){
+            if(!Object.hasOwn(window.AESNativeTools.names,tool))continue;
+            const btn=node('button','Consulter ici · '+window.AESNativeTools.names[tool]);btn.type='button';btn.dataset.native=tool;btn.addEventListener('click',()=>window.AESNativeTools.open(tool));links.append(btn);
+        }
+        for(const page of modules.stations[st.id]||[]){
             if(!Object.hasOwn(modules.pages,page))continue;
             const a=node('a',modules.pages[page]);a.dataset.module=page;
             a.href='/?'+new URLSearchParams({page,campusBuilding:selected,campusFloor:floorId,campusStation:st.id,...(fidelity?{campusView:'original'}:{})});
@@ -340,7 +344,7 @@
         $('room-caption-title').textContent=levelLabel(f.level)+' / '+f.name;
         const groups=new Map(),other=[];
         for(const st of f.stations){
-            const pages=(modules.stations[st.id]||[]).filter(page=>Object.hasOwn(window.AESNativeTools.names,page));
+            const pages=[...(modules.stations[st.id]||[]),...(modules.native?.[st.id]||[])].filter(page=>Object.hasOwn(window.AESNativeTools.names,page));
             if(st.id.startsWith('OWNER:station:'))pages.unshift('owner');
             if(selected==='HERMES'&&pages.includes('business')&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId))pages.push('marketing');
             if(!pages.length){other.push(st);continue;}

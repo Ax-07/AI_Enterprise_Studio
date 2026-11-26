@@ -2,9 +2,10 @@
 import json
 import sqlite3
 import campus_commercial
+import incidents
 from pathlib import Path
 
-TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions')) | campus_commercial.TOOLS
+TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions','incidents')) | campus_commercial.TOOLS
 MAX_ARTIFACT_BYTES=2*1024*1024
 MAX_REPORT_BYTES=256*1024
 
@@ -36,6 +37,19 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
         if tool in campus_commercial.TOOLS:
             result=campus_commercial.read(db,tool,ident)
             if tool in campus_commercial.DETAILS and not result:raise Missing('Dossier absent')
+        elif tool=='incidents':
+            # Persisted states only: never run incident eligibility or a recovery on read.
+            counts=rows("SELECT mode,state,COUNT(*) AS count FROM missions WHERE state IN ('bloquée','en attente','interrompue') GROUP BY mode,state")
+            result=[{'kind':'summary','counts':counts,'recovery_policy':incidents.LIMIT,
+                     'recovery_count':db.execute("SELECT COUNT(*) FROM incident_recoveries").fetchone()[0]}]
+            result.extend({'kind':'mission',**r} for r in rows("""SELECT id,title,mode,state,created
+                FROM missions WHERE state IN ('bloquée','en attente','interrompue')
+                ORDER BY id DESC LIMIT 50"""))
+            for r in rows("""SELECT campaign,mission,task,ledger,diagnostic,created
+                FROM incident_recoveries ORDER BY created DESC,campaign DESC LIMIT 50"""):
+                # A historical recovery is not proof that the mission completed.
+                r['diagnostic']=r['diagnostic'] if r['diagnostic'] in incidents.TRANSIENT else 'Diagnostic hors liste'
+                result.append({'kind':'recovery',**r})
         elif tool=='missions':
             result=rows("SELECT id,title,mode,state,created FROM missions ORDER BY id DESC LIMIT 100")
         elif tool=='work':
@@ -177,6 +191,6 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 substr(o.next_test,1,600) AS next_test,o.created,m.mode FROM opportunities o
                 JOIN missions m ON m.id=o.mission ORDER BY o.id DESC LIMIT 100""")
         return {'schema':'aes.campus.tool.v1','tool':tool,'read_only':True,'rows':result,
-            'limit':50 if tool=='memory' else 1 if tool in ('artifact','report') or tool in campus_commercial.DETAILS else 30 if tool=='marketing' else 81 if tool=='business' else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
+            'limit':101 if tool=='incidents' else 50 if tool=='memory' else 1 if tool in ('artifact','report') or tool in campus_commercial.DETAILS else 30 if tool=='marketing' else 81 if tool=='business' else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
     finally:
         db.close()

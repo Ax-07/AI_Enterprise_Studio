@@ -46,6 +46,8 @@ def smoke():
             modules=page.evaluate("AESLiveModules")
             known={st['id'] for b in connected for f in b['floors'] for st in f['stations']}
             assert set(modules['stations'])<=known
+            assert set(modules['native'])<=known
+            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents'}
             assert {p for ps in modules['stations'].values() for p in ps}==set(modules['pages'])
             assert len(modules['pages'])==14
             assert 'VIDEO183:station:1' not in modules['stations']
@@ -533,6 +535,15 @@ def smoke_original():
                 capture('F04-options')
                 page.locator('#tab-scene').click()
                 expect(page.locator('#room-view')).to_be_visible()
+                page.locator('#campus-back').click()
+                page.locator('#buildings button[data-id="SENTINEL"]').click()
+                page.locator('#lift-view [data-floor="INCIDENTS"]').click()
+                page.locator('#tab-functions').click()
+                page.locator('[data-function-tool="incidents"]').click()
+                expect(page.locator('#function-detail #native-tool h3')).to_contain_text('Incidents & reprises')
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                expect(page.locator('#native-tool')).to_contain_text('Supervision enregistrée')
+                capture('O02-incidents')
                 page.locator('#campus-back').click()
                 page.locator('.top [data-view="finance"]').click()
                 expect(page.locator('#native-tool')).to_be_visible()

@@ -368,4 +368,41 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
   "ANALYTICS183:station:4": [
     "business"
   ]
+}), native:Object.freeze({
+  "SUPERVISION:station:0": [
+    "incidents"
+  ],
+  "SUPERVISION:station:2": [
+    "incidents"
+  ],
+  "SUPERVISION:station:4": [
+    "incidents"
+  ],
+  "SENTINEL:station:1": [
+    "incidents"
+  ],
+  "SENTINEL:station:4": [
+    "incidents"
+  ],
+  "INCIDENTS:station:0": [
+    "incidents"
+  ],
+  "INCIDENTS:station:1": [
+    "incidents"
+  ],
+  "INCIDENTS:station:2": [
+    "incidents"
+  ],
+  "INCIDENTS:station:3": [
+    "incidents"
+  ],
+  "INCIDENTS:station:4": [
+    "incidents"
+  ],
+  "INFRA:station:3": [
+    "incidents"
+  ],
+  "ITOPS17:station:0": [
+    "incidents"
+  ]
 })});

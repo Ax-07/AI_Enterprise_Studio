@@ -25,3 +25,25 @@ class CampusToolTests(unittest.TestCase):
             with self.assertRaises(t.Missing):read('artifact',id='99')
             with sqlite3.connect(p) as db:db.execute('UPDATE artifacts SET content=?',('x'*(t.MAX_ARTIFACT_BYTES+1),))
             with self.assertRaises(t.TooLarge):read('artifact',id='1')
+
+    def test_incident_projection(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'fixture.db';fixture(p)
+            with sqlite3.connect(p) as db:
+                db.executescript("""
+                CREATE TABLE incident_recoveries(campaign INTEGER PRIMARY KEY,mission INTEGER,task INTEGER,ledger INTEGER,diagnostic TEXT,created TEXT);
+                INSERT INTO incident_recoveries VALUES(1,1,1,1,'HTTP 503','2026-01-01'),(2,1,1,2,'secret diagnostic','2026-01-02');
+                UPDATE missions SET state='bloquée' WHERE id=1;
+                """)
+            before=p.read_bytes()
+            r=t.read(p,'incidents',{})
+            self.assertTrue(r['read_only'])
+            self.assertEqual(r['limit'],101)
+            self.assertEqual(r['rows'][0]['counts'],[{'mode':'cloud','state':'bloquée','count':1}])
+            self.assertEqual(r['rows'][0]['recovery_count'],2)
+            self.assertEqual(r['rows'][1]['kind'],'mission')
+            self.assertEqual(r['rows'][2]['diagnostic'],'Diagnostic hors liste')
+            self.assertEqual(r['rows'][3]['diagnostic'],'HTTP 503')
+            self.assertNotIn('secret diagnostic',str(r))
+            self.assertEqual(p.read_bytes(),before)
+            with self.assertRaises(t.BadQuery):t.read(p,'incidents',{'replay':['true']})
