@@ -1,13 +1,10 @@
 """Deterministic internal HERMES preparation. No paid calls, external actions or customer data."""
 import json
-import hashlib
 
 import acquisition as ac
-import acquisition_sync as sync
 import business as b
 import commercial
 import laboratory as lab
-import portfolio
 
 LIMIT='Préparation HERMES interne. Aucun lancement, aucune demande réelle, aucune preuve nouvelle de performance.'
 MAX_PER_CYCLE=3
@@ -66,6 +63,8 @@ def packet(c,did):
     if not record:raise ValueError('Dossier HERMES absent')
     p=json.loads(record['payload'])
     if b.digest(p)!=record['payload_sha256']:raise ValueError('Dossier HERMES modifié')
+    if p['product_demo']['status']=='historical_evidence' and _demo(c,p | {'offer_id':p['offer']})!=p['product_demo']:
+        raise ValueError('Preuve historique modifiée ou remplacée')
     return p
 
 def run_once(c,t=None):
@@ -112,4 +111,6 @@ def agent_context(c,mid,agent):
     if not scope or scope['state']!='actif' or scope['mission_state']!='en cours' or scope['mode']!='cloud' or scope['project_state']!='active':
         return None
     if not json.loads(scope['permissions']).get('market'):return None
-    return status(c,scope['project'])
+    out=status(c,scope['project'])
+    out['packets']=[p for p in out['packets'] if p['state']=='internal_ready'][:3]
+    return out
