@@ -182,7 +182,7 @@ def smoke_commands():
         thread=threading.Thread(target=srv.serve_forever,daemon=True);thread.start()
         port=srv.server_address[1];base=f'http://127.0.0.1:{port}'
         try:
-            with patch.object(s,'PORT',port),patch.object(s,'config',return_value={**s.config(),'budget':4000000}),sync_playwright() as pw:
+            with patch.object(s,'PORT',port),patch.object(s,'config',return_value={**s.config(),'key':'fake-test-key','budget':4000000}),sync_playwright() as pw:
                 browser=pw.chromium.launch(headless=True)
                 page=browser.new_page()
                 errors=[];posts=[]
@@ -211,6 +211,32 @@ def smoke_commands():
                     assert tuple(m)==('demo','arrêtée')
                     assert s.used(db)==0
                 assert posts==[base+'/campus/command']*2,posts
+                expect(page.locator('[data-command="mission_cloud"]')).to_have_count(0)
+                page.goto(base+'/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A2')
+                expect(page.locator('#status')).to_contain_text('Connecté')
+                page.locator('[data-commands="missions"]').click()
+                expect(page.locator('[data-command="mission_cloud"]')).to_be_enabled()
+                page.locator('#campus-commands textarea').fill('Cloud test navigateur')
+                page.once('dialog',lambda d:d.dismiss())
+                page.locator('[data-command="mission_cloud"]').click()
+                assert len(posts)==2,posts
+                page.once('dialog',lambda d:d.accept())
+                page.locator('[data-command="mission_cloud"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('Commande acceptée')
+                with s.db() as db:
+                    mid=db.execute("SELECT id FROM missions WHERE title='Cloud test navigateur' AND mode='cloud'").fetchone()[0]
+                    db.execute("UPDATE missions SET state='terminée' WHERE id=?",(mid,))
+                    rid=db.execute("INSERT INTO requests(mission,body) VALUES(?,'{}')",(mid,)).lastrowid
+                page.locator('#room-view [data-station="OWNER:station:4"]').click()
+                page.locator('[data-commands="decisions"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
+                page.once('dialog',lambda d:d.accept())
+                page.locator('#campus-commands').get_by_role('button',name='Refuser',exact=True).click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('Commande acceptée')
+                with s.db() as db:
+                    assert db.execute('SELECT state FROM requests WHERE id=?',(rid,)).fetchone()[0]=='refusée'
+                    assert s.used(db)==0
+                assert posts==[base+'/campus/command']*2+[base+'/campus/owner-command']*2,posts
                 assert not errors,errors
                 network.assert_not_called()
                 browser.close()
