@@ -343,7 +343,8 @@ function renderBusiness(s){
  const ctl=s.acquisition_control||{channels:[],configured:false};
  const hermes=s.hermes_acquisition||{packets:[]};
  const runtime=s.acquisition_runtime||{managed:false,ready:false,state:'not_started',attempts:0,max_attempts:3};
- const sig=JSON.stringify([d,ac,sync,ctl,hermes,runtime,busy]);if(sig===businessSig)return;businessSig=sig;
+ const mk=s.marketing||{drafts:[]};
+ const sig=JSON.stringify([d,ac,sync,ctl,hermes,runtime,mk,busy]);if(sig===businessSig)return;businessSig=sig;
  const channels=ctl.channels.map(x=>{
    const n=el('article',undefined,'request');
    n.append(el('h3','Canal TEST · Brouillon #'+x.draft),el('p',x.state+' · expiration '+new Date(x.expires*1000).toLocaleString()),el('p',x.last_error||'Aucune erreur de confirmation enregistrée'));
@@ -381,6 +382,13 @@ function renderBusiness(s){
      if(h){
        n.append(el('p','Dossier HERMES interne · démonstration : '+(h.demo_status==='historical_evidence'?'preuve synthétique historique exacte':'preuve compatible indisponible')));
        const packet=btn('Télécharger le dossier HERMES',async()=>{try{const v=await api('hermes_packet?id='+x.id);downloadText('hermes_offre_'+x.offer+'.json',JSON.stringify(v,null,2),'application/json')}catch(e){text('message',e.message)}});packet.disabled=busy;n.append(packet);
+     }
+     const marketing=mk.drafts.find(y=>y.draft===x.id);
+     if(marketing){
+       n.append(el('p',marketing.state==='technical_pass'?'Marketing interne : contrôle technique réussi, publication interdite':'Marketing interne : preuve ou profil compatible indisponible'));
+       if(marketing.state==='technical_pass'){
+         const download=btn('Télécharger page, script vidéo et texte social (JSON)',async()=>{try{const v=await api('marketing_packet?id='+x.id);downloadText('marketing_offre_'+x.offer+'.json',JSON.stringify(v,null,2),'application/json')}catch(e){text('message',e.message)}});download.disabled=busy;n.append(download);
+       }
      }
      const revoke=btn('Révoquer le brouillon',()=>{if(confirm('Révoquer définitivement ce brouillon local ?'))action('acquisition/revoke',{confirm:true,draft:x.id})},'quiet');preview.disabled=demo.disabled=revoke.disabled=busy;n.append(preview,demo,revoke);
    }return n;
