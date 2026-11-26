@@ -2,7 +2,7 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
@@ -60,6 +60,7 @@ def init():
         acquisition_sync.init(c)
         acquisition_control.init(c)
         hermes_acquisition.init(c)
+        marketing.init(c)
         acquisition_sync.purge(c,business.now())
 def config():
     p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
@@ -231,7 +232,7 @@ def status():
     cfg=config()
     with db() as c:
         campaign=autopilot.status(c,cfg)
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'business':business.status(c),'acquisition':acquisition.status(c),'acquisition_sync':acquisition_sync.status(c),'acquisition_control':acquisition_control.status(c),'hermes_acquisition':hermes_acquisition.status(c),'acquisition_runtime':acquisition_runtime.status(),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'business':business.status(c),'acquisition':acquisition.status(c),'acquisition_sync':acquisition_sync.status(c),'acquisition_control':acquisition_control.status(c),'hermes_acquisition':hermes_acquisition.status(c),'acquisition_runtime':acquisition_runtime.status(),'marketing':marketing.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 def campaign_audit(c,cfg,cid,historical=False):
     # Single read snapshot. Never copy config, environment or session credentials.
     campaign=autopilot.status(c,cfg,cid if historical else None)
@@ -290,6 +291,11 @@ class Handler(BaseHTTPRequestHandler):
                 files={n8n_bridge.HEALTH:'aes_health.json',n8n_bridge.METRICS:'aes_metrics.json',n8n_bridge.COMPARE:'aes_market_compare.json'}
                 if cap not in files:raise ValueError('Workflow inconnu')
                 return self.send(json.loads((ROOT/'n8n'/files[cap]).read_text(encoding='utf8')))
+            if self.route()=='/api/marketing_packet' and self.headers.get('X-Session')==SESSION:
+                did=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
+                with db() as c:
+                    c.execute('BEGIN')
+                    return self.send(marketing.packet(c,did))
             if self.route()=='/api/hermes_packet' and self.headers.get('X-Session')==SESSION:
                 did=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:
@@ -303,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.route()=='/api/acquisition_audit' and self.headers.get('X-Session')==SESSION:
                 with db() as c:
                     c.execute('BEGIN')
-                    return self.send({'schema':'aes-acquisition-audit-v1','version':VERSION,'acquisition':acquisition.status(c),'sync':acquisition_sync.status(c),'control':acquisition_control.status(c),'hermes':hermes_acquisition.status(c),'runtime':acquisition_runtime.status()})
+                    return self.send({'schema':'aes-acquisition-audit-v1','version':VERSION,'acquisition':acquisition.status(c),'sync':acquisition_sync.status(c),'control':acquisition_control.status(c),'hermes':hermes_acquisition.status(c),'runtime':acquisition_runtime.status(),'marketing':marketing.status(c)})
             if self.route()=='/api/business_audit' and self.headers.get('X-Session')==SESSION:
                 with db() as c:
                     c.execute('BEGIN')
@@ -606,6 +612,7 @@ def acquisition_control_loop(shutdown):
             with db() as c:
                 c.execute('BEGIN IMMEDIATE')
                 hermes_acquisition.run_once(c)
+                marketing.run_once(c)
         except Exception as exc:print('[ACQUISITION CONTROL] '+type(exc).__name__,flush=True)
         finally:POST_LOCK.release()
 
