@@ -4,6 +4,7 @@ import webbrowser
 import serveur as s
 
 class PreviewHandler(s.Handler):
+    campus_preview_mode=True
     def do_GET(self):
         if not self.local():return self.send({'error':'Hôte refusé'},403)
         route=self.route()

@@ -383,7 +383,8 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
     "incidents"
   ],
   "SENTINEL:station:4": [
-    "incidents"
+    "incidents",
+    "infrastructure"
   ],
   "INCIDENTS:station:0": [
     "incidents"
@@ -401,10 +402,12 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
     "incidents"
   ],
   "INFRA:station:3": [
-    "incidents"
+    "incidents",
+    "infrastructure"
   ],
   "ITOPS17:station:0": [
-    "incidents"
+    "incidents",
+    "infrastructure"
   ],
   "NEXUS:station:0": [
     "quality"
@@ -438,5 +441,32 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
   ],
   "SENTINEL:station:3": [
     "quality"
+  ],
+  "INFRA:station:0": [
+    "infrastructure"
+  ],
+  "INFRA:station:1": [
+    "infrastructure"
+  ],
+  "INFRA:station:2": [
+    "infrastructure"
+  ],
+  "INFRA:station:4": [
+    "infrastructure"
+  ],
+  "ITOPS17:station:1": [
+    "infrastructure"
+  ],
+  "ITOPS17:station:2": [
+    "infrastructure"
+  ],
+  "ITOPS17:station:3": [
+    "infrastructure"
+  ],
+  "ITOPS17:station:4": [
+    "infrastructure"
+  ],
+  "SUPERVISION:station:3": [
+    "infrastructure"
   ]
 })});
