@@ -23,3 +23,7 @@ R02.4 : garde de non-régression packaging et test de migration existant ; aucun
 
 ## Continuité
 R00 partiel, R01 documenté ; prochaine étape R02.1. Version stable main inchangée, travail en branche séparée, aucune fusion implicite. Pas de dépense API métier, pas de changement local. L'audit complet, les mesures de couverture et la validation opérationnelle locale restent à faire. Constitution et gouvernance feront l'objet d'un audit distinct avec leurs sources, sans réécrire les règles sur simple supposition.
+
+## R02.1 — inventaire statique reproductible
+Commande depuis V03 : `python audit_repository.py --summary` ; ajouter `--output chemin-nouveau.json` pour conserver le rapport. Analyse du commit Git (HEAD par défaut, ou --revision), pas de l'arbre de travail. Métadonnées des fichiers suivis et AST des blobs Python réguliers ; aucun import des modules de production. Exclusions de chemins privés par nom, pas un détecteur de secrets. Les imports hors graphe, chemins ambigus, imports dynamiques potentiels et échecs de parsing sont signalés. Les cycles distinguent portée module et imports différés, sans conclure à un bug. Analyse JS, couverture et code mort non établis.
+CI : tests unitaires sur dépôt Git temporaire, inventaire du commit CI et artefact JSON. Aucun changement des modules métier ; résultat CI et inventaire réel à confirmer après exécution. R02.2 reste bloquée jusqu'à examen de ces résultats.
