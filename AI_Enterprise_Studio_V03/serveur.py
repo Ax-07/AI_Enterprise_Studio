@@ -2,6 +2,7 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
+from infrastructure.configuration import load_config
 import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, campus_tools, campus_commands, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
@@ -66,20 +67,7 @@ def init():
         marketing.init(c)
         acquisition_sync.purge(c,business.now())
 def config():
-    p=ROOT/'config.json'; cfg=json.loads(p.read_text(encoding='utf-8-sig')) if p.exists() else {}
-    budget=float(cfg.get('openai_budget_usd',2)); limit=int(cfg.get('brave_max_searches',10))
-    if not math.isfinite(budget) or not 0<=budget<=15 or not 0<=limit<=1000: raise ValueError('Budget invalide (0–15 USD ; 0–1000 recherches).')
-    models={**DEFAULT,**cfg.get('models',{})}
-    if any(models[a] not in PRICES for a in DEFAULT): raise ValueError('Modèle non autorisé dans config.json.')
-    def bounded(name,default,lo,hi):
-        v=int(cfg.get(name,default))
-        if not lo<=v<=hi: raise ValueError('Paramètre hors limites : '+name)
-        return v
-    mission_budget=float(cfg.get('mission_budget_usd',0.75))
-    if not math.isfinite(mission_budget) or not 0<mission_budget<=15: raise ValueError('Budget mission invalide')
-    sandbox=cfg.get('html_sandbox_enabled',False)
-    if type(sandbox) is not bool: raise ValueError('html_sandbox_enabled doit être true ou false')
-    return {'html_sandbox_enabled':sandbox,'mission_budget':round(mission_budget*1e6),'call_limit':bounded('mission_max_calls',24,16,100),'task_limit':bounded('mission_max_tasks',8,5,30),'turn_limit':bounded('task_max_turns',10,5,30),'mission_search_limit':bounded('mission_max_searches',6,0,50),'page_limit':bounded('mission_max_pages',8,0,50),'key':os.getenv('OPENAI_API_KEY') or cfg.get('openai_api_key',''),'brave':os.getenv('BRAVE_API_KEY') or cfg.get('brave_api_key',''),'budget':round(budget*1e6),'limit':limit,'models':models}
+    return load_config(ROOT, DEFAULT, PRICES)
 def used(c): return c.execute('SELECT COALESCE(SUM(CASE WHEN actual IS NULL THEN reserved ELSE actual END),0) FROM ledger').fetchone()[0]
 def request(url, keyheaders, body=None):
     data=None if body is None else json.dumps(body,ensure_ascii=False).encode()
