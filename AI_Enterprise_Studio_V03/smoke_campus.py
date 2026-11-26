@@ -177,7 +177,9 @@ def smoke_live():
                 page.locator('#lift-view [data-floor="CORE"]').click()
                 expect(page.locator('#room-view [data-station]')).to_have_count(5)
                 expect(page.locator('#room-view img')).to_be_visible()
-                page.wait_for_function("document.querySelector('#room-view img')?.naturalWidth > 0")
+                # Wait for a decoded room image without repeated string eval in the page's CSP context.
+                image=page.locator('#room-view img')
+                assert image.evaluate("async img => { await img.decode(); return img.naturalWidth; }")>0
                 capture(page,'04-bureau-core')
                 expect(page.locator('#team-slots [data-slot]')).to_have_count(8)
                 expect(page.locator('#team-slots [data-configured="true"]')).to_have_count(2)
