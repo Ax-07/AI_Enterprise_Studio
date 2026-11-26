@@ -57,11 +57,47 @@ def owner_translate(body):
     if body['cadence'] not in ('daily','weekly','monthly'):raise ValueError('Cadence invalide')
     return '/api/periodic/authorize',{'cadence':body['cadence'],'periods':integer('periods',1,12),'total_budget':money('total_budget'),'period_budget':money('period_budget'),'per_campaign':money('per_campaign'),'max_campaigns':integer('max_campaigns',1,5),'total_search':integer('total_search',0,120),'period_search':integer('period_search',0,10),'explore':boolean('explore'),'confirm':True}
 
+COMMERCIAL_ACTIONS=frozenset(('draft_prepare','draft_revoke','trial_close','test_publish','test_collect','test_stop','test_sync'))
+
+def commercial_translate(body):
+    action=body['action']
+    def fields(*keys):
+        if set(body)!={'action','confirm',*keys}:raise ValueError('Champs commerciaux invalides')
+    def integer(key,lo=1,hi=9007199254740991):
+        v=body.get(key)
+        if type(v) is not int or not lo<=v<=hi:raise ValueError('Entier hors limites : '+key)
+        return v
+    def hexvalue(key,size):
+        v=body.get(key)
+        if not isinstance(v,str) or not re.fullmatch('[0-9a-f]{'+str(size)+'}',v):
+            raise ValueError('Référence invalide : '+key)
+        return v
+    if action=='draft_prepare':
+        fields('offer','snapshot_sha256')
+        return '/api/acquisition/prepare',{'confirm':True,'offer':integer('offer'),'snapshot_sha256':hexvalue('snapshot_sha256',64),'language':'fr'}
+    if action=='draft_revoke':
+        fields('draft')
+        return '/api/acquisition/revoke',{'confirm':True,'draft':integer('draft')}
+    if action=='trial_close':
+        fields('trial')
+        return '/api/business/close',{'confirm':True,'trial':integer('trial')}
+    if action=='test_publish':
+        fields('draft','snapshot_sha256','duration_seconds')
+        return '/api/acquisition/test_publish',{'confirm':True,'draft':integer('draft'),'snapshot_sha256':hexvalue('snapshot_sha256',64),'duration_seconds':integer('duration_seconds',60,1800)}
+    if action=='test_collect':
+        fields('page','quota','duration_seconds')
+        return '/api/acquisition/test_collect',{'confirm':True,'page':hexvalue('page',32),'quota':integer('quota',1,10),'duration_seconds':integer('duration_seconds',1,600)}
+    if action in ('test_stop','test_sync'):
+        fields('page')
+        return '/api/acquisition/'+action,{'confirm':True,'page':hexvalue('page',32)}
+    raise ValueError('Commande commerciale non autorisée')
+
 def translate(body):
     if not isinstance(body,dict) or body.get('confirm') is not True:
         raise ValueError('Confirmation explicite requise')
     action=body.get('action')
     if not isinstance(action,str):raise ValueError('Commande invalide')
+    if action in COMMERCIAL_ACTIONS:return commercial_translate(body)
     if action=='mission_demo':
         if set(body)!={'action','confirm','title'} or not isinstance(body['title'],str):
             raise ValueError('Simulation invalide')

@@ -58,6 +58,10 @@ def smoke():
                 page.goto(base+'/campus/live/?building=HERMES&floor=SHOWROOM&station=SHOWROOM%3Astation%3A0')
                 page.locator('[data-native="business"]').click()
                 expect(page.locator('#native-tool .native-results')).to_contain_text('Recettes réelles vérifiées : indisponibles')
+                page.locator('[data-commands="business"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
+                expect(page.locator('#campus-commands')).to_contain_text('Aucune commande commerciale applicable')
+                assert not owner_writes,owner_writes
                 page.goto(base+'/campus/live/?building=HERMES&floor=VIDEO183&station=VIDEO183%3Astation%3A0')
                 page.locator('[data-native="marketing"]').click()
                 expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune entrée correspondante')

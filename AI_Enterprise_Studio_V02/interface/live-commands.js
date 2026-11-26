@@ -6,6 +6,9 @@
  const token=document.querySelector('meta[name="campus-command-session"]').content;
  const ownerToken=document.querySelector('meta[name="campus-owner-session"]').content;
  const isOwner=()=>Boolean(ownerToken&&station?.startsWith('OWNER:station:'));
+ const commercialFloor=new Set(['HERMES','SHOWROOM','ADS183','PUBLISH183','ANALYTICS183']);
+ const isCommercial=()=>Boolean(station&&commercialFloor.has(station.split(':')[0]));
+ const commercialActions=new Set(['draft_prepare','draft_revoke','trial_close','test_publish','test_collect','test_stop','test_sync']);
  const paid=new Set(['decision','mission_cloud','mission_resume','campaign_start','campaign_resume','plan_start','plan_resume','periodic_authorize']);
  const node=(tag,t,cls)=>{const e=document.createElement(tag);if(t!==undefined)e.textContent=t;if(cls)e.className=cls;return e;};
  const btn=(label,fn)=>{const e=node('button',label);e.type='button';e.addEventListener('click',fn);return e;};
@@ -14,13 +17,13 @@
  function setStation(id){if(station!==id){reset();station=id;}}
  function setOnline(value){online=value;if(!value)reset();}
  function open(kind){
-  if(!station||!online||pending||!['home','missions','decisions'].includes(kind)||(kind==='decisions'&&!isOwner()))return;
+  if(!station||!online||pending||!['home','missions','decisions','business'].includes(kind)||(kind==='decisions'&&!isOwner())||(kind==='business'&&!isCommercial()))return;
   reset();active=kind;panel.hidden=false;
   const status=node('p','','muted');status.setAttribute('role','status');
   const out=node('div',undefined,'command-results');
   const controls=node('div',undefined,'command-actions');
   controls.append(btn('Fermer',reset),btn('Actualiser les états',load));
-  panel.append(node('h3','Commandes du propriétaire'),node('p','Simulation et arrêts ; dans le bureau du propriétaire, commandes Cloud et autorisations explicites. Les appels déjà engagés peuvent rester facturables.','muted'),controls,status);
+  panel.append(node('h3',kind==='business'?'Pilotage commercial · interne / TEST':'Commandes du propriétaire'),node('p',kind==='business'?'Brouillons locaux et canal fictif isolé. Aucun achat, vente, diffusion publique ni génération de média. La publication TEST et la collecte TEST nécessitent deux confirmations distinctes.':'Simulation et arrêts ; dans le bureau du propriétaire, commandes Cloud et autorisations explicites. Les appels déjà engagés peuvent rester facturables.','muted'),controls,status);
   let textarea;
   if(kind==='missions'){
    const form=node('form',undefined,'command-form');textarea=node('textarea');textarea.required=true;textarea.maxLength=1500;textarea.placeholder='Objectif de la mission de simulation';textarea.setAttribute('aria-label','Objectif de simulation');
@@ -51,13 +54,55 @@
   }
   panel.append(out);
   function lock(value){for(const el of panel.querySelectorAll('[data-command]'))el.disabled=value;}
+  function commercialRows(rows){
+   const summary=rows.find(r=>r.kind==='summary'),channels=rows.filter(r=>r.kind==='channel');
+   const configured=summary?.test_configured===true;
+   out.append(node('p',configured?'Canal TEST configuré localement (disponibilité non vérifiée).':'Canal TEST non configuré ; préparation locale et révocation restent possibles.','muted'));
+   const add=(e,action,label,body,message)=>{const b=btn(label,()=>send({action,...body},message));b.dataset.command=action;e.append(b);};
+   for(const row of rows){
+    let e=node('div',undefined,'entry');
+    if(row.kind==='offer'){
+     if(!row.draft_eligible)continue;
+     e.append(node('b','Offre #'+row.id+' · '+row.title));
+     add(e,'draft_prepare','Préparer un brouillon interne',{offer:row.id,snapshot_sha256:row.snapshot_sha256},'Préparer l’offre #'+row.id+' en français, sans publication ni collecte ?');
+    }else if(row.kind==='draft'){
+     if(row.state!=='draft')continue;
+     e.append(node('b','Brouillon #'+row.id+' · '+row.title),node('small','Aucune diffusion réelle autorisée.'));
+     if(configured&&!channels.some(x=>x.draft===row.id&&x.state!=='revoked'))add(e,'test_publish','Publication locale TEST · 30 min',{draft:row.id,snapshot_sha256:row.snapshot_sha256,duration_seconds:1800},'Autoriser une page fictive TEST pendant 30 minutes sur le service local isolé ? Aucun achat, aucune collecte, aucune donnée client.');
+     add(e,'draft_revoke','Révoquer le brouillon',{draft:row.id},'Révoquer définitivement le brouillon #'+row.id+' ? Les canaux associés seront arrêtés et l’historique conservé.');
+    }else if(row.kind==='trial'){
+     if(row.stored_state!=='open')continue;
+     e.append(node('b','Protocole #'+row.id),node('small',row.state));
+     add(e,'trial_close','Clore le protocole',{trial:row.id},'Clore définitivement le protocole #'+row.id+' et conserver son historique ?');
+    }else if(row.kind==='channel'){
+     if(row.state==='revoked')continue;
+     e.append(node('b','Canal TEST · '+row.page),node('small',row.state));
+     if(configured&&row.state==='published'&&row.within_window&&row.remaining_seconds>0){
+      const duration=Math.min(600,row.remaining_seconds);
+      add(e,'test_collect','Autoriser la collecte TEST · 10 signaux max.',{page:row.page,quota:10,duration_seconds:duration},'Autoriser au maximum 10 signaux fictifs pendant '+duration+' secondes ? Aucune collecte réelle, aucun achat ni coordonnées.');
+     }
+     add(e,'test_stop',row.state==='revocation_pending'?'Réessayer la révocation TEST':'Révoquer publication et collecte TEST',{page:row.page},'Arrêter localement et demander la révocation du canal TEST ?');
+    }else if(row.kind==='test_link'){
+     if(!configured||row.state!=='test_link')continue;
+     e.append(node('b','Collecte TEST · '+row.page));
+     add(e,'test_sync','Actualiser les signaux TEST',{page:row.page},'Actualiser les signaux fictifs depuis le service local uniquement ?');
+    }else continue;
+    out.append(e);
+   }
+   if(!out.querySelector('[data-command]'))out.append(node('p','Aucune commande commerciale applicable dans cet instantané.','muted'));
+  }
   async function load(){
    if(active!==kind||pending)return;const n=++seq;out.replaceChildren();lock(true);status.textContent='Lecture des états locaux…';
    try{
     const r=await fetch('/campus/read?tool='+kind,{headers:{'X-Campus-Session':readToken},cache:'no-store'});
     if(!r.ok)throw Error('HTTP '+r.status);const data=await r.json();
     if(n!==seq)return;if(data.schema!=='aes.campus.tool.v1'||data.tool!==kind||data.read_only!==true||!Array.isArray(data.rows))throw Error('Réponse invalide');
-    for(const row of data.rows){
+    if(kind==='business'){
+     const mr=await fetch('/campus/read?tool=marketing',{headers:{'X-Campus-Session':readToken},cache:'no-store'});
+     if(!mr.ok)throw Error('HTTP '+mr.status);const md=await mr.json();
+     if(n!==seq)return;if(md.schema!=='aes.campus.tool.v1'||md.tool!=='marketing'||md.read_only!==true||!Array.isArray(md.rows))throw Error('Réponse invalide');
+     commercialRows([...data.rows,...md.rows]);
+    }else for(const row of data.rows){
      let action,label,title;
      if(kind==='decisions'){
       if(row.state!=='en attente')continue;
@@ -83,14 +128,14 @@
    }catch(e){if(n===seq){out.replaceChildren();status.textContent='États indisponibles. Aucune commande proposée.';lock(true);}}
   }
   async function send(body,message){
-   if(!online||pending||active!==kind||(paid.has(body.action)&&!isOwner())||!confirm(message))return;
+   if(!online||pending||active!==kind||(paid.has(body.action)&&!isOwner())||(commercialActions.has(body.action)&&!isCommercial())||!confirm(message))return;
    pending=true;lock(true);const n=++seq;status.textContent='Transmission de la commande…';
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
    try{
     const owner=paid.has(body.action);const r=await fetch(owner?'/campus/owner-command':'/campus/command',{method:'POST',headers:{[owner?'X-Campus-Owner':'X-Campus-Command']:owner?ownerToken:token,'Content-Type':'application/json'},body:JSON.stringify({...body,confirm:true}),cache:'no-store',signal:controller.signal});
     const result=await r.json();
     if(!r.ok){if(n===seq)status.textContent='Commande refusée : '+(result.error||'HTTP '+r.status);return;}
-    uncertain=false;if(n===seq){if(body.action==='mission_demo')textarea.value='';status.textContent='Commande acceptée par le moteur. Vérifie son état après actualisation.';out.replaceChildren();}
+    uncertain=false;if(n===seq){if(body.action==='mission_demo')textarea.value='';status.textContent=result.state==='revocation_pending'?'Révocation locale demandée · confirmation du canal encore indisponible.':result.state==='published'?'Publication TEST locale confirmée · collecte non autorisée.':result.state==='collecting'?'Collecte TEST locale confirmée.':result.state==='revoked'?'Révocation TEST confirmée.':'Commande acceptée par le moteur. Vérifie son état après actualisation.';out.replaceChildren();}
     document.dispatchEvent(new Event('campus-command-completed'));
    }catch(e){uncertain=true;if(n===seq)status.textContent='Résultat incertain : ne relance pas sans vérifier les états.';}
    finally{clearTimeout(timer);pending=false;if(n===seq)lock(true);}

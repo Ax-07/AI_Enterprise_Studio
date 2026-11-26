@@ -43,6 +43,7 @@ def read(db,tool,ident=None):
             # Presence is not approval: validate packet only on explicit detail request.
             result.append({'kind':'draft','id':row['id'],'offer':row['offer'],'project':row['project'],
                 'title':row['project_title'],'state':state,'language':row['language'],'created':row['created'],
+                'snapshot_sha256':row['snapshot_sha256'],
                 'hermes_saved':bool(row['hermes_saved']),'marketing_saved':bool(row['marketing_saved']),
                 'publication_authorized':False,'video_generated':False})
         return result
@@ -53,7 +54,8 @@ def read(db,tool,ident=None):
             totals[row['mode']]['gross_cents' if row['kind']=='payment' else 'refunds_cents']=row['amount']
     for t in totals.values():t['net_cents']=t['gross_cents']-t['refunds_cents']
     result.append({'kind':'summary','currency':'EUR','totals':totals,
-        'verified_live_available':False,'verified_live_cents':None,'sale_authorized':False})
+        'verified_live_available':False,'verified_live_cents':None,'sale_authorized':False,
+        'test_configured':acquisition_sync.configured()})
     # Most recent completed offer per project; gate is the existing read-only eligibility evaluator.
     for row in db.execute("""SELECT o.*,p.title FROM commercial_offers o JOIN projects p ON p.id=o.project
         JOIN missions m ON m.id=o.mission WHERE m.state='terminée' AND o.id=(
@@ -66,16 +68,18 @@ def read(db,tool,ident=None):
             result.append({**base,'state':v['state'],'price_cents':v['plan']['price_cents'],
                 'gaps':gaps,'review':(v['review'] or {}).get('verdict'),
                 'monthly_result_hypothesis_cents':eco['result']['monthly_result_cents'] if eco else None,
+                'draft_eligible':eligible,'snapshot_sha256':business.digest(business.frozen(v)),
                 'observation_eligible':eligible and not bool(db.execute('SELECT 1 FROM business_trials WHERE offer=?',(row['id'],)).fetchone())})
         except EXPECTED:result.append({**base,'state':'unavailable'})
     t=business.now()
     for row in db.execute("SELECT * FROM business_trials ORDER BY id DESC LIMIT 20"):
         counts=db.execute("SELECT COUNT(*),COALESCE(SUM(outcome!='no_interest'),0) FROM business_observations WHERE trial=?",(row['id'],)).fetchone()
         result.append({'kind':'trial','id':row['id'],'offer':row['offer'],'state':business.trial_state(db,row,t),
-            'metric':row['metric'],'sample_size':row['sample_size'],'success_min':row['success_min'],
+            'stored_state':row['state'],'metric':row['metric'],'sample_size':row['sample_size'],'success_min':row['success_min'],
             'observations':counts[0],'positive':counts[1],'expires':row['expires']})
     for row in rows("SELECT page,draft,state,starts,expires,stop_requested,confirmed FROM acquisition_test_channels ORDER BY starts DESC,page LIMIT 20"):
-        result.append({'kind':'channel',**row,'mode':'test','within_window':row['starts']<=t<row['expires']})
+        result.append({'kind':'channel',**row,'mode':'test','within_window':row['starts']<=t<row['expires'],
+            'remaining_seconds':max(0,row['expires']-t)})
     for row in db.execute("SELECT * FROM acquisition_test_links ORDER BY starts DESC,page LIMIT 20"):
         state=acquisition_sync.state(db,row,t)
         fresh=state=='test_link' and row['last_export'] is not None and 0<=t-row['last_export']<=acquisition_sync.FRESHNESS
