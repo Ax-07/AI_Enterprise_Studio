@@ -341,7 +341,8 @@ function renderBusiness(s){
  const ac=s.acquisition||{drafts:[]};
  const sync=s.acquisition_sync||{links:[],configured:false};
  const ctl=s.acquisition_control||{channels:[],configured:false};
- const sig=JSON.stringify([d,ac,sync,ctl,busy]);if(sig===businessSig)return;businessSig=sig;
+ const hermes=s.hermes_acquisition||{packets:[]};
+ const sig=JSON.stringify([d,ac,sync,ctl,hermes,busy]);if(sig===businessSig)return;businessSig=sig;
  const channels=ctl.channels.map(x=>{
    const n=el('article',undefined,'request');
    n.append(el('h3','Canal TEST · Brouillon #'+x.draft),el('p',x.state+' · expiration '+new Date(x.expires*1000).toLocaleString()),el('p',x.last_error||'Aucune erreur de confirmation enregistrée'));
@@ -374,6 +375,11 @@ function renderBusiness(s){
      const demo=btn('Télécharger le parcours fictif',async()=>{try{const v=await api('acquisition_preview?id='+x.id);downloadText('parcours_fictif_offre_'+x.offer+'.json',JSON.stringify(v.demo,null,2),'application/json')}catch(e){text('message',e.message)}});
      if(!ctl.channels.some(y=>y.draft===x.id&&y.state!=='revoked'&&y.expires>Math.floor(Date.now()/1000))){
        const publish=btn('Autoriser la publication locale TEST (30 min)',()=>{if(confirm('Publier un exemple fictif sur le service local isolé, sans collecte ni vente ?'))action('acquisition/test_publish',{confirm:true,draft:x.id,snapshot_sha256:x.snapshot_sha256,duration_seconds:1800})});publish.disabled=busy||!ctl.configured;n.append(publish);
+     }
+     const h=hermes.packets.find(y=>y.draft===x.id&&y.state==='internal_ready');
+     if(h){
+       n.append(el('p','Dossier HERMES interne · démonstration : '+(h.demo_status==='historical_evidence'?'preuve synthétique historique exacte':'preuve compatible indisponible')));
+       const packet=btn('Télécharger le dossier HERMES',async()=>{try{const v=await api('hermes_packet?id='+x.id);downloadText('hermes_offre_'+x.offer+'.json',JSON.stringify(v,null,2),'application/json')}catch(e){text('message',e.message)}});packet.disabled=busy;n.append(packet);
      }
      const revoke=btn('Révoquer le brouillon',()=>{if(confirm('Révoquer définitivement ce brouillon local ?'))action('acquisition/revoke',{confirm:true,draft:x.id})},'quiet');preview.disabled=demo.disabled=revoke.disabled=busy;n.append(preview,demo,revoke);
    }return n;
