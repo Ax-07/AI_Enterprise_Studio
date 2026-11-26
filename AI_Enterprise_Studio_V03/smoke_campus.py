@@ -234,7 +234,7 @@ def smoke_live():
         finally:srv.shutdown();srv.server_close();thread.join()
     print('Campus D03 read-only smoke passed')
 
-def smoke_commands():
+def smoke_commands(route='live'):
     import tempfile
     from pathlib import Path
     with tempfile.TemporaryDirectory() as d, patch.object(s,'DB',Path(d)/'db.sqlite3'), patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network, patch.object(s,'run'):
@@ -250,8 +250,15 @@ def smoke_commands():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.on('request',lambda r:posts.append(r.url) if r.method=='POST' else None)
                 page.route('**/*',lambda r:r.continue_() if r.request.url.startswith(base+'/') else r.abort())
-                page.goto(base+'/campus/live/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A1')
+                page.goto(base+'/campus/'+route+'/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A1')
                 expect(page.locator('#status')).to_contain_text('Connecté')
+                if route=='original':
+                    expect(page.locator('#design-mode')).to_contain_text('OPÉRATIONNEL')
+                    expect(page.locator('[data-commands="missions"]')).to_be_visible()
+                    expect(page.locator('meta[name="campus-owner-session"]')).to_have_attribute('content','')
+                    page.locator('#tab-functions').click()
+                    page.locator('[data-function-tool="missions"]').click()
+                    expect(page.locator('#function-detail #station-detail')).to_be_visible()
                 page.locator('[data-commands="missions"]').click()
                 expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
                 expect(page.locator('[data-command="mission_demo"]')).to_be_enabled()
@@ -273,7 +280,7 @@ def smoke_commands():
                     assert s.used(db)==0
                 assert posts==[base+'/campus/command']*2,posts
                 expect(page.locator('[data-command="mission_cloud"]')).to_have_count(0)
-                page.goto(base+'/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A2')
+                page.goto(base+'/campus/'+route+'/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A2')
                 expect(page.locator('#status')).to_contain_text('Connecté')
                 page.locator('[data-commands="missions"]').click()
                 expect(page.locator('[data-command="mission_cloud"]')).to_be_enabled()
@@ -298,11 +305,24 @@ def smoke_commands():
                     assert db.execute('SELECT state FROM requests WHERE id=?',(rid,)).fetchone()[0]=='refusée'
                     assert s.used(db)==0
                 assert posts==[base+'/campus/command']*2+[base+'/campus/owner-command']*2,posts
+                if route=='original':
+                    page.locator('#campus-back').click()
+                    page.locator('.top [data-view="campaigns"]').click()
+                    expect(page.locator('#top-tool-host #station-modules a').first).to_have_attribute('href','/?page=home')
+                    page.locator('#back-top-tool').click()
+                    page.locator('#buildings button[data-id="ATLAS"]').click()
+                    page.locator('#lift-view [data-floor="ATLAS"]').click()
+                    page.locator('#tab-functions').click()
+                    page.locator('[data-function-tool="missions"]').click()
+                    href=page.locator('#station-modules a[data-module="missions"]').get_attribute('href')
+                    assert 'campusView=original' in href
+                    page.goto(base+href)
+                    expect(page.locator('#campus-return')).to_have_attribute('href',re.compile(r'^/campus/original/'))
                 assert not errors,errors
                 network.assert_not_called()
                 browser.close()
         finally:srv.shutdown();srv.server_close();thread.join()
-    print('Campus D04.4 command smoke passed')
+    print('Campus command smoke passed: '+route)
 
 def smoke_preview():
     import tempfile
@@ -536,6 +556,7 @@ if __name__=='__main__':
     smoke()
     smoke_live()
     smoke_commands()
+    smoke_commands('original')
     smoke_preview()
     smoke_original()
 

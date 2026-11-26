@@ -5,6 +5,14 @@
     const preview=document.querySelector('meta[name="campus-mode"]').content==='preview';
     if(preview){$('preview-notice').hidden=false;$('legacy-entry').hidden=true;$('operational-footer').textContent='Aperçu en lecture seule · toutes les commandes sont désactivées. Les listes sont limitées aux entrées les plus récentes.';}
     const fidelity=document.querySelector('meta[name="campus-original"]')?.content==='true';
+    const campusRoute=fidelity?'/campus/original/':'/campus/live/';
+    if(fidelity){
+        $('design-mode').textContent=preview?'V3 · APERÇU CONNECTÉ':'V3 · OPÉRATIONNEL';
+        $('design-mode-detail').textContent=preview?'Consultation locale':'Commandes locales protégées';
+        $('function-mode').textContent=preview?'Modules en consultation locale. Aucun lancement dans cet aperçu.':'Modules locaux et commandes existantes. Les confirmations et limites du moteur restent applicables.';
+        $('top-tool-mode').textContent=preview?'Données du moteur · lecture seule':'Données du moteur · accès aux modules complets';
+        if(!preview)$('operational-footer').textContent='Mode opérationnel local · actions explicites, limites du moteur et confirmations conservées.';
+    }
     let topTool=null,officeMode=true,roomTab='scene';
     let data=null, selected='ATLAS', busy=false;
     const labels={ATLAS:'Direction',ORION:'Recherche',NEXUS:'Production',MIDAS:'Finance',HERMES:'Commerce',SENTINEL:'Sécurité',CORE:'DATA CORE'};
@@ -219,7 +227,7 @@
         for(const page of modules.stations[st.id]){
             if(!Object.hasOwn(modules.pages,page))continue;
             const a=node('a',modules.pages[page]);a.dataset.module=page;
-            a.href='/?'+new URLSearchParams({page,campusBuilding:selected,campusFloor:floorId,campusStation:st.id});
+            a.href='/?'+new URLSearchParams({page,campusBuilding:selected,campusFloor:floorId,campusStation:st.id,...(fidelity?{campusView:'original'}:{})});
             if(Object.hasOwn(window.AESNativeTools.names,page)){
                 const btn=node('button','Consulter ici · '+window.AESNativeTools.names[page]);btn.type='button';btn.dataset.native=page;btn.addEventListener('click',()=>window.AESNativeTools.open(page));links.append(btn);
             }
@@ -236,7 +244,7 @@
     }
     function currentFloor(){return byId.get(selected)?.floors.find(f=>f.id===floorId);}
     function openLift(id){if(!byId.has(id))return;topTool=null;roomTab='scene';if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));officeMode=true;clearFlows();if(id!==selected)lastFloor=null;else if(scene==='room')lastFloor=floorId;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-view').querySelector('button')?.focus();}
-    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;topTool=null;roomTab='scene';officeMode=true;if(!preview&&id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
+    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;topTool=null;roomTab='scene';officeMode=true;if(!preview&&id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign(campusRoute+'?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
     function openCampus(){topTool=null;roomTab='scene';if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();document.querySelector('[data-building="'+selected+'"]')?.focus();}
     function tower(b){return art.tower(b,lastFloor);}
     function highlightFloor(id){
@@ -343,7 +351,7 @@
         }
         const cards=$('function-cards');cards.replaceChildren();
         for(const [page,stations] of groups){
-            const card=originalCard(window.AESNativeTools.names[page],stations.map(s=>s.name).join(' · '),'Consulter · données locales',()=>{
+            const card=originalCard(window.AESNativeTools.names[page],stations.map(s=>s.name).join(' · '),preview?'Consulter · données locales':'Consulter / accéder au module',()=>{
                 activateStation(stations[0].id);
                 if(data)window.AESNativeTools.open(page);
             });card.dataset.functionTool=page;cards.append(card);
@@ -493,7 +501,12 @@
             const tool=tools[btn.dataset.view];if(!tool)return;
             openCampus();clearFlows();topTool=tool;applyOriginalTab();$('top-tool-title').textContent=window.AESNativeTools.names[tool];
             document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b===btn));
-            $('station-detail').hidden=false;$('station-title').textContent=window.AESNativeTools.names[tool];$('station-content').replaceChildren();$('station-modules').replaceChildren();$('station-modules').dataset.station='';window.AESNativeTools.setStation('nav:'+tool);window.AESNativeTools.open(tool);$('top-tool-title').focus({preventScroll:true});
+            $('station-detail').hidden=false;$('station-title').textContent=window.AESNativeTools.names[tool];$('station-content').replaceChildren();$('station-modules').replaceChildren();$('station-modules').dataset.station='';
+            if(!preview){
+                const complete=node('a','Ouvrir le module complet');complete.href='/?'+new URLSearchParams({page:tool});$('station-modules').append(complete);
+                if(tool==='home'){const direction=node('a','Autorisations et campagnes · bureau du propriétaire');direction.href=campusRoute+'?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A0';$('station-modules').append(direction);}
+            }
+            window.AESNativeTools.setStation('nav:'+tool);window.AESNativeTools.open(tool);$('top-tool-title').focus({preventScroll:true});
         }));
     }
     document.addEventListener('campus-command-completed',refresh);

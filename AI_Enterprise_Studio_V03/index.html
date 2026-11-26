@@ -564,7 +564,7 @@ function campusEntry(){
  go(target);
  const b=q.get('campusBuilding'),f=q.get('campusFloor'),st=q.get('campusStation');
  if(!['ATLAS','ORION','NEXUS','MIDAS','HERMES','SENTINEL','CORE'].includes(b)||!f||!/^[A-Z][A-Z0-9]{0,31}$/.test(f)||!st||!st.startsWith(f+':station:')||!/^([A-Z][A-Z0-9]{0,31}):station:[0-4]$/.test(st))return;
- const link=document.createElement('a');link.id='campus-return';link.textContent='← Retour au poste du campus';link.href='/campus/live/?'+new URLSearchParams({building:b,floor:f,station:st});
+ const link=document.createElement('a');link.id='campus-return';link.textContent='← Retour au poste du campus';link.href=(q.get('campusView')==='original'?'/campus/original/':'/campus/live/')+'?'+new URLSearchParams({building:b,floor:f,station:st});
  const anchor=document.querySelector('.sidebarfoot');anchor.prepend(link);
 }
 campusEntry();
