@@ -34,6 +34,7 @@ class PreviewHandler(s.Handler):
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--no-browser',action='store_true')
+    ap.add_argument('--original',action='store_true',help='Ouvrir le Design 22.6 connecté')
     args=ap.parse_args()
     if not s.DB.is_file() or not (s.ROOT/'PREPARATION.json').is_file():
         print('Prépare d’abord le dossier candidat avec prepare_update.py.')
@@ -42,9 +43,10 @@ def main():
     except OSError:
         print('Port local indisponible : ferme le serveur existant.')
         return 1
-    print(f'Aperçu en lecture seule : http://127.0.0.1:{s.PORT}/campus/live/',flush=True)
+    url=f'http://127.0.0.1:{s.PORT}/campus/'+('original/' if args.original else 'live/')
+    print('Aperçu en lecture seule : '+url,flush=True)
     print('Aucun worker, aucune commande, aucun service TEST démarré. Ctrl+C pour fermer.',flush=True)
-    if not args.no_browser:webbrowser.open(f'http://127.0.0.1:{s.PORT}/campus/live/')
+    if not args.no_browser:webbrowser.open(url)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
     finally:server.server_close()
