@@ -31,7 +31,61 @@ def fixture(path):
         INSERT INTO requests VALUES('en attente','secret-test');
         """)
 
+def fixture_marketing(path):
+    """Extend the minimal campus fixture with the actual empty commercial schema."""
+    import portfolio, commercial, acquisition, hermes_acquisition, marketing
+    with sqlite3.connect(path) as db:
+        db.row_factory=sqlite3.Row
+        for module in (portfolio,commercial,acquisition,hermes_acquisition,marketing):
+            module.init(db)
+
 class CampusLiveTests(unittest.TestCase):
+    def test_workforce_projection(self):
+        import campus_tools
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'test.db';fixture(path)
+            with sqlite3.connect(path) as db:
+                db.execute("INSERT INTO tasks(id,mission,agent,state,created,goal,parent) VALUES(3,1,'ORION','prête','2026-01-01','secret-child',1)")
+                db.execute("UPDATE tasks SET state='prête' WHERE id=1")
+                db.execute("UPDATE missions SET step=3 WHERE id=1")
+                db.execute("UPDATE tasks SET state='terminée' WHERE id=2")
+                db.execute("INSERT INTO events VALUES(2,1,'ORION','search',0,'2026-01-01','secret-query')")
+                db.execute("INSERT INTO events VALUES(3,2,'ORION','search',1,'2026-01-01','secret-demo')")
+                db.execute("INSERT INTO events VALUES(4,1,'ORION','secret-action',NULL,'2026-01-01','secret-args')")
+            before=path.read_bytes()
+            result=campus_tools.read(path,'workforce',{},roles=s.moteur.ROLES,permissions=s.moteur.PERMS)
+            self.assertTrue(result['read_only'])
+            summary=result['rows'][0]
+            self.assertEqual(summary['configured'],8)
+            self.assertEqual(summary['unresolved'],2)
+            self.assertEqual(summary['delegation_count'],1)
+            agents={r['id']:r for r in result['rows'] if r['kind']=='agent'}
+            self.assertEqual(agents['MNEMOS']['load'],[{'mode':'cloud','category':'dependency','count':1}])
+            self.assertEqual(agents['ORION']['load'],[{'mode':'cloud','category':'selected','count':1}])
+            self.assertEqual(agents['PROMETHEUS']['load'],[])
+            self.assertEqual(agents['PROMETHEUS']['completed_tasks'],[{'mode':'demo','count':1}])
+            self.assertIsNone(agents['ORION']['competence_rating'])
+            self.assertIn({'mode':'cloud','action':'search','ok':0,'failed':1,'unknown':0},agents['ORION']['tool_evidence'])
+            self.assertIn({'mode':'demo','action':'search','ok':1,'failed':0,'unknown':0},agents['ORION']['tool_evidence'])
+            self.assertIn({'mode':'cloud','action':'other','ok':0,'failed':0,'unknown':1},agents['ORION']['tool_evidence'])
+            edge=result['rows'][-1]
+            self.assertEqual((edge['from_agent'],edge['to_agent']),('MNEMOS','ORION'))
+            self.assertNotIn('secret-',json.dumps(result))
+            self.assertEqual(path.read_bytes(),before)
+
+    def test_marketing_fixture_read_only(self):
+        import campus_tools
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'test.db';fixture(path)
+            with self.assertRaises(sqlite3.OperationalError):
+                campus_tools.read(path,'marketing',{})
+            fixture_marketing(path)
+            before=path.read_bytes()
+            result=campus_tools.read(path,'marketing',{})
+            self.assertTrue(result['read_only'])
+            self.assertEqual(result['rows'],[])
+            self.assertEqual(path.read_bytes(),before)
+
     def test_projection_and_missing_database(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/'test.db';fixture(path);before=path.read_bytes()

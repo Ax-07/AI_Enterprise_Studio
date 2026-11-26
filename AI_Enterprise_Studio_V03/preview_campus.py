@@ -4,6 +4,7 @@ import webbrowser
 import serveur as s
 
 class PreviewHandler(s.Handler):
+    campus_preview_mode=True
     def do_GET(self):
         if not self.local():return self.send({'error':'Hôte refusé'},403)
         route=self.route()
@@ -16,7 +17,7 @@ class PreviewHandler(s.Handler):
             return
         if route=='/api/health':
             return self.send({'application':'AI Enterprise Studio','version':s.VERSION,'mode':'preview_read_only','paid_call':False})
-        if route=='/campus/live':
+        if route in ('/campus/live','/campus/original'):
             if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
                 return self.send({'error':'Accès local direct requis'},403)
             asset=s.campus_preview.read(s.ROOT,route)

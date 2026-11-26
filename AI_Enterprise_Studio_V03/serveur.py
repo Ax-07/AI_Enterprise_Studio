@@ -266,6 +266,7 @@ def plan_audit(c,cfg,pid):
         'limit':'Journal local potentiellement privé; vérifier avant partage. Aucun appel externe pour cet export.'}
 
 class Handler(BaseHTTPRequestHandler):
+    campus_preview_mode=False
     def send(self,data,status=200,typ='application/json',csp=None):
         b=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type',typ); self.send_header('Content-Length',str(len(b))); self.send_header('Cache-Control','no-store, no-cache, must-revalidate'); self.send_header('X-Enterprise-Version',VERSION); self.send_header('X-Content-Type-Options','nosniff'); self.send_header('Referrer-Policy','no-referrer'); self.send_header('Content-Security-Policy',csp or "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"); self.end_headers(); self.wfile.write(b)
     def route(self): return urllib.parse.urlsplit(self.path).path.rstrip('/') or '/'
@@ -295,6 +296,11 @@ class Handler(BaseHTTPRequestHandler):
                                 'mission_budget':cfg['mission_budget'],'mission_calls':cfg['call_limit'],
                                 'openai_configured':bool(cfg['key']),'brave_configured':bool(cfg['brave']),
                                 'sandbox_enabled':cfg.get('html_sandbox_enabled',False)}
+                        elif tools[0]=='economy':
+                            resources={'budget':config()['budget']}
+                        elif tools[0]=='infrastructure':
+                            import campus_infrastructure
+                            resources=campus_infrastructure.metadata(ROOT,VERSION,config(),n8n_bridge.configured(),self.campus_preview_mode)
                         return self.send(campus_tools.read(DB,tools[0],q,roles=moteur.ROLES,permissions=moteur.PERMS,registry=connectors.REGISTRY,resources=resources))
                     except campus_tools.Missing as e:return self.send({'error':str(e)},404)
                     except campus_tools.TooLarge as e:return self.send({'error':str(e)},413)
@@ -304,14 +310,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(campus_live.snapshot(DB,AGENTS,config()['budget'],VERSION))
                 except Exception:
                     return self.send({'error':'Données du campus indisponibles'},503)
-            if self.route()=='/campus/original':
-                if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
-                    return self.send({'error':'Accès local direct requis'},403)
-                asset=campus_preview.read(ROOT,self.route())
-                if asset is None:return self.missing()
-                data,typ=asset
-                return self.send(data.replace(b'__CAMPUS_READ_SESSION__',CAMPUS_READ_SESSION.encode()),typ=typ,csp=campus_preview.LIVE_CSP)
-            if self.route()=='/campus/live':
+            if self.route() in ('/campus/live','/campus/original'):
                 if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
                     return self.send({'error':'Accès local direct requis'},403)
                 asset=campus_preview.read(ROOT,self.route())

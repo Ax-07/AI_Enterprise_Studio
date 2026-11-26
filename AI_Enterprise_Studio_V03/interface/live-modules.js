@@ -368,4 +368,225 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
   "ANALYTICS183:station:4": [
     "business"
   ]
+}), native:Object.freeze({
+  "SUPERVISION:station:0": [
+    "incidents"
+  ],
+  "SUPERVISION:station:2": [
+    "incidents"
+  ],
+  "SUPERVISION:station:4": [
+    "incidents",
+    "quality"
+  ],
+  "SENTINEL:station:1": [
+    "incidents"
+  ],
+  "SENTINEL:station:4": [
+    "incidents",
+    "infrastructure"
+  ],
+  "INCIDENTS:station:0": [
+    "incidents"
+  ],
+  "INCIDENTS:station:1": [
+    "incidents"
+  ],
+  "INCIDENTS:station:2": [
+    "incidents"
+  ],
+  "INCIDENTS:station:3": [
+    "incidents"
+  ],
+  "INCIDENTS:station:4": [
+    "incidents"
+  ],
+  "INFRA:station:3": [
+    "incidents",
+    "infrastructure"
+  ],
+  "ITOPS17:station:0": [
+    "incidents",
+    "infrastructure"
+  ],
+  "NEXUS:station:0": [
+    "quality"
+  ],
+  "NEXUS:station:3": [
+    "quality"
+  ],
+  "FACTORY:station:2": [
+    "quality"
+  ],
+  "FACTORY:station:3": [
+    "quality"
+  ],
+  "FACTORY:station:4": [
+    "quality"
+  ],
+  "LAB:station:2": [
+    "quality"
+  ],
+  "LAB:station:3": [
+    "quality",
+    "improvements"
+  ],
+  "LAB:station:4": [
+    "quality"
+  ],
+  "PORTFOLIO:station:3": [
+    "quality"
+  ],
+  "SENTINEL:station:2": [
+    "quality"
+  ],
+  "SENTINEL:station:3": [
+    "quality"
+  ],
+  "INFRA:station:0": [
+    "infrastructure"
+  ],
+  "INFRA:station:1": [
+    "infrastructure"
+  ],
+  "INFRA:station:2": [
+    "infrastructure"
+  ],
+  "INFRA:station:4": [
+    "infrastructure"
+  ],
+  "ITOPS17:station:1": [
+    "infrastructure"
+  ],
+  "ITOPS17:station:2": [
+    "infrastructure"
+  ],
+  "ITOPS17:station:3": [
+    "infrastructure"
+  ],
+  "ITOPS17:station:4": [
+    "infrastructure"
+  ],
+  "SUPERVISION:station:3": [
+    "infrastructure"
+  ],
+  "MIDAS:station:0": [
+    "economy"
+  ],
+  "MIDAS:station:1": [
+    "economy"
+  ],
+  "MIDAS:station:3": [
+    "economy"
+  ],
+  "MIDAS:station:4": [
+    "economy"
+  ],
+  "ECON:station:0": [
+    "economy"
+  ],
+  "ECON:station:1": [
+    "economy"
+  ],
+  "ECON:station:2": [
+    "economy"
+  ],
+  "ECON:station:3": [
+    "economy"
+  ],
+  "INVESTMENTS:station:0": [
+    "economy"
+  ],
+  "INVESTMENTS:station:1": [
+    "economy"
+  ],
+  "INVESTMENTS:station:2": [
+    "economy"
+  ],
+  "INVESTMENTS:station:3": [
+    "economy"
+  ],
+  "EXPAND:station:2": [
+    "economy"
+  ],
+  "OPPORTUNITIES:station:0": [
+    "economy"
+  ],
+  "OPPORTUNITIES:station:1": [
+    "economy"
+  ],
+  "OPPORTUNITIES:station:3": [
+    "economy"
+  ],
+  "HERMES:station:0": [
+    "marketing"
+  ],
+  "HERMES:station:1": [
+    "marketing"
+  ],
+  "HERMES:station:2": [
+    "business",
+    "marketing"
+  ],
+  "HERMES:station:3": [
+    "marketing"
+  ],
+  "SHOWROOM:station:0": [
+    "marketing"
+  ],
+  "SHOWROOM:station:1": [
+    "marketing"
+  ],
+  "SHOWROOM:station:2": [
+    "marketing"
+  ],
+  "SHOWROOM:station:3": [
+    "marketing"
+  ],
+  "SUPPORT17:station:4": [
+    "marketing"
+  ],
+  "COMMS:station:3": [
+    "marketing"
+  ],
+  "ADS183:station:0": [
+    "marketing"
+  ],
+  "ADS183:station:1": [
+    "marketing"
+  ],
+  "ADS183:station:2": [
+    "marketing"
+  ],
+  "ADS183:station:4": [
+    "marketing"
+  ],
+  "VIDEO183:station:0": [
+    "marketing"
+  ],
+  "PUBLISH183:station:0": [
+    "marketing"
+  ],
+  "PUBLISH183:station:1": [
+    "marketing"
+  ],
+  "PEOPLE17:station:0": [
+    "workforce"
+  ],
+  "PEOPLE17:station:1": [
+    "workforce"
+  ],
+  "COMMS:station:0": [
+    "workforce"
+  ],
+  "COMMS:station:1": [
+    "workforce"
+  ],
+  "PEOPLE17:station:2": [
+    "workforce"
+  ],
+  "ACADEMY:station:1": [
+    "workforce",
+    "improvements"
+  ]
 })});

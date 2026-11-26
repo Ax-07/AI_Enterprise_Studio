@@ -1,4 +1,6 @@
-# AI Enterprise Studio V3.0.0 — installation parallèle (candidat)
+# AI Enterprise Studio V3.0.0 — installation parallèle (candidat historique)
+
+**V03 déjà rattachée à Git :** utiliser la procédure candidate [DEPLOIEMENT_GIT_V302.md](DEPLOIEMENT_GIT_V302.md) après validation de la livraison. Les instructions ci-dessous concernent uniquement une installation parallèle neuve, pas une mise à jour du dépôt existant.
 
 Ce paquet contient les sources publiques et le Design 22.6. Il n'embarque ni config.json local ni base de données. Le serveur annonce la version 3.0.0 ; BUILD_INFO.json identifie le candidat par son commit. Les versions des schémas de données et des protocoles internes sont conservées. Python 3.11+ requis.
 
@@ -18,7 +20,7 @@ PREPARATION.json contient uniquement des compteurs et indicateurs, pas de clé o
 
 ## Essais locaux (après validation du candidat)
 
-Pour le premier contrôle, lancer LANCER_APERCU.bat dans le nouveau dossier (ou python preview_campus.py). Ouvrir http://127.0.0.1:8790/campus/live/. Ce serveur ne démarre aucun worker et refuse toutes les commandes ; l'interface historique est désactivée. Après validation locale, fermer cet aperçu et lancer LANCER_CAMPUS.bat (ou python serveur.py) pour passer en mode opérationnel. L'interface historique reste à la racine en mode opérationnel. Comparer l'historique, le registre des coûts et les livrables. Ne pas lancer une mission Cloud ni accorder une autorisation avant vérification. La reprise des activités payantes requiert une commande explicite. Les canaux TEST précédents ne sont pas réactivés automatiquement ; leur stockage distinct peut rester dans l'ancien emplacement.
+Pour le premier contrôle, lancer LANCER_APERCU.bat dans le nouveau dossier (ou python preview_campus.py). Ouvrir http://127.0.0.1:8790/campus/live/. Ce serveur ne démarre aucun worker et refuse toutes les commandes ; l'interface historique est désactivée. Après validation locale, fermer cet aperçu et lancer LANCER_CAMPUS.bat (ou python serveur.py) pour passer en mode opérationnel. L'interface historique reste à la racine en mode opérationnel. Comparer l'historique, le registre des coûts et les livrables. Ne pas lancer une mission Cloud ni accorder une autorisation avant vérification. Le serveur normal peut reprendre les services périodiques existants selon leurs autorisations : vérifier et suspendre celles-ci avant bascule si nécessaire. Les canaux TEST précédents ne sont pas réactivés automatiquement ; leur stockage distinct peut rester dans l'ancien emplacement.
 
 ## Retour à la version précédente
 

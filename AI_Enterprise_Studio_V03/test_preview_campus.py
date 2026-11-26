@@ -21,7 +21,7 @@ class PreviewTests(unittest.TestCase):
             t=threading.Thread(target=server.serve_forever,daemon=True);t.start()
             try:
                 with patch.object(s,'PORT',port),patch.object(s,'request',side_effect=AssertionError('Network forbidden')) as network,patch.object(s,'init',side_effect=AssertionError('No startup migration')),patch.object(s,'status',side_effect=AssertionError('No legacy status')):
-                    for path in ('/','/campus/live/?building=ATLAS&floor=OWNER'):
+                    for path in ('/','/campus/live/?building=ATLAS&floor=OWNER','/campus/original/','/campus/original/?building=ATLAS&floor=OWNER'):
                         with urllib.request.urlopen(base+path) as r:html=r.read()
                         self.assertIn(b'content="preview" name="campus-mode"',html)
                         self.assertIn(s.CAMPUS_READ_SESSION.encode(),html)

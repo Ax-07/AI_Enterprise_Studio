@@ -2,9 +2,18 @@
 import json
 import sqlite3
 import campus_commercial
+import incidents
+import campus_quality
+import campus_infrastructure
+import campus_economy
+import campus_workforce
+import campus_improvement
+import autopilot
+import planner
+import periodic
 from pathlib import Path
 
-TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions')) | campus_commercial.TOOLS
+TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions','incidents','quality','infrastructure','economy','workforce','improvements')) | campus_commercial.TOOLS
 MAX_ARTIFACT_BYTES=2*1024*1024
 MAX_REPORT_BYTES=256*1024
 
@@ -36,6 +45,33 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
         if tool in campus_commercial.TOOLS:
             result=campus_commercial.read(db,tool,ident)
             if tool in campus_commercial.DETAILS and not result:raise Missing('Dossier absent')
+        elif tool=='improvements':
+            result=campus_improvement.read(db)
+        elif tool=='workforce':
+            result=campus_workforce.read(db,roles or {},permissions or {})
+        elif tool=='economy':
+            result=campus_economy.read(db,resources)
+        elif tool=='infrastructure':
+            result=campus_infrastructure.read(db,resources,registry)
+        elif tool=='quality':
+            result=campus_quality.read(db)
+        elif tool=='incidents':
+            # Persisted states only: never run incident eligibility or a recovery on read.
+            counts=rows("SELECT mode,state,COUNT(*) AS count FROM missions WHERE state IN ('bloquée','en attente','interrompue') GROUP BY mode,state")
+            result=[{'kind':'summary','counts':counts,'recovery_policy':incidents.LIMIT,
+                     'recovery_count':db.execute("SELECT COUNT(*) FROM incident_recoveries").fetchone()[0]}]
+            for r in rows("""SELECT m.id,m.title,m.mode,m.state,m.created,m.error,
+                (SELECT COUNT(*) FROM requests q WHERE q.mission=m.id AND q.state='en attente') AS pending,
+                (SELECT COUNT(*) FROM ledger l WHERE l.mission=m.id AND l.state='à rapprocher' AND l.actual IS NULL) AS unreconciled
+                FROM missions m WHERE m.state IN ('bloquée','en attente','interrompue')
+                ORDER BY m.id DESC LIMIT 50"""):
+                diagnostic=incidents.classify(r['state'],r.pop('error'),r.pop('pending'),r.pop('unreconciled'))
+                result.append({'kind':'mission',**r,**diagnostic})
+            for r in rows("""SELECT campaign,mission,task,ledger,diagnostic,created
+                FROM incident_recoveries ORDER BY created DESC,campaign DESC LIMIT 50"""):
+                # A historical recovery is not proof that the mission completed.
+                r['diagnostic']=r['diagnostic'] if r['diagnostic'] in incidents.TRANSIENT else 'Diagnostic hors liste'
+                result.append({'kind':'recovery',**r})
         elif tool=='missions':
             result=rows("SELECT id,title,mode,state,created FROM missions ORDER BY id DESC LIMIT 100")
         elif tool=='work':
@@ -92,13 +128,30 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 'plans':rows("SELECT id,state,budget FROM enterprise_plans WHERE state='active' ORDER BY id DESC LIMIT 10"),
                 'periods':rows("SELECT id,state,cadence,expires,total_budget FROM periodic_grants WHERE state='active' ORDER BY id DESC LIMIT 10"),
             }
+            # Exact totals are independent of the ten-row detail cap.
+            active_counts={
+                'missions':db.execute("SELECT COUNT(*) FROM missions WHERE state='en cours'").fetchone()[0],
+                'campaigns':db.execute("SELECT COUNT(*) FROM campaigns WHERE state='actif'").fetchone()[0],
+                'plans':db.execute("SELECT COUNT(*) FROM enterprise_plans WHERE state='active'").fetchone()[0],
+                'periods':db.execute("SELECT COUNT(*) FROM periodic_grants WHERE state='active'").fetchone()[0],
+            }
+            mission_counts=rows("SELECT mode,state,COUNT(*) AS count FROM missions GROUP BY mode,state ORDER BY mode,state")
+            attention=rows("""SELECT id,substr(title,1,300) AS title,mode,state FROM missions
+                WHERE state IN ('bloquée','en attente','interrompue') ORDER BY id DESC LIMIT 10""")
+            attention_count=db.execute("SELECT COUNT(*) FROM missions WHERE state IN ('bloquée','en attente','interrompue')").fetchone()[0]
+            pending_decisions=rows("""SELECT r.id,r.mission,m.mode,m.state AS mission_state,
+                substr(m.title,1,300) AS title,r.task IS NOT NULL AND m.state='en attente' AS may_resume
+                FROM requests r JOIN missions m ON m.id=r.mission WHERE r.state='en attente'
+                ORDER BY r.id DESC LIMIT 10""")
             result=[{'kind':'resources','budget':resources['budget'],'committed':used,'measured':measured,
                 'unmeasured':used-measured,'remaining':max(0,resources['budget']-used),
                 'over_budget':used>resources['budget'],'search_limit':resources['search_limit'],'searches':searches,
                 'mission_budget':resources['mission_budget'],'mission_calls':resources['mission_calls'],
                 'openai_configured':resources['openai_configured'],'brave_configured':resources['brave_configured'],
                 'sandbox_enabled':resources['sandbox_enabled'],'pending':pending,
-                'configured_agents':len(roles or {}),'active':active}]
+                'configured_agents':len(roles or {}),'active':active,'active_counts':active_counts,
+                'mission_counts':mission_counts,'attention':attention,'attention_count':attention_count,
+                'pending_decisions':pending_decisions,'detail_limit':10}]
         elif tool=='decisions':
             result=rows("""SELECT r.id,r.mission,r.state,r.task,m.title,m.mode,m.state AS mission_state,
                 CASE WHEN length(CAST(r.body AS BLOB))<=32768 THEN r.body ELSE NULL END AS body
@@ -121,21 +174,40 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 (SELECT COUNT(*) FROM campaign_missions cm WHERE cm.campaign=c.id) AS missions,
                 (SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved,0)),0) FROM ledger l
                  JOIN campaign_missions cm ON cm.mission=l.mission WHERE cm.campaign=c.id) AS committed
-                FROM campaigns c ORDER BY c.id DESC LIMIT 15"""):
-                result.append({'kind':'campaign',**r})
+                FROM campaigns c ORDER BY CASE WHEN c.state='actif' THEN 0 ELSE 1 END,c.id DESC LIMIT 15"""):
+                linked=db.execute('SELECT plan FROM enterprise_plan_queue WHERE campaign=?',(r['id'],)).fetchone()
+                grant=periodic.linked_campaign(db,r['id'])
+                searched=autopilot.searches(db,r['id'])
+                result.append({'kind':'campaign',**r,'searches':searched,
+                    'remaining':max(0,r['budget']-r['committed']),
+                    'search_remaining':max(0,r['search_cap']-searched),
+                    'plan_id':linked['plan'] if linked else None,
+                    'grant_id':grant['grant_id'] if grant else None})
             for r in rows("""SELECT p.id,p.state,p.budget,p.per_campaign,p.max_campaigns,p.search_cap,p.created,
                 substr(p.reason,1,500) AS reason,
                 (SELECT COUNT(*) FROM enterprise_plan_queue q WHERE q.plan=p.id) AS campaigns,
                 (SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved,0)),0) FROM ledger l
                  JOIN campaign_missions cm ON cm.mission=l.mission
                  JOIN enterprise_plan_queue q ON q.campaign=cm.campaign WHERE q.plan=p.id) AS committed
-                FROM enterprise_plans p ORDER BY p.id DESC LIMIT 15"""):
-                result.append({'kind':'plan',**r})
-            for r in rows("""SELECT g.id,g.cadence,g.periods,g.state,g.starts,g.expires,g.total_budget,
-                g.period_budget,g.total_search,substr(g.reason,1,500) AS reason,
+                FROM enterprise_plans p ORDER BY CASE WHEN p.state='active' THEN 0 ELSE 1 END,p.id DESC LIMIT 15"""):
+                grant=periodic.linked_plan(db,r['id'])
+                spent,searched=planner.totals(db,r['id'])
+                result.append({'kind':'plan',**r,'committed':spent,'searches':searched,
+                    'remaining':max(0,r['budget']-spent),
+                    'search_remaining':max(0,r['search_cap']-searched),
+                    'grant_id':grant['grant_id'] if grant else None})
+            now=periodic.now()
+            for r in rows("""SELECT g.id,g.cadence,g.periods,g.state,g.starts,g.expires,g.last_seen,g.total_budget,
+                g.period_budget,g.per_campaign,g.total_search,g.period_search,g.max_campaigns,g.explore,substr(g.reason,1,500) AS reason,
                 (SELECT COUNT(*) FROM periodic_slots s WHERE s.grant_id=g.id) AS slots
-                FROM periodic_grants g ORDER BY g.id DESC LIMIT 15"""):
-                result.append({'kind':'periodic',**r})
+                FROM periodic_grants g ORDER BY CASE WHEN g.state IN ('active','suspended') THEN 0 ELSE 1 END,g.id DESC LIMIT 15"""):
+                slots=periodic.slots(db,r['id'])
+                spent=sum(x['spent'] for x in slots);searched=sum(x['searches'] for x in slots)
+                window=(r['state']=='active' and max(r['starts'],r['last_seen'])<=now<r['expires'])
+                result.append({'kind':'periodic',**{k:v for k,v in r.items() if k!='last_seen'},
+                    'committed':spent,'searches':searched,'remaining':max(0,r['total_budget']-spent),
+                    'search_remaining':max(0,r['total_search']-searched),'within_grant_window':window,
+                    'slot_details':[{k:x[k] for k in ('slot','plan','state','starts','expires','budget','spent','search_cap','searches')} for x in slots]})
         elif tool=='portfolio':
             result=rows("""SELECT p.id,p.title,p.state,p.opportunity,p.created,
                 (SELECT COUNT(*) FROM project_missions pm WHERE pm.project=p.id) AS missions,
@@ -177,6 +249,6 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 substr(o.next_test,1,600) AS next_test,o.created,m.mode FROM opportunities o
                 JOIN missions m ON m.id=o.mission ORDER BY o.id DESC LIMIT 100""")
         return {'schema':'aes.campus.tool.v1','tool':tool,'read_only':True,'rows':result,
-            'limit':50 if tool=='memory' else 1 if tool in ('artifact','report') or tool in campus_commercial.DETAILS else 30 if tool=='marketing' else 81 if tool=='business' else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
+            'limit':51 if tool=='improvements' else 51+len(roles or {}) if tool=='workforce' else 31 if tool=='economy' else 1+len(registry or {}) if tool=='infrastructure' else 101 if tool=='incidents' else 50 if tool=='memory' else 1 if tool in ('artifact','report') or tool in campus_commercial.DETAILS else 30 if tool=='marketing' else 81 if tool=='business' else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
     finally:
         db.close()

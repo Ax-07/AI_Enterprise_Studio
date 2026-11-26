@@ -5,6 +5,14 @@
     const preview=document.querySelector('meta[name="campus-mode"]').content==='preview';
     if(preview){$('preview-notice').hidden=false;$('legacy-entry').hidden=true;$('operational-footer').textContent='Aperçu en lecture seule · toutes les commandes sont désactivées. Les listes sont limitées aux entrées les plus récentes.';}
     const fidelity=document.querySelector('meta[name="campus-original"]')?.content==='true';
+    const campusRoute=fidelity?'/campus/original/':'/campus/live/';
+    if(fidelity){
+        $('design-mode').textContent=preview?'V3 · APERÇU CONNECTÉ':'V3 · OPÉRATIONNEL';
+        $('design-mode-detail').textContent=preview?'Consultation locale':'Commandes locales protégées';
+        $('function-mode').textContent=preview?'Modules en consultation locale. Aucun lancement dans cet aperçu.':'Modules locaux et commandes existantes. Les confirmations et limites du moteur restent applicables.';
+        $('top-tool-mode').textContent=preview?'Données du moteur · lecture seule':'Données du moteur · accès aux modules complets';
+        if(!preview)$('operational-footer').textContent='Mode opérationnel local · actions explicites, limites du moteur et confirmations conservées.';
+    }
     let topTool=null,officeMode=true,roomTab='scene';
     let data=null, selected='ATLAS', busy=false;
     const labels={ATLAS:'Direction',ORION:'Recherche',NEXUS:'Production',MIDAS:'Finance',HERMES:'Commerce',SENTINEL:'Sécurité',CORE:'DATA CORE'};
@@ -205,7 +213,7 @@
         $('buildings').replaceChildren(...layout.map(b=>{const btn=node('button',labels[b.id]);btn.type='button';btn.dataset.id=b.id;btn.dataset.activity='unknown';if(fidelity){btn.className='agent';btn.style.setProperty('--c',b.color);btn.replaceChildren();const avatar=node('span',undefined,'avatar'),av=svg('svg',{viewBox:'-20 -40 40 45','aria-hidden':'true'});av.append(art.robot(b.color,.8));avatar.append(av);const desc=node('span');desc.append(node('span',window.AESOriginalOffice.departments[b.id].title,'name'),node('small','Données indisponibles'));btn.append(avatar,desc);}else btn.append(node('small','Données indisponibles'));btn.addEventListener('click',()=>openLift(b.id));return btn;}));
     }
     const modules=window.AESLiveModules;
-    const hasModule=st=>Object.hasOwn(modules.stations,st.id)&&modules.stations[st.id].length>0;
+    const hasModule=st=>(modules.stations[st.id]||[]).length>0||(modules.native?.[st.id]||[]).length>0;
     function updateModuleLinks(st){
         const out=$('station-modules');const sig=st?.id||'';
         window.AESNativeTools.setStation(sig||null);
@@ -214,16 +222,28 @@
         if(!st||!hasModule(st))return;
         out.append(node('h3','Accès aux modules existants'),node('p',preview?'Aperçu : consultation native seulement, les liens historiques et commandes sont désactivés.':'Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
         const links=node('div',undefined,'module-links');
-        if(st.id.startsWith('OWNER:station:')){const dashboard=node('button','Tableau de direction');dashboard.type='button';dashboard.dataset.native='owner';dashboard.addEventListener('click',()=>window.AESNativeTools.open('owner'));links.append(dashboard);}
-        if(selected==='HERMES'&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId)&&modules.stations[st.id].includes('business')){const m=node('button','Dossiers HERMES & marketing · préparation interne');m.type='button';m.dataset.native='marketing';m.addEventListener('click',()=>window.AESNativeTools.open('marketing'));links.append(m);}
-        for(const page of modules.stations[st.id]){
+        const ownerStation=st.id.startsWith('OWNER:station:');
+        if(ownerStation){
+            const dashboard=node('button','Tableau de direction');dashboard.type='button';dashboard.dataset.native='owner';dashboard.addEventListener('click',()=>window.AESNativeTools.open('owner'));links.append(dashboard);
+            if(!preview&&window.AESCampusCommands.ownerContext()){
+                for(const [kind,label] of [['missions','Commandes · Missions'],['home','Commandes · Campagnes, plans et périodes'],['decisions','Commandes · Décisions réservées']]){
+                    const cmd=node('button',label);cmd.type='button';cmd.dataset.commands=kind;cmd.addEventListener('click',()=>window.AESCampusCommands.open(kind));links.append(cmd);
+                }
+            }
+        }
+        if(selected==='HERMES'&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId)&&(modules.stations[st.id]||[]).includes('business')&&!(modules.native?.[st.id]||[]).includes('marketing')){const m=node('button','Dossiers HERMES & marketing · préparation interne');m.type='button';m.dataset.native='marketing';m.addEventListener('click',()=>window.AESNativeTools.open('marketing'));links.append(m);}
+        for(const tool of modules.native?.[st.id]||[]){
+            if(!Object.hasOwn(window.AESNativeTools.names,tool))continue;
+            const btn=node('button','Consulter ici · '+window.AESNativeTools.names[tool]);btn.type='button';btn.dataset.native=tool;btn.addEventListener('click',()=>window.AESNativeTools.open(tool));links.append(btn);
+        }
+        for(const page of modules.stations[st.id]||[]){
             if(!Object.hasOwn(modules.pages,page))continue;
             const a=node('a',modules.pages[page]);a.dataset.module=page;
-            a.href='/?'+new URLSearchParams({page,campusBuilding:selected,campusFloor:floorId,campusStation:st.id});
+            a.href='/?'+new URLSearchParams({page,campusBuilding:selected,campusFloor:floorId,campusStation:st.id,...(fidelity?{campusView:'original'}:{})});
             if(Object.hasOwn(window.AESNativeTools.names,page)){
                 const btn=node('button','Consulter ici · '+window.AESNativeTools.names[page]);btn.type='button';btn.dataset.native=page;btn.addEventListener('click',()=>window.AESNativeTools.open(page));links.append(btn);
             }
-            if(!preview&&(page==='home'||page==='missions'||(st.id.startsWith('OWNER:station:')&&page==='decisions')||(selected==='HERMES'&&page==='business'&&['HERMES','SHOWROOM','ADS183','PUBLISH183','ANALYTICS183'].includes(floorId)))){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
+            if(!preview&&!(ownerStation&&window.AESCampusCommands.ownerContext()&&['home','missions','decisions'].includes(page))&&(page==='home'||page==='missions'||(ownerStation&&page==='decisions')||(selected==='HERMES'&&page==='business'&&['HERMES','SHOWROOM','ADS183','PUBLISH183','ANALYTICS183'].includes(floorId)))){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
             if(!preview)links.append(a);
         }out.append(links);
     }
@@ -236,7 +256,7 @@
     }
     function currentFloor(){return byId.get(selected)?.floors.find(f=>f.id===floorId);}
     function openLift(id){if(!byId.has(id))return;topTool=null;roomTab='scene';if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));officeMode=true;clearFlows();if(id!==selected)lastFloor=null;else if(scene==='room')lastFloor=floorId;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-view').querySelector('button')?.focus();}
-    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;topTool=null;roomTab='scene';officeMode=true;if(!preview&&id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
+    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;topTool=null;roomTab='scene';officeMode=true;if(!preview&&id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign(campusRoute+'?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;lastFloor=id;stationId=null;renderScene();renderBuilding();sceneTransition();$('lift-back').focus();}
     function openCampus(){topTool=null;roomTab='scene';if(fidelity)document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='campus'));scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();sceneTransition();document.querySelector('[data-building="'+selected+'"]')?.focus();}
     function tower(b){return art.tower(b,lastFloor);}
     function highlightFloor(id){
@@ -332,7 +352,7 @@
         $('room-caption-title').textContent=levelLabel(f.level)+' / '+f.name;
         const groups=new Map(),other=[];
         for(const st of f.stations){
-            const pages=(modules.stations[st.id]||[]).filter(page=>Object.hasOwn(window.AESNativeTools.names,page));
+            const pages=[...(modules.stations[st.id]||[]),...(modules.native?.[st.id]||[])].filter(page=>Object.hasOwn(window.AESNativeTools.names,page));
             if(st.id.startsWith('OWNER:station:'))pages.unshift('owner');
             if(selected==='HERMES'&&pages.includes('business')&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId))pages.push('marketing');
             if(!pages.length){other.push(st);continue;}
@@ -343,7 +363,7 @@
         }
         const cards=$('function-cards');cards.replaceChildren();
         for(const [page,stations] of groups){
-            const card=originalCard(window.AESNativeTools.names[page],stations.map(s=>s.name).join(' · '),'Consulter · données locales',()=>{
+            const card=originalCard(window.AESNativeTools.names[page],stations.map(s=>s.name).join(' · '),preview?'Consulter · données locales':'Consulter / accéder au module',()=>{
                 activateStation(stations[0].id);
                 if(data)window.AESNativeTools.open(page);
             });card.dataset.functionTool=page;cards.append(card);
@@ -493,7 +513,12 @@
             const tool=tools[btn.dataset.view];if(!tool)return;
             openCampus();clearFlows();topTool=tool;applyOriginalTab();$('top-tool-title').textContent=window.AESNativeTools.names[tool];
             document.querySelectorAll('.top [data-view]').forEach(b=>b.classList.toggle('active',b===btn));
-            $('station-detail').hidden=false;$('station-title').textContent=window.AESNativeTools.names[tool];$('station-content').replaceChildren();$('station-modules').replaceChildren();$('station-modules').dataset.station='';window.AESNativeTools.setStation('nav:'+tool);window.AESNativeTools.open(tool);$('top-tool-title').focus({preventScroll:true});
+            $('station-detail').hidden=false;$('station-title').textContent=window.AESNativeTools.names[tool];$('station-content').replaceChildren();$('station-modules').replaceChildren();$('station-modules').dataset.station='';
+            if(!preview){
+                const complete=node('a','Ouvrir le module complet');complete.href='/?'+new URLSearchParams({page:tool});$('station-modules').append(complete);
+                if(tool==='home'){const direction=node('a','Autorisations et campagnes · bureau du propriétaire');direction.href=campusRoute+'?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A0';$('station-modules').append(direction);}
+            }
+            window.AESNativeTools.setStation('nav:'+tool);window.AESNativeTools.open(tool);$('top-tool-title').focus({preventScroll:true});
         }));
     }
     document.addEventListener('campus-command-completed',refresh);

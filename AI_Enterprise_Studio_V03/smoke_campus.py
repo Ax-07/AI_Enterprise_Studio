@@ -46,6 +46,8 @@ def smoke():
             modules=page.evaluate("AESLiveModules")
             known={st['id'] for b in connected for f in b['floors'] for st in f['stations']}
             assert set(modules['stations'])<=known
+            assert set(modules['native'])<=known
+            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure','economy','business','marketing','workforce','improvements'}
             assert {p for ps in modules['stations'].values() for p in ps}==set(modules['pages'])
             assert len(modules['pages'])==14
             assert 'VIDEO183:station:1' not in modules['stations']
@@ -108,7 +110,7 @@ def smoke():
 def smoke_live():
     import tempfile
     from pathlib import Path
-    from test_campus_live import fixture
+    from test_campus_live import fixture, fixture_marketing
     # Optional visual evidence: fixture DB only, capture the scene (not private details).
     target=os.getenv('AES_CAMPUS_SCREENSHOTS')
     def capture(page,name):
@@ -116,7 +118,7 @@ def smoke_live():
         directory=Path(target);directory.mkdir(parents=True,exist_ok=True)
         page.locator('.scene-panel').screenshot(path=str(directory/(name+'.png')),animations='disabled',timeout=10000)
     with tempfile.TemporaryDirectory() as d:
-        path=Path(d)/'test.db';fixture(path)
+        path=Path(d)/'test.db';fixture(path);fixture_marketing(path)
         srv=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
         thread=threading.Thread(target=srv.serve_forever,daemon=True);thread.start()
         port=srv.server_address[1];base=f'http://127.0.0.1:{port}'
@@ -175,7 +177,9 @@ def smoke_live():
                 page.locator('#lift-view [data-floor="CORE"]').click()
                 expect(page.locator('#room-view [data-station]')).to_have_count(5)
                 expect(page.locator('#room-view img')).to_be_visible()
-                page.wait_for_function("document.querySelector('#room-view img')?.naturalWidth > 0")
+                # Wait for a decoded room image without repeated string eval in the page's CSP context.
+                image=page.locator('#room-view img')
+                assert image.evaluate("async img => { await img.decode(); return img.naturalWidth; }")>0
                 capture(page,'04-bureau-core')
                 expect(page.locator('#team-slots [data-slot]')).to_have_count(8)
                 expect(page.locator('#team-slots [data-configured="true"]')).to_have_count(2)
@@ -214,10 +218,23 @@ def smoke_live():
                 with page.expect_download() as dl:
                     page.locator('#native-tool button',has_text='Télécharger le fichier original').click()
                 assert Path(dl.value.path()).read_text()=='secret-test'
+                page.locator('#buildings button[data-id="ATLAS"]').click()
+                page.locator('#lift-view [data-floor="PEOPLE17"]').click()
+                page.locator('#room-view [data-station="PEOPLE17:station:0"]').click()
+                page.locator('[data-native="workforce"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('MNEMOS → ORION')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Sélectionnée par le moteur')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('aucune note de compétence')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Autres actions historiques')
                 page.locator('#buildings button[data-id="HERMES"]').click()
                 expect(page.locator('#lift-view [data-floor]')).to_have_count(8)
                 page.locator('#lift-view [data-floor="VIDEO183"]').click()
                 expect(page.locator('#room-view [data-station]')).to_have_count(5)
+                page.locator('#room-view [data-station="VIDEO183:station:0"]').click()
+                expect(page.locator('[data-native="marketing"]')).to_have_count(1)
+                page.locator('[data-native="marketing"]').click()
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                expect(page.locator('#native-tool')).to_contain_text('aucun média généré')
                 page.locator('#room-view [data-station="VIDEO183:station:1"]').click()
                 expect(page.locator('#station-content')).to_contain_text('non raccordée')
                 expect(page.locator('#station-modules a')).to_have_count(0)
@@ -234,7 +251,7 @@ def smoke_live():
         finally:srv.shutdown();srv.server_close();thread.join()
     print('Campus D03 read-only smoke passed')
 
-def smoke_commands():
+def smoke_commands(route='live'):
     import tempfile
     from pathlib import Path
     with tempfile.TemporaryDirectory() as d, patch.object(s,'DB',Path(d)/'db.sqlite3'), patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network, patch.object(s,'run'):
@@ -250,8 +267,15 @@ def smoke_commands():
                 page.on('pageerror',lambda e:errors.append(str(e)))
                 page.on('request',lambda r:posts.append(r.url) if r.method=='POST' else None)
                 page.route('**/*',lambda r:r.continue_() if r.request.url.startswith(base+'/') else r.abort())
-                page.goto(base+'/campus/live/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A1')
+                page.goto(base+'/campus/'+route+'/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A1')
                 expect(page.locator('#status')).to_contain_text('Connecté')
+                if route=='original':
+                    expect(page.locator('#design-mode')).to_contain_text('OPÉRATIONNEL')
+                    expect(page.locator('[data-commands="missions"]')).to_be_visible()
+                    expect(page.locator('meta[name="campus-owner-session"]')).to_have_attribute('content','')
+                    page.locator('#tab-functions').click()
+                    page.locator('[data-function-tool="missions"]').click()
+                    expect(page.locator('#function-detail #station-detail')).to_be_visible()
                 page.locator('[data-commands="missions"]').click()
                 expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
                 expect(page.locator('[data-command="mission_demo"]')).to_be_enabled()
@@ -273,9 +297,22 @@ def smoke_commands():
                     assert s.used(db)==0
                 assert posts==[base+'/campus/command']*2,posts
                 expect(page.locator('[data-command="mission_cloud"]')).to_have_count(0)
-                page.goto(base+'/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A2')
+                expect(page.locator('[data-commands="decisions"]')).to_have_count(0)
+                page.goto(base+'/campus/'+route+'/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A2')
                 expect(page.locator('#status')).to_contain_text('Connecté')
-                page.locator('[data-commands="missions"]').click()
+                for index in range(5):
+                    page.locator('#room-view [data-station="OWNER:station:'+str(index)+'"]').click()
+                    for kind in ('missions','home','decisions'):
+                        expect(page.locator('#station-modules [data-commands="'+kind+'"]')).to_have_count(1)
+                page.locator('#room-view [data-station="OWNER:station:2"]').click()
+                page.locator('[data-native="owner"]').click()
+                expect(page.locator('#native-tool [data-owner-command-panel]')).to_have_count(3)
+                page.locator('#native-tool [data-owner-command-panel="home"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
+                for action in ('campaign_start','plan_start','periodic_authorize'):
+                    expect(page.locator('#campus-commands [data-command="'+action+'"]')).to_have_count(1)
+                assert len(posts)==2,posts
+                page.locator('#native-tool [data-owner-command-panel="missions"]').click()
                 expect(page.locator('[data-command="mission_cloud"]')).to_be_enabled()
                 page.locator('#campus-commands textarea').fill('Cloud test navigateur')
                 page.once('dialog',lambda d:d.dismiss())
@@ -288,8 +325,8 @@ def smoke_commands():
                     mid=db.execute("SELECT id FROM missions WHERE title='Cloud test navigateur' AND mode='cloud'").fetchone()[0]
                     db.execute("UPDATE missions SET state='terminée' WHERE id=?",(mid,))
                     rid=db.execute("INSERT INTO requests(mission,body) VALUES(?,'{}')",(mid,)).lastrowid
-                page.locator('#room-view [data-station="OWNER:station:4"]').click()
-                page.locator('[data-commands="decisions"]').click()
+                # Decisions reachable without leaving the same owner station.
+                page.locator('#native-tool [data-owner-command-panel="decisions"]').click()
                 expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
                 page.once('dialog',lambda d:d.accept())
                 page.locator('#campus-commands').get_by_role('button',name='Refuser',exact=True).click()
@@ -298,11 +335,65 @@ def smoke_commands():
                     assert db.execute('SELECT state FROM requests WHERE id=?',(rid,)).fetchone()[0]=='refusée'
                     assert s.used(db)==0
                 assert posts==[base+'/campus/command']*2+[base+'/campus/owner-command']*2,posts
+                # O03.4: actual engine schema; nested commitments must not be
+                # presented as three independent expenditures or manually resumed.
+                with s.db() as db:
+                    cid=db.execute("INSERT INTO campaigns(goal,budget,max_missions,permissions,search_cap,state) VALUES('Campagne périodique fixture',100000,1,'{}',3,'interrompu')").lastrowid
+                    db.execute("INSERT INTO campaign_missions(campaign,mission,kind) VALUES(?,?,'commercial')",(cid,mid))
+                    pid=db.execute("INSERT INTO enterprise_plans(budget,per_campaign,max_campaigns,search_cap,explore,state) VALUES(200000,100000,2,5,0,'paused')").lastrowid
+                    db.execute("INSERT INTO enterprise_plan_queue(plan,kind,reason,campaign) VALUES(?,'commercial','fixture',?)",(pid,cid))
+                    gid=db.execute("""INSERT INTO periodic_grants(cadence,seconds,periods,starts,expires,last_seen,total_budget,period_budget,per_campaign,max_campaigns,total_search,period_search,explore,state)
+                        VALUES('daily',86400,2,1000,173800,1000,400000,200000,100000,2,10,5,0,'suspended')""").lastrowid
+                    db.execute("INSERT INTO periodic_slots(grant_id,slot,starts,expires,plan) VALUES(?,0,1000,87400,?)",(gid,pid))
+                    db.execute("INSERT INTO ledger(mission,model,reserved,actual,state,agent) VALUES(?,'fixture',10000,8000,'mesuré','ORION')",(mid,))
+                    db.execute("INSERT INTO ledger(mission,model,reserved,state,agent) VALUES(?,'fixture',2000,'réservé','ORION')",(mid,))
+                    db.execute("INSERT INTO searches(mission,query,status) VALUES(?,'private-query','ok')",(mid,))
+                before_read=s.DB.read_bytes()
+                page.locator('#native-tool button',has_text='Campagnes, plans et autorisations').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Campagne #'+str(cid))
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Inclus dans l’autorisation périodique #'+str(gid))
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Période 1 · plan #'+str(pid))
+                expect(page.locator('#native-tool .native-results')).to_contain_text('ne pas additionner')
+                expect(page.locator('#native-tool .native-results')).not_to_contain_text('private-query')
+                page.locator('#native-tool button',has_text='Retour au tableau de direction').click()
+                page.locator('#native-tool [data-owner-command-panel="home"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
+                expect(page.locator('#campus-commands [data-command="campaign_resume"]')).to_have_count(0)
+                expect(page.locator('#campus-commands [data-command="plan_resume"]')).to_have_count(0)
+                revoke=page.locator('#campus-commands [data-command="periodic_revoke"]')
+                expect(revoke).to_have_count(1)
+                assert s.DB.read_bytes()==before_read
+                page.once('dialog',lambda d:d.dismiss())
+                revoke.click()
+                assert len(posts)==4,posts
+                assert s.DB.read_bytes()==before_read
+                page.once('dialog',lambda d:d.accept())
+                revoke.click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('Commande acceptée')
+                with s.db() as db:
+                    assert db.execute('SELECT state FROM periodic_grants WHERE id=?',(gid,)).fetchone()[0]=='revoked'
+                    assert db.execute('SELECT state FROM enterprise_plans WHERE id=?',(pid,)).fetchone()[0]=='paused'
+                    assert s.used(db)==10000
+                    assert s.periodic.slots(db,gid)[0]['spent']==10000
+                assert posts==[base+'/campus/command']*2+[base+'/campus/owner-command']*2+[base+'/campus/command'],posts
+                if route=='original':
+                    page.locator('#campus-back').click()
+                    page.locator('.top [data-view="campaigns"]').click()
+                    expect(page.locator('#top-tool-host #station-modules a').first).to_have_attribute('href','/?page=home')
+                    page.locator('#back-top-tool').click()
+                    page.locator('#buildings button[data-id="ATLAS"]').click()
+                    page.locator('#lift-view [data-floor="ATLAS"]').click()
+                    page.locator('#tab-functions').click()
+                    page.locator('[data-function-tool="missions"]').click()
+                    href=page.locator('#station-modules a[data-module="missions"]').get_attribute('href')
+                    assert 'campusView=original' in href
+                    page.goto(base+href)
+                    expect(page.locator('#campus-return')).to_have_attribute('href',re.compile(r'^/campus/original/'))
                 assert not errors,errors
                 network.assert_not_called()
                 browser.close()
         finally:srv.shutdown();srv.server_close();thread.join()
-    print('Campus D04.4 command smoke passed')
+    print('Campus command smoke passed: '+route)
 
 def smoke_preview():
     import tempfile
@@ -334,6 +425,13 @@ def smoke_preview():
                 expect(page.locator('[data-module]')).to_have_count(0)
                 page.locator('[data-native="owner"]').click()
                 expect(page.locator('#native-tool .native-results')).to_contain_text('Solde local estimé')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Points de vigilance')
+                expect(page.locator('#native-tool [data-owner-command-panel]')).to_have_count(0)
+                page.locator('#native-tool button',has_text='Consulter les décisions réservées').click()
+                expect(page.locator('#native-tool h3').first).to_contain_text('Décisions réservées')
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                page.locator('#native-tool button',has_text='Retour au tableau de direction').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Missions à examiner')
                 assert not posts and not errors,(posts,errors)
                 network.assert_not_called()
                 browser.close()
@@ -514,6 +612,55 @@ def smoke_original():
                 page.locator('#tab-scene').click()
                 expect(page.locator('#room-view')).to_be_visible()
                 page.locator('#campus-back').click()
+                page.locator('#buildings button[data-id="SENTINEL"]').click()
+                page.locator('#lift-view [data-floor="INCIDENTS"]').click()
+                page.locator('#tab-functions').click()
+                page.locator('[data-function-tool="incidents"]').click()
+                expect(page.locator('#function-detail #native-tool h3')).to_contain_text('Incidents & reprises')
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                expect(page.locator('#native-tool')).to_contain_text('Supervision enregistrée')
+                capture('O02-incidents')
+                page.locator('#campus-back').click()
+                page.locator('#buildings button[data-id="SENTINEL"]').click()
+                page.locator('#lift-view [data-floor="SENTINEL"]').click()
+                page.locator('#tab-functions').click()
+                page.locator('[data-function-tool="quality"]').click()
+                expect(page.locator('#function-detail #native-tool h3')).to_contain_text('Preuves qualité')
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                expect(page.locator('#native-tool')).to_contain_text('Aucune entrée correspondante')
+                capture('O02-qualite')
+                page.locator('#campus-back').click()
+                page.locator('#buildings button[data-id="CORE"]').click()
+                page.locator('#lift-view [data-floor="ACADEMY"]').click()
+                page.locator('#tab-functions').click()
+                page.locator('[data-function-tool="workforce"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('8 agents configurés')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('aucune note de compétence')
+                page.locator('[data-function-tool="improvements"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Aucun cycle d’amélioration enregistré')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune session de formation')
+                capture('O04-academie')
+                page.locator('#campus-back').click()
+                page.locator('#buildings button[data-id="CORE"]').click()
+                page.locator('#lift-view [data-floor="ITOPS17"]').click()
+                page.locator('#tab-functions').click()
+                page.locator('[data-function-tool="infrastructure"]').click()
+                expect(page.locator('#function-detail #native-tool h3')).to_contain_text('Inventaire technique')
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                expect(page.locator('#native-tool')).to_contain_text('Aperçu sans worker')
+                expect(page.locator('#native-tool')).to_contain_text('Sauvegarde actuelle non vérifiée')
+                capture('O02-infrastructure')
+                page.locator('#campus-back').click()
+                page.locator('#buildings button[data-id="MIDAS"]').click()
+                page.locator('#lift-view [data-floor="ECON"]').click()
+                page.locator('#tab-functions').click()
+                page.locator('[data-function-tool="economy"]').click()
+                expect(page.locator('#function-detail #native-tool h3')).to_contain_text('Pilotage économique')
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                expect(page.locator('#native-tool')).to_contain_text('CA vérifié, bénéfice, marge réelle et trésorerie : indisponibles')
+                expect(page.locator('#native-tool')).to_contain_text('TEST · exclus du CA réel')
+                capture('O02-economie')
+                page.locator('#campus-back').click()
                 page.locator('.top [data-view="finance"]').click()
                 expect(page.locator('#native-tool')).to_be_visible()
                 expect(page.locator('#native-tool h3')).to_contain_text('Dépenses API')
@@ -536,6 +683,7 @@ if __name__=='__main__':
     smoke()
     smoke_live()
     smoke_commands()
+    smoke_commands('original')
     smoke_preview()
     smoke_original()
 

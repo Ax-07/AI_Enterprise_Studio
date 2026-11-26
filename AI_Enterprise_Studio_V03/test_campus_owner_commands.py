@@ -36,7 +36,7 @@ class OwnerCommandTests(unittest.TestCase):
             plan={'action':'plan_start','confirm':True,'budget':'1','per_campaign':'0.4','max_campaigns':2,'search_cap':0,'explore':False}
             try:
                 with patch.object(s,'PORT',port),patch.object(s,'config',return_value=cfg):
-                    for path,expected in [('/campus/',False),('/campus/live/',False),('/campus/live/?building=ATLAS&floor=OWNER',True)]:
+                    for path,expected in [('/campus/',False),('/campus/live/',False),('/campus/live/?building=ATLAS&floor=OWNER',True),('/campus/original/',False),('/campus/original/?building=ATLAS&floor=OWNER',True),('/campus/original/?building=ATLAS&floor=OWNER&floor=ATLAS',False)]:
                         with urllib.request.urlopen(base+path) as r:
                             self.assertEqual(s.CAMPUS_OWNER_SESSION.encode() in r.read(),expected)
                     post(plan,{**headers,'X-Campus-Owner':s.CAMPUS_COMMAND_SESSION},code=403)

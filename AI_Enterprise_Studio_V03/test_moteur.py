@@ -19,6 +19,31 @@ class Dynamic(unittest.TestCase):
         with s.db() as c:return c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]
     def act(self,a,target='',text='',detail=''):return dict(action=a,target=target,text=text,detail=detail)
     def response(self,v):return {'status':'completed','usage':{'input_tokens':1200,'output_tokens':400},'output':[{'type':'message','content':[{'type':'output_text','text':json.dumps(v)}]}]}
+    def test_mobilization_hint_is_read_only_and_scoped(self):
+        mid=self.make();t=self.task(mid)
+        with s.db() as c:
+            m.add_task(c,mid,'ORION','Recherche existante',parent=t['id'])
+            mission=dict(c.execute('SELECT * FROM missions WHERE id=?',(mid,)).fetchone())
+        before=s.DB.read_bytes()
+        with patch.object(s,'request',side_effect=AssertionError('No network')) as network:
+            with s.db() as c:
+                hint=m.mobilization_hint(c,t,mission,{**self.cfg,'task_limit':3},{'delegate'},None)
+                self.assertIn('1 tâches supplémentaires maximum',hint)
+                self.assertIn('ORION:1',hint)
+                self.assertNotIn('Recherche existante',hint)
+                self.assertNotIn('ATLAS:',hint)
+                self.assertIn('aucune nouvelle délégation',m.mobilization_hint(c,t,mission,{**self.cfg,'task_limit':2},{'delegate'},None))
+                self.assertEqual(m.mobilization_hint(c,t,mission,self.cfg,{'finish'},None),'')
+                self.assertEqual(m.mobilization_hint(c,t,{**mission,'mode':'demo'},self.cfg,{'delegate'},None),'')
+                with patch.object(m.autopilot,'delegable',return_value={'SENTINEL'}):
+                    scoped=m.mobilization_hint(c,t,mission,self.cfg,{'delegate'},{'state':m.autopilot.ACTIVE})
+                self.assertIn('SENTINEL:0',scoped)
+                self.assertNotIn('ORION:',scoped)
+                with patch('periodic.guard_mission',side_effect=ValueError('expired')):
+                    self.assertIn('aucune délégation possible',m.mobilization_hint(c,t,mission,self.cfg,{'delegate'},None))
+            network.assert_not_called()
+        self.assertEqual(s.DB.read_bytes(),before)
+
     def test_free_demo(self):
         mid=self.make('demo')
         with patch.object(s,'request',side_effect=AssertionError('No network')) as net,patch.object(m,'fetch_page',side_effect=AssertionError('No network')):s.run(mid);net.assert_not_called()
