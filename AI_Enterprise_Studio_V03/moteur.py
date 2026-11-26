@@ -21,6 +21,7 @@ from core import tool_catalog
 from core import execution
 from core import internal_execution
 from core import collaboration
+from core import orchestration
 
 ROLES=agent_registry.roles()
 PERMS=permission_registry.build_permissions(ROLES, connectors.REGISTRY[connectors.PUBLIC]['roles'], commercial.ACTIONS)
@@ -395,18 +396,8 @@ def run(s,mid):
         with s.db() as c: m=dict(c.execute('SELECT * FROM missions WHERE id=?',(mid,)).fetchone())
         if m['mode']=='cloud' and not cfg['key']: raise RuntimeError('Clé OpenAI manquante')
         while True:
-            with s.db() as c:
-                if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': return
-                # A parent is not runnable until its children finish. Failed tasks block, waiting tasks pause.
-                row=c.execute("SELECT t.* FROM tasks t WHERE mission=? AND state='prête' AND NOT EXISTS(SELECT 1 FROM tasks child WHERE child.parent=t.id AND child.state!='terminée') ORDER BY CASE WHEN t.parent IS NULL THEN 1 ELSE 0 END,t.id LIMIT 1",(mid,)).fetchone()
-                if not row:
-                    states={r[0] for r in c.execute('SELECT state FROM tasks WHERE mission=?',(mid,))}
-                    state='terminée' if states=={'terminée'} else 'en attente' if 'en attente' in states else 'bloquée'
-                    c.execute('UPDATE missions SET state=?,error=? WHERE id=? AND state=\'en cours\'',(state,'Décision du propriétaire requise.' if state=='en attente' else '' if state=='terminée' else 'Tâches non résolues.',mid));return
-                t=dict(row)
-                if t['turns']>=cfg['turn_limit']: raise RuntimeError('Plafond de tours atteint pour la tâche #'+str(t['id']))
-                if c.execute('SELECT COUNT(*) FROM events WHERE mission=?',(mid,)).fetchone()[0]>=cfg['call_limit']: raise RuntimeError('Plafond d’actions de mission atteint')
-                c.execute('UPDATE missions SET step=? WHERE id=?',(t['id'],mid))
+            t=orchestration.select_task(s,mid,cfg)
+            if t is None:return
             if m['mode']=='demo': v=demo_action(s,t)
             else:
                 p=context(s,t,m,cfg)
@@ -449,9 +440,7 @@ def run(s,mid):
                     try: v=s.call_model(mid,t['agent'],p+hint,cfg,min(maxout*2,16384),t['id'],schema=schema,rules=RULES,validator=validator)
                     except (s.TokenLimit,s.InvalidModelOutput) as second:
                         raise RuntimeError(f'{second} Correction unique épuisée; rapports et fichiers conservés.') from None
-            with s.db() as c:
-                if c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()[0]!='en cours': return
-                c.execute('UPDATE tasks SET turns=turns+1 WHERE id=?',(t['id'],))
+            if not orchestration.count_turn_if_running(s,mid,t):return
             if m['mode']=='cloud' and v['action'] not in schema['properties']['action']['enum']:raise RuntimeError('Action hors périmètre de correction autorisé')
             if m['mode']=='cloud':
                 with s.db() as c:
@@ -476,7 +465,8 @@ def run(s,mid):
             # Commit the failure event before raising; no lost third failure.
             if blocked:raise RuntimeError('Trois outils refusés/échoués de suite sur tâche #'+str(t['id']))
     except Exception as e:
-        with s.db() as c:c.execute("UPDATE missions SET state='bloquée',error=? WHERE id=? AND state='en cours'",(str(e)[:500],mid))
+        orchestration.mark_blocked_if_running(s,mid,e)
+
 
 def agent_is_auditor(t): return t['agent']=='SENTINEL'
 def validate_action(v): return isinstance(v,dict) and set(v)==set(SCHEMA['required']) and all(isinstance(x,str) for x in v.values()) and v['action'] in SCHEMA['properties']['action']['enum']
