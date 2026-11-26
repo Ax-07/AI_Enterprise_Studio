@@ -19,6 +19,50 @@
     const levelLabel=n=>n===0?'RDC':String(n).padStart(2,'0');
     const project=(x,y,z=0)=>[500+(x-y)*.96,103+(x+y)*.46-z];
     const polygon=(points,attrs={})=>svg('polygon',{points:points.map(p=>project(...p).join(',')).join(' '),...attrs});
+    const stateNames={blocked:'Mission bloquée · tâche non résolue',waiting:'Attente de décision / tâche',running_recorded:'Tâche marquée en cours',selected:'Dernière tâche sélectionnée',queued:'Tâche non résolue'};
+    const statePriority=['blocked','waiting','running_recorded','selected','queued'];
+    const modeShort=m=>m==='cloud'?'CLOUD':m==='demo'?'SIMULATION':String(m);
+    let lastDelegation=null,flowTimer=null;
+    function buildingActivity(b){
+        const items=b.agents.flatMap(a=>a.activity||[]);
+        const state=statePriority.find(k=>items.some(x=>x.state===k))||'quiet';
+        const counts={};for(const r of items)counts[r.mode]=(counts[r.mode]||0)+r.count;
+        return {state,detail:Object.entries(counts).map(([m,n])=>modeShort(m)+' '+n).join(' · ')||'Aucune tâche observée'};
+    }
+    function clearFlows(){clearTimeout(flowTimer);document.getElementById('live-flows')?.replaceChildren();}
+    function renderActivity(){
+        for(const b of layout){
+            const g=document.querySelector('[data-building="'+b.id+'"]'),badge=g?.querySelector('.activity-label');
+            const local=data?.buildings.find(x=>x.id===b.id);
+            const s=local?buildingActivity(local):{state:'unknown',detail:'Données indisponibles'};
+            if(g){g.dataset.activity=s.state;g.setAttribute('aria-label',labels[b.id]+' · '+(stateNames[s.state]||s.detail)+' · '+s.detail+' · ouvrir l’ascenseur');}
+            if(badge)badge.textContent=s.detail;
+            const button=document.querySelector('#buildings button[data-id="'+b.id+'"]');
+            if(button){button.dataset.activity=s.state;button.title=stateNames[s.state]||s.detail;button.querySelector('small').textContent=s.detail;}
+        }
+        if(!data){lastDelegation=null;clearFlows();$('collaborations').replaceChildren(node('p','Données indisponibles.','muted'));return;}
+        const edges=data.activity.delegations;
+        list('collaborations',edges,e=>entry(e.from_agent+' → '+e.to_agent,'Tâche #'+e.id+' · mission #'+e.mission+' · '+mode(e.mode)+' · '+e.state+' · '+e.created),'Aucune délégation inter-agents enregistrée dans cet instantané.');
+        const high=edges.reduce((n,e)=>Math.max(n,e.id),0);
+        const fresh=lastDelegation===null?[]:edges.filter(e=>e.id>lastDelegation);
+        lastDelegation=high;
+        clearFlows();
+        if(scene!=='campus'||document.hidden||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+        const agentBuilding=new Map(data.buildings.flatMap(b=>b.agents.map(a=>[a.id,b.id])));
+        const flows=$('live-flows');if(!flows)return;
+        for(const e of fresh.slice(0,5)){
+            const from=byId.get(agentBuilding.get(e.from_agent)),to=byId.get(agentBuilding.get(e.to_agent));
+            if(!from||!to||from.id===to.id)continue;
+            const a=project(from.x,from.y,4),b=project(to.x,to.y,4);
+            const path='M '+a.join(' ')+' Q '+((a[0]+b[0])/2)+' '+((a[1]+b[1])/2-35)+' '+b.join(' ');
+            const group=svg('g',{'data-delegation':e.id,'aria-hidden':'true',class:e.mode==='demo'?'flow-demo':'flow-cloud'});
+            group.append(svg('path',{d:path,class:'flow-path',fill:'none'}));
+            const robot=svg('g',{class:'flow-robot'});
+            robot.append(svg('rect',{x:-7,y:-6,width:14,height:12,rx:3}),svg('circle',{cx:-2,cy:-1,r:1.2,fill:'#0c1826'}),svg('circle',{cx:2,cy:-1,r:1.2,fill:'#0c1826'}));
+            robot.append(svg('animateMotion',{path,dur:'2s',repeatCount:1,fill:'freeze'}));group.append(robot);flows.append(group);
+        }
+        flowTimer=setTimeout(clearFlows,4500);
+    }
     function initMap(){
         const map=svg('svg',{viewBox:'0 0 1000 600',class:'campus-map-svg',role:'group','aria-label':'Campus interactif'});
         map.append(svg('image',{href:'/campus/assets/campus_1_1.webp',x:0,y:0,width:1000,height:600,preserveAspectRatio:'none'}));
@@ -28,10 +72,12 @@
             const a=X-9,c=X+w+9,e=Y-9,f=Y+d+9;
             for(const pts of [[[a,f,5],[c,f,5],[c,f,top],[a,f,top]],[[c,e,5],[c,f,5],[c,f,top],[c,e,top]],[[a,e,top],[c,e,top],[c,f,top],[a,f,top]],[[a,e,6],[c,e,6],[c,f,6],[a,f,6]]])g.append(polygon(pts,{class:'live-hit'}));
             const [x,y]=project(b.x,b.y,top+8);const t=svg('text',{x,y,class:'map-label'});t.textContent=b.id==='CORE'?'DATA CORE':b.id;g.append(t);
+            const badge=svg('text',{x,y:y+14,class:'activity-label'});badge.textContent='Données indisponibles';g.append(badge);g.dataset.activity='unknown';
             g.addEventListener('click',()=>openLift(b.id));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openLift(b.id);}});map.append(g);
         }
+        map.append(svg('g',{id:'live-flows','pointer-events':'none','aria-hidden':'true'}));
         $('campus-map').replaceChildren(map);
-        $('buildings').replaceChildren(...layout.map(b=>{const btn=node('button',labels[b.id]);btn.type='button';btn.dataset.id=b.id;btn.addEventListener('click',()=>openLift(b.id));return btn;}));
+        $('buildings').replaceChildren(...layout.map(b=>{const btn=node('button',labels[b.id]);btn.type='button';btn.dataset.id=b.id;btn.dataset.activity='unknown';btn.append(node('small','Données indisponibles'));btn.addEventListener('click',()=>openLift(b.id));return btn;}));
     }
     const modules=window.AESLiveModules;
     const hasModule=st=>Object.hasOwn(modules.stations,st.id)&&modules.stations[st.id].length>0;
@@ -64,7 +110,7 @@
         const st=f.stations.find(x=>x.id===q.get('station'));stationId=st?.id||null;
     }
     function currentFloor(){return byId.get(selected)?.floors.find(f=>f.id===floorId);}
-    function openLift(id){if(!byId.has(id))return;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();$('lift-view').querySelector('button')?.focus();}
+    function openLift(id){if(!byId.has(id))return;clearFlows();selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();$('lift-view').querySelector('button')?.focus();}
     function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;if(id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;stationId=null;renderScene();renderBuilding();$('lift-back').focus();}
     function openCampus(){scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();document.querySelector('[data-building="'+selected+'"]')?.focus();}
     function tower(b){
@@ -85,7 +131,7 @@
         if(scene==='lift'){
             $('scene-title').textContent='Ascenseur · '+labels[b.id];$('scene-note').textContent='Services du design · leur présence ne signifie pas qu’ils sont opérationnels.';
             const wrap=node('div',undefined,'lift-layout'),list=node('div',undefined,'floor-list');wrap.append(tower(b),list);
-            for(const f of [...b.floors].reverse()){const btn=node('button');btn.type='button';btn.dataset.floor=f.id;btn.append(node('b',levelLabel(f.level)+' · '+f.name),node('small',f.description));btn.addEventListener('click',()=>openFloor(f.id));list.append(btn);}
+            for(const f of [...b.floors].reverse()){const btn=node('button');btn.type='button';btn.dataset.floor=f.id;btn.append(node('b',levelLabel(f.level)+' · '+f.name),node('small',f.description),node('small',f.stations.some(hasModule)?'Accès métier partiel · occupation inconnue':'Service graphique · aucun accès métier associé'));btn.addEventListener('click',()=>openFloor(f.id));list.append(btn);}
             $('lift-view').replaceChildren(wrap);return;
         }
         $('scene-title').textContent=levelLabel(f.level)+' · '+f.name;$('scene-note').textContent='Décor du service · les données de droite sont celles du bâtiment, pas une mesure de l’occupation du service.';
@@ -115,7 +161,7 @@
         $('detail-title').textContent=labels[b.id]+' · agents du moteur';
         document.querySelectorAll('#buildings button').forEach(btn=>btn.setAttribute('aria-pressed',String(btn.dataset.id===selected)));
         const ids=new Set(b.agents.map(a=>a.id));
-        list('agents',b.agents,a=>{const active=Object.entries(a.active_tasks_by_mode);return entry(a.id+' · '+a.role,active.length?active.map(([m,n])=>n+' tâche(s) en cours · '+mode(m)).join(' / '):'Aucune tâche dynamique en cours observée');});
+        list('agents',b.agents,a=>{const activity=a.activity||[];return entry(a.id+' · '+a.role,activity.length?activity.map(r=>modeShort(r.mode)+' · '+(stateNames[r.state]||r.state)+' : '+r.count).join(' / '):'Aucune tâche dynamique non résolue observée');});
         list('tasks',data.tasks.filter(t=>ids.has(t.agent)),t=>entry('#'+t.id+' · '+t.agent,t.state+' · mission #'+t.mission+' · '+mode(t.mode)));
         if(data.unmapped_agents.length)$('agents').append(node('p','Agents non affectés au campus : '+data.unmapped_agents.map(a=>a.id).join(', '),'muted'));
         renderStation();
@@ -124,12 +170,12 @@
         const agents=data.buildings.reduce((n,b)=>n+b.agents.length,0)+data.unmapped_agents.length;
         const count=m=>data.mission_counts.filter(x=>x.mode===m).reduce((n,x)=>n+x.count,0);
         $('metrics').replaceChildren(metric('Agents configurés',agents),metric('Missions CLOUD enregistrées',count('cloud')),metric('Missions SIMULATION enregistrées',count('demo')),metric('Engagement API local estimé (USD)',money(data.budget.committed_estimate_micro_usd)),metric('Plafond API local (USD)',money(data.budget.limit_micro_usd)),metric('Demandes en attente (tous modes)',data.pending_requests));
-        renderBuilding();
+        renderActivity();renderBuilding();
         list('missions',data.missions,m=>entry('#'+m.id+' · '+m.title,m.state+' · '+mode(m.mode)+' · '+m.created));
         list('events',data.events,e=>entry(e.agent+' · '+e.action,'Mission #'+e.mission+' · '+mode(e.mode)+' · '+e.created+' · '+(e.ok===1?'OK':e.ok===0?'Échec':'Résultat inconnu')));
         list('artifacts',data.artifacts,a=>entry(a.name+' · V'+a.version,a.agent+' · mission #'+a.mission+' · '+mode(a.mode)));
     }
-    function clear(){window.AESCampusCommands.setOnline(false);window.AESNativeTools.reset();data=null;for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
+    function clear(){window.AESCampusCommands.setOnline(false);window.AESNativeTools.reset();data=null;renderActivity();for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
     async function refresh(){
         if(busy)return;busy=true;$('refresh').disabled=true;
         const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);
@@ -137,12 +183,12 @@
             const r=await fetch('/campus/live-data',{method:'GET',headers:{'X-Campus-Session':token},cache:'no-store',credentials:'same-origin',signal:controller.signal});
             if(!r.ok)throw Error('HTTP '+r.status);
             const next=await r.json();
-            if(next.schema!=='aes.campus.read.v1'||next.source!=='local_sqlite'||next.read_only!==true)throw Error('Source incompatible');
+            if(next.schema!=='aes.campus.read.v1'||next.source!=='local_sqlite'||next.read_only!==true||next.activity?.schema_version!==1||!Array.isArray(next.activity.delegations))throw Error('Source incompatible');
             data=next;window.AESCampusCommands.setOnline(true);render();$('status').className='';$('status').textContent='Connecté · instantané local '+new Date(data.generated_at).toLocaleString('fr-FR');
         }catch(e){clear();$('status').className='error';$('status').textContent='Données indisponibles · aucune valeur de remplacement affichée.';}
         finally{clearTimeout(timer);busy=false;$('refresh').disabled=false;}
     }
-    restoreLocation();initMap();renderScene();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
+    restoreLocation();initMap();renderScene();renderActivity();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
     document.addEventListener('campus-command-completed',refresh);
-    $('refresh').addEventListener('click',refresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});setInterval(()=>{if(!document.hidden)refresh();},15000);refresh();
+    $('refresh').addEventListener('click',refresh);document.addEventListener('visibilitychange',()=>{if(document.hidden){clearFlows();lastDelegation=null;}else refresh();});setInterval(()=>{if(!document.hidden)refresh();},15000);refresh();
 })();

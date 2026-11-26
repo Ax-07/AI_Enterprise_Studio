@@ -12,3 +12,20 @@
 .owner-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.owner-metrics .metric{padding:9px}.owner-metrics .metric strong{font-size:18px}.owner-summary>h3{margin-top:18px}.owner-summary> b{display:block;margin-top:10px}@media(max-width:420px){.owner-metrics{grid-template-columns:1fr}}
 
 .command-form label{display:grid;gap:5px}.command-form input:not([type=checkbox]),.command-form select{width:100%;background:#0d1d2b;border:1px solid #42637d;color:#e4edf7;border-radius:6px;padding:8px;font:inherit}.command-form input[type=checkbox]{justify-self:start}.command-form details, #campus-commands details{border:1px solid #795a3b;border-radius:7px;padding:9px;margin:8px 0}#campus-commands summary{cursor:pointer;margin-bottom:8px}
+
+/* D07: factual overlays, separate from the D02 simulation engine. */
+.activity-legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px}
+.activity-legend span::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:var(--state-color,#9aabb9)}
+[data-activity=selected],[data-activity=running_recorded],[data-legend=selected]{--state-color:#70dfb6}
+[data-activity=queued],[data-legend=queued]{--state-color:#79bdff}
+[data-activity=waiting],[data-legend=waiting]{--state-color:#edc474}
+[data-activity=blocked],[data-legend=blocked]{--state-color:#ff9988}
+[data-activity=quiet],[data-legend=quiet]{--state-color:#a9bac6}
+[data-activity=unknown],[data-legend=unknown]{--state-color:#788797}
+.live-map-node .activity-label{font-size:10px;font-weight:700;text-anchor:middle;fill:var(--state-color,#a9bac6);paint-order:stroke;stroke:#081321;stroke-width:3px;pointer-events:none}
+.live-map-node[data-activity=selected] .live-hit,.live-map-node[data-activity=running_recorded] .live-hit,.live-map-node[data-activity=waiting] .live-hit,.live-map-node[data-activity=blocked] .live-hit,.live-map-node[data-activity=queued] .live-hit{stroke:var(--state-color);fill:var(--state-color);fill-opacity:.09;stroke-width:1.8}
+#buildings button small{display:block;font-size:10px;margin-top:5px;color:var(--state-color)}
+#buildings button[data-activity=blocked],#buildings button[data-activity=waiting]{border-color:var(--state-color)}
+.flow-cloud{color:#79ebc5}.flow-demo{color:#b8b0ff}.flow-path{stroke:currentColor;stroke-width:2.5;stroke-dasharray:5 4;opacity:.9}.flow-robot rect{fill:currentColor;stroke:#0c1826;stroke-width:1}
+.collaboration-panel{margin-top:14px}.collaboration-panel #collaborations{max-height:250px;overflow:auto}
+@media(prefers-reduced-motion:reduce){#live-flows{display:none}}

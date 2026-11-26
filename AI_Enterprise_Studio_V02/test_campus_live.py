@@ -13,16 +13,16 @@ import serveur as s
 def fixture(path):
     with sqlite3.connect(path) as db:
         db.executescript("""
-        CREATE TABLE missions(id INTEGER PRIMARY KEY,title TEXT,mode TEXT,state TEXT,created TEXT);
-        CREATE TABLE tasks(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,state TEXT,created TEXT,goal TEXT);
+        CREATE TABLE missions(id INTEGER PRIMARY KEY,title TEXT,mode TEXT,state TEXT,created TEXT,step INTEGER DEFAULT 0,engine TEXT DEFAULT 'dynamic');
+        CREATE TABLE tasks(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,state TEXT,created TEXT,goal TEXT,parent INTEGER);
         CREATE TABLE events(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,action TEXT,ok INTEGER,created TEXT,args TEXT);
         CREATE TABLE artifacts(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,name TEXT,version INTEGER,created TEXT,content TEXT);
         CREATE TABLE ledger(actual INTEGER,reserved INTEGER,mission INTEGER,agent TEXT);
         CREATE TABLE reports(id INTEGER PRIMARY KEY,mission INTEGER,agent TEXT,report TEXT,created TEXT);
         CREATE TABLE opportunities(id INTEGER PRIMARY KEY,mission INTEGER,title TEXT,body TEXT,next_test TEXT,status TEXT,created TEXT);
         CREATE TABLE requests(state TEXT,body TEXT);
-        INSERT INTO missions VALUES(1,'Mission moteur','cloud','en cours','2026-01-01'),(2,'Mission démo','demo','terminée','2026-01-01');
-        INSERT INTO tasks VALUES(1,1,'MNEMOS','en cours','2026-01-01','secret-test'),(2,2,'PROMETHEUS','en cours','2026-01-01','secret-test');
+        INSERT INTO missions(id,title,mode,state,created) VALUES(1,'Mission moteur','cloud','en cours','2026-01-01'),(2,'Mission démo','demo','terminée','2026-01-01');
+        INSERT INTO tasks(id,mission,agent,state,created,goal) VALUES(1,1,'MNEMOS','en cours','2026-01-01','secret-test'),(2,2,'PROMETHEUS','en cours','2026-01-01','secret-test');
         INSERT INTO events VALUES(1,1,'MNEMOS','indexer',1,'2026-01-01','secret-test');
         INSERT INTO artifacts VALUES(1,2,'NEXUS','Exemple',1,'2026-01-01','secret-test');
         INSERT INTO ledger VALUES(1000,2000,1,'MNEMOS'),(NULL,3000,2,'NEXUS');
@@ -43,6 +43,9 @@ class CampusLiveTests(unittest.TestCase):
             self.assertEqual([a['id'] for a in core],['MNEMOS','PROMETHEUS'])
             self.assertEqual(core[0]['active_tasks_by_mode'],{'cloud':1})
             self.assertEqual(core[1]['active_tasks_by_mode'],{})
+            self.assertEqual(core[0]['activity'],[{'mode':'cloud','state':'running_recorded','count':1}])
+            self.assertEqual(core[1]['activity'],[])
+            self.assertEqual(snap['activity']['delegations'],[])
             self.assertEqual(snap['budget']['committed_estimate_micro_usd'],4000)
             self.assertEqual(snap['artifacts'][0]['mode'],'demo')
             self.assertEqual(snap['pending_requests'],1)
