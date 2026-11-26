@@ -6,6 +6,7 @@ import os
 import re
 
 import acquisition
+import acquisition_runtime
 import business
 import public_channel as ch
 import n8n_bridge
@@ -122,9 +123,14 @@ def ingest(c,key,page,envelope,t=None):
     return {'replayed':False,'signals':len(validated)}
 
 def configured():
+    if acquisition_runtime.managed():return acquisition_runtime.runtime_key() is not None
     return bool(re.fullmatch(r'[0-9a-fA-F]{64}',os.environ.get('AES_CHANNEL_TEST_KEY_HEX','')))
 
 def key():
+    if acquisition_runtime.managed():
+        value=acquisition_runtime.runtime_key()
+        if value is None:raise ValueError('Service TEST autonome indisponible')
+        return value
     if not configured():raise ValueError('Clé de canal TEST non configurée')
     return bytes.fromhex(os.environ['AES_CHANNEL_TEST_KEY_HEX'])
 
