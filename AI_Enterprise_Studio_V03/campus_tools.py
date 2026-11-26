@@ -6,6 +6,9 @@ import incidents
 import campus_quality
 import campus_infrastructure
 import campus_economy
+import autopilot
+import planner
+import periodic
 from pathlib import Path
 
 TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions','incidents','quality','infrastructure','economy')) | campus_commercial.TOOLS
@@ -161,21 +164,40 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 (SELECT COUNT(*) FROM campaign_missions cm WHERE cm.campaign=c.id) AS missions,
                 (SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved,0)),0) FROM ledger l
                  JOIN campaign_missions cm ON cm.mission=l.mission WHERE cm.campaign=c.id) AS committed
-                FROM campaigns c ORDER BY c.id DESC LIMIT 15"""):
-                result.append({'kind':'campaign',**r})
+                FROM campaigns c ORDER BY CASE WHEN c.state='actif' THEN 0 ELSE 1 END,c.id DESC LIMIT 15"""):
+                linked=db.execute('SELECT plan FROM enterprise_plan_queue WHERE campaign=?',(r['id'],)).fetchone()
+                grant=periodic.linked_campaign(db,r['id'])
+                searched=autopilot.searches(db,r['id'])
+                result.append({'kind':'campaign',**r,'searches':searched,
+                    'remaining':max(0,r['budget']-r['committed']),
+                    'search_remaining':max(0,r['search_cap']-searched),
+                    'plan_id':linked['plan'] if linked else None,
+                    'grant_id':grant['grant_id'] if grant else None})
             for r in rows("""SELECT p.id,p.state,p.budget,p.per_campaign,p.max_campaigns,p.search_cap,p.created,
                 substr(p.reason,1,500) AS reason,
                 (SELECT COUNT(*) FROM enterprise_plan_queue q WHERE q.plan=p.id) AS campaigns,
                 (SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved,0)),0) FROM ledger l
                  JOIN campaign_missions cm ON cm.mission=l.mission
                  JOIN enterprise_plan_queue q ON q.campaign=cm.campaign WHERE q.plan=p.id) AS committed
-                FROM enterprise_plans p ORDER BY p.id DESC LIMIT 15"""):
-                result.append({'kind':'plan',**r})
-            for r in rows("""SELECT g.id,g.cadence,g.periods,g.state,g.starts,g.expires,g.total_budget,
-                g.period_budget,g.total_search,substr(g.reason,1,500) AS reason,
+                FROM enterprise_plans p ORDER BY CASE WHEN p.state='active' THEN 0 ELSE 1 END,p.id DESC LIMIT 15"""):
+                grant=periodic.linked_plan(db,r['id'])
+                spent,searched=planner.totals(db,r['id'])
+                result.append({'kind':'plan',**r,'committed':spent,'searches':searched,
+                    'remaining':max(0,r['budget']-spent),
+                    'search_remaining':max(0,r['search_cap']-searched),
+                    'grant_id':grant['grant_id'] if grant else None})
+            now=periodic.now()
+            for r in rows("""SELECT g.id,g.cadence,g.periods,g.state,g.starts,g.expires,g.last_seen,g.total_budget,
+                g.period_budget,g.per_campaign,g.total_search,g.period_search,g.max_campaigns,g.explore,substr(g.reason,1,500) AS reason,
                 (SELECT COUNT(*) FROM periodic_slots s WHERE s.grant_id=g.id) AS slots
-                FROM periodic_grants g ORDER BY g.id DESC LIMIT 15"""):
-                result.append({'kind':'periodic',**r})
+                FROM periodic_grants g ORDER BY CASE WHEN g.state IN ('active','suspended') THEN 0 ELSE 1 END,g.id DESC LIMIT 15"""):
+                slots=periodic.slots(db,r['id'])
+                spent=sum(x['spent'] for x in slots);searched=sum(x['searches'] for x in slots)
+                window=(r['state']=='active' and max(r['starts'],r['last_seen'])<=now<r['expires'])
+                result.append({'kind':'periodic',**{k:v for k,v in r.items() if k!='last_seen'},
+                    'committed':spent,'searches':searched,'remaining':max(0,r['total_budget']-spent),
+                    'search_remaining':max(0,r['total_search']-searched),'within_grant_window':window,
+                    'slot_details':[{k:x[k] for k in ('slot','plan','state','starts','expires','budget','spent','search_cap','searches')} for x in slots]})
         elif tool=='portfolio':
             result=rows("""SELECT p.id,p.title,p.state,p.opportunity,p.created,
                 (SELECT COUNT(*) FROM project_missions pm WHERE pm.project=p.id) AS missions,

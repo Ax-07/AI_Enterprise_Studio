@@ -125,3 +125,8 @@ Correctif O03.1 : O02.6 CI 45868563846 réussie ; O03.1 CI 45868693397, Python/J
 
 ### O03.2 — accès centralisés aux commandes du propriétaire
 Les contrôles Chromium O03.1 du run 45869168195 réussissent après correction CSP ; conclusion globale à contrôler. Centralisation des trois panneaux existants (missions, pilotage, décisions) à chacun des cinq postes OWNER et dans le tableau de direction, seulement avec contexte propriétaire et jetons existants ; aucune nouvelle route/action, aucun changement de budget, aucun nouveau droit. Titres distincts et focus du panneau ; lecture seule en aperçu. Tests Chromium des cinq postes, absence de doublons, navigation depuis le tableau, aucune mutation à l'ouverture, annulation Cloud et refus d'une décision via le même poste, sans fournisseur. CI requise avant fusion. O03.3 : engagements et autorisations détaillés.
+
+O03.1 : CI 45869168195 entièrement réussie. O03.2 : commit 38bb0d01 ; CI à vérifier.
+
+### O03.3 — supervision des enveloppes imbriquées
+Extension de la projection home existante : états actifs prioritaires, engagements et tentatives Brave par campagne/plan/autorisation périodique (réutilisation des compteurs moteur), restants arithmétiques distincts du solde global, liens parent et détails des périodes, fenêtre globale calculée sans mutation ni garantie d'exécution. Affichage explicite du risque de double comptage ; reprise manuelle des campagnes/plans liés à une période non proposée conformément aux refus existants du moteur. Tests de non-régression sur schéma réel, montant mesuré/réservé, lien campagne/plan/grant, expiration sans changement d'état, absence de requêtes privées et DB inchangée. Aucun changement de route, de politique, de schéma ou de budget. CI requise.

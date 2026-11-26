@@ -115,7 +115,7 @@
 
       if(!['en cours','en attente','prête'].includes(row.state))continue;
       action='mission_stop';label='Arrêter la mission';title='Mission #'+row.id+' · '+row.title+' · '+row.mode;
-     }else if(isOwner()&&((row.kind==='campaign'&&['interrompu','arrêté','en attente','bloqué'].includes(row.state))||(row.kind==='plan'&&row.state==='paused'))){
+     }else if(isOwner()&&row.grant_id===null&&((row.kind==='campaign'&&['interrompu','arrêté','en attente','bloqué'].includes(row.state))||(row.kind==='plan'&&row.state==='paused'))){
       const a=row.kind==='campaign'?'campaign_resume':'plan_resume',e=node('div',undefined,'entry'),b=btn('Reprendre',()=>send({action:a,id:row.id},'Reprendre '+row.kind+' #'+row.id+' ? Nouveaux appels potentiellement facturables, sans remise à zéro des plafonds.'));b.dataset.command=a;e.append(node('b',row.kind+' #'+row.id),node('small',row.state),b);out.append(e);continue;
      }else if(row.kind==='campaign'&&row.state==='actif'){action='campaign_stop';label='Arrêter la campagne';title='Campagne #'+row.id+' · '+row.goal;}
      else if(row.kind==='plan'&&row.state==='active'){action='plan_stop';label='Suspendre le plan';title='Plan #'+row.id;}
