@@ -26,6 +26,7 @@ jobs:
           node --check interface/design.js
           node --check interface/campus-registry.js
           node --check interface/live.js
+          node --check interface/live-layout.js
           node smoke_n8n_contracts.js
 
       - name: Install Chromium test dependencies

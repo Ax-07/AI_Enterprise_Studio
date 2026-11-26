@@ -30,6 +30,20 @@ def smoke():
             expect(page.locator('#hdDecor image')).to_have_count(1)
             topology=page.evaluate("AESCampusRegistry.snapshot()")
             assert topology['phase']=='D02' and not topology['operational']
+            # Static connected layout must stay aligned with the original D02 registry.
+            page.add_script_tag(url=base+'/campus/live-layout.js')
+            connected=page.evaluate("AESLiveLayout")
+            expected={f['id']:f for b in topology['buildings'] for f in b['floors']}
+            actual={f['id']:f for b in connected for f in b['floors']}
+            assert expected.keys()==actual.keys()
+            for b in connected:
+                original=next(x for x in topology['buildings'] if x['id']==b['id'])
+                assert [f['id'] for f in b['floors']]==[f['id'] for f in original['floors']]
+                for f in b['floors']:
+                    orig=expected[f['id']]
+                    assert f['name']==orig['name'],(f['id'],f['name'],orig['name'])
+                    assert f['description']==orig['description'],f['id']
+                    assert [(x['id'],x['name'],x['destination']) for x in f['stations']]==[(x['id'],x['name'],x['demoDestination']) for x in orig['stations']],f['id']
             assert len(topology['buildings'])==7
             floors=[f for b in topology['buildings'] for f in b['floors']]
             assert len(floors)==len({f['id'] for f in floors})==37
@@ -101,15 +115,31 @@ def smoke_live():
                 page.goto(base+'/campus/live/')
                 expect(page.locator('#status')).to_contain_text('Connecté')
                 expect(page.locator('#buildings button')).to_have_count(7)
-                page.locator('#buildings button[data-id="CORE"]').click()
+                expect(page.locator('#campus-map [data-building]')).to_have_count(7)
+                page.locator('#campus-map [data-building="CORE"]').focus()
+                page.keyboard.press('Enter')
+                expect(page.locator('#lift-view [data-floor]')).to_have_count(5)
+                page.locator('#lift-view [data-floor="CORE"]').click()
+                expect(page.locator('#room-view [data-station]')).to_have_count(5)
+                expect(page.locator('#room-view img')).to_be_visible()
                 expect(page.locator('#agents')).to_contain_text('MNEMOS')
                 expect(page.locator('#agents')).to_contain_text('PROMETHEUS')
                 expect(page.locator('#missions')).to_contain_text('SIMULATION enregistrée')
                 expect(page.locator('#artifacts')).to_contain_text('SIMULATION enregistrée')
+                page.locator('#room-view [data-station="CORE:station:2"]').click()
+                expect(page.locator('#station-content')).to_contain_text('MNEMOS')
+                page.locator('#lift-back').click()
+                page.locator('#buildings button[data-id="HERMES"]').click()
+                expect(page.locator('#lift-view [data-floor]')).to_have_count(8)
+                page.locator('#lift-view [data-floor="VIDEO183"]').click()
+                expect(page.locator('#room-view [data-station]')).to_have_count(5)
+                page.locator('#room-view [data-station="VIDEO183:station:1"]').click()
+                expect(page.locator('#station-content')).to_contain_text('non raccordée')
                 page.route('**/campus/live-data',lambda r:r.fulfill(status=503,body='{}',content_type='application/json'))
                 page.locator('#refresh').click()
                 expect(page.locator('#status')).to_contain_text('Données indisponibles')
                 expect(page.locator('#metrics .metric')).to_have_count(0)
+                expect(page.locator('#station-content')).to_contain_text('Données indisponibles')
                 assert not errors and not writes and not external,(errors,writes,external)
                 browser.close()
         finally:srv.shutdown();srv.server_close();thread.join()
