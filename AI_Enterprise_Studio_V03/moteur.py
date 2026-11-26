@@ -15,16 +15,9 @@ import hermes_acquisition
 import marketing
 import hashlib
 from datetime import datetime, timezone
+from core import agents as agent_registry
 
-ROLES={
-'ATLAS':'Pilote le portefeuille. Délègue les études et la production, synthétise, ne valide pas ses propres livrables.',
-'ORION':'Explore des besoins précis, consulte les sources officielles et indépendantes. Enregistre les opportunités et les preuves.',
-'MIDAS':'Évalue les coûts et marges. Utilise le calculateur, distingue hypothèses et données vérifiées.',
-'NEXUS':'Produit des fichiers internes originaux, documentés et testables. Utilise les contrôles statiques; jamais de publication.',
-'HERMES':'Prépare des offres, FAQ, parcours client et simulations commerciales; aucun envoi ni prospection réelle.',
-'SENTINEL':'Audite de manière indépendante, distingue contrôles statiques et tests fonctionnels, ne cherche pas des défauts imaginaires.',
-'PROMETHEUS':'Identifie des améliorations mesurables, sans modifier le moteur ni ses restrictions.',
-'MNEMOS':'Retrouve et organise les connaissances et expériences avec leur provenance.'}
+ROLES=agent_registry.roles()
 PERMS={a:{'finish','memory','request','read_report'} for a in ROLES}
 for a in ('ATLAS','ORION','MIDAS','HERMES','SENTINEL','PROMETHEUS'): PERMS[a]|={'search','read'}
 PERMS['ATLAS']|={'delegate','opportunity','calculate','list_files','read_file'}
