@@ -12,6 +12,7 @@ import autopilot
 import planner
 import periodic
 from pathlib import Path
+from infrastructure.database import read_snapshot
 
 TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions','incidents','quality','infrastructure','economy','workforce','improvements')) | campus_commercial.TOOLS
 MAX_ARTIFACT_BYTES=2*1024*1024
@@ -35,11 +36,7 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
     term=params.get('q',[''])[0].strip()
     if tool=='memory' and not 2<=len(term)<=120:
         raise BadQuery('Recherche : 2 à 120 caractères')
-    db=sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True,timeout=3)
-    try:
-        db.row_factory=sqlite3.Row
-        db.execute('PRAGMA query_only=ON')
-        db.execute('BEGIN')
+    with read_snapshot(path) as db:
         def rows(sql,args=()):
             return [dict(r) for r in db.execute(sql,args)]
         if tool in campus_commercial.TOOLS:
@@ -250,5 +247,3 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 JOIN missions m ON m.id=o.mission ORDER BY o.id DESC LIMIT 100""")
         return {'schema':'aes.campus.tool.v1','tool':tool,'read_only':True,'rows':result,
             'limit':51 if tool=='improvements' else 51+len(roles or {}) if tool=='workforce' else 31 if tool=='economy' else 1+len(registry or {}) if tool=='infrastructure' else 101 if tool=='incidents' else 50 if tool=='memory' else 1 if tool in ('artifact','report') or tool in campus_commercial.DETAILS else 30 if tool=='marketing' else 81 if tool=='business' else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
-    finally:
-        db.close()

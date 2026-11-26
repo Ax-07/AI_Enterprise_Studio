@@ -3,6 +3,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from infrastructure.configuration import load_config
+from infrastructure.database import transaction
 import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, campus_tools, campus_commands, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
@@ -28,13 +29,8 @@ PROMPTS=[
 'Synthétise et choisis une opportunité à TESTER ou recommande de ne pas investir. Donne plan de missions, conditions d’arrêt, temps propriétaire, demande de ressources si nécessaire (comptes, coût, justification, alternatives, risques). N’autorise jamais une action externe. Si preuves insuffisantes, dis-le clairement.'
 ]
 SCHEMA={'type':'object','properties':{'rapport':{'type':'string'},'requetes':{'type':'array','items':{'type':'string'}},'demandes':{'type':'array','items':{'type':'object','properties':{'objet':{'type':'string'},'justification':{'type':'string'},'cout_estime':{'type':'string'},'risques':{'type':'string'}},'required':['objet','justification','cout_estime','risques'],'additionalProperties':False}}},'required':['rapport','requetes','demandes'],'additionalProperties':False}
-@contextmanager
 def db():
-    c=sqlite3.connect(DB, timeout=10); c.row_factory=sqlite3.Row
-    try:
-        yield c; c.commit()
-    except Exception: c.rollback(); raise
-    finally: c.close()
+    return transaction(DB)
 def init():
     with db() as c:
         c.executescript('''CREATE TABLE IF NOT EXISTS missions(id INTEGER PRIMARY KEY, title TEXT, mode TEXT, state TEXT, step INTEGER DEFAULT 0, error TEXT DEFAULT '', created TEXT DEFAULT CURRENT_TIMESTAMP);
