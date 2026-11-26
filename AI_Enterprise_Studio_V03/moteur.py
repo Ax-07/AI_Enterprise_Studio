@@ -16,21 +16,10 @@ import marketing
 import hashlib
 from datetime import datetime, timezone
 from core import agents as agent_registry
+from core import permissions as permission_registry
 
 ROLES=agent_registry.roles()
-PERMS={a:{'finish','memory','request','read_report'} for a in ROLES}
-for a in ('ATLAS','ORION','MIDAS','HERMES','SENTINEL','PROMETHEUS'): PERMS[a]|={'search','read'}
-PERMS['ATLAS']|={'delegate','opportunity','calculate','list_files','read_file'}
-PERMS['ORION']|={'opportunity','calculate'}
-PERMS['MIDAS']|={'calculate','list_files','read_file','assess_opportunity'}
-PERMS['NEXUS']|={'write_file','list_files','read_file','check_file','calculate','search','read'}
-PERMS['HERMES']|={'write_file','list_files','read_file','calculate'}
-PERMS['SENTINEL']|={'check_file','list_files','read_file','calculate'}
-PERMS['PROMETHEUS']|={'list_files','read_file','calculate'}
-PERMS['MNEMOS']|={'list_files','read_file'}
-for a in ('NEXUS','SENTINEL'): PERMS[a].add('test_file')
-for a in connectors.REGISTRY[connectors.PUBLIC]['roles']: PERMS[a].add('connector')
-for action,agent in commercial.ACTIONS.items():PERMS[agent].add(action)
+PERMS=permission_registry.build_permissions(ROLES, connectors.REGISTRY[connectors.PUBLIC]['roles'], commercial.ACTIONS)
 # Strict schema: all properties required, irrelevant ones are empty strings.
 SCHEMA={'type':'object','properties':{k:{'type':'string'} for k in ('action','target','text','detail')},'required':['action','target','text','detail'],'additionalProperties':False}
 SCHEMA['properties']['action']={'type':'string','enum':sorted(set.union(*PERMS.values()))}
@@ -264,7 +253,7 @@ def demo_action(s,t):
 
 def execute(s,t,v,cfg,mode):
     mid=t['mission']; a=v['action']; target=v['target'].strip(); text=v['text']; detail=v['detail']; agent=t['agent']
-    if a not in PERMS[agent]: raise ValueError('Outil interdit à '+agent)
+    permission_registry.require_action(PERMS,agent,a)
     with s.db() as c:
         import periodic
         periodic.guard_mission(c,mid)
