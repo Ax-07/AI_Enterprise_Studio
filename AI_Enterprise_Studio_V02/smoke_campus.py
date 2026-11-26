@@ -1,3 +1,4 @@
+import re
 """Real local HTTP + Chromium: the design is still a detached simulation."""
 import threading
 from unittest.mock import patch
@@ -130,6 +131,16 @@ def smoke_live():
                 expect(page.locator('#status')).to_contain_text('Connecté')
                 expect(page.locator('#buildings button')).to_have_count(7)
                 expect(page.locator('#alert-list')).to_contain_text('1 demande(s) en attente')
+                expect(page.locator('#campus-decor')).to_have_attribute('href','/campus/assets/campus_1_1.webp')
+                page.locator('#day-toggle').click()
+                expect(page.locator('#campus-decor')).to_have_attribute('href','/campus/assets/campus_1_0.webp')
+                page.locator('#day-toggle').click()
+                page.locator('#focus-toggle').click()
+                expect(page.locator('#scene-layout')).to_have_class('layout scene-expanded')
+                page.locator('#focus-toggle').click()
+                page.locator('#motion-toggle').click()
+                expect(page.locator('#motion-toggle')).to_have_attribute('aria-pressed','false')
+                page.locator('#motion-toggle').click()
                 expect(page.locator('#campus-map [data-building]')).to_have_count(7)
                 expect(page.locator('#campus-map [data-building="CORE"]')).to_have_attribute('data-activity','running_recorded')
                 expect(page.locator('#campus-map [data-building="NEXUS"]')).to_have_attribute('data-activity','quiet')
@@ -149,6 +160,8 @@ def smoke_live():
                 page.keyboard.press('Enter')
                 expect(page.locator('#lift-view [data-floor]')).to_have_count(5)
                 expect(page.locator('#lift-view [data-floor="CORE"] .floor-activity')).to_contain_text('2 agent(s) configuré(s)')
+                page.locator('#lift-view [data-floor="CORE"]').hover()
+                expect(page.locator('#lift-view [data-level-id="CORE"]')).to_have_class(re.compile('focus181'))
                 page.locator('#lift-view [data-floor="CORE"]').click()
                 expect(page.locator('#room-view [data-station]')).to_have_count(5)
                 expect(page.locator('#room-view img')).to_be_visible()
@@ -162,7 +175,10 @@ def smoke_live():
                 expect(page.locator('#agents')).to_contain_text('PROMETHEUS')
                 expect(page.locator('#missions')).to_contain_text('SIMULATION enregistrée')
                 expect(page.locator('#artifacts')).to_contain_text('SIMULATION enregistrée')
-                page.locator('#room-view [data-station="CORE:station:2"]').click()
+                expect(page.locator('#room-view [data-room-station]')).to_have_count(5)
+                page.locator('#room-view [data-room-station="CORE:station:2"]').focus()
+                page.keyboard.press('Enter')
+                expect(page.locator('#room-view [data-station="CORE:station:2"]')).to_have_attribute('aria-pressed','true')
                 expect(page.locator('#station-content')).to_contain_text('MNEMOS')
                 expect(page.locator('#station-modules [data-module="agents"]')).to_have_attribute('href', '/?page=agents&campusBuilding=CORE&campusFloor=CORE&campusStation=CORE%3Astation%3A2')
                 page.locator('#lift-back').click()

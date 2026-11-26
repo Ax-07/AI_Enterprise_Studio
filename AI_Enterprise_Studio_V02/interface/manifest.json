@@ -43,9 +43,11 @@
   "api": false,
   "registry_schema": 1,
   "live": {
-    "phase": "D03",
+    "phase": "D07.3",
     "route": "/campus/live/",
     "schema": "aes.campus.read.v1",
-    "mode": "read_only"
+    "mode": "local_read_and_scoped_commands",
+    "activity_schema": 1,
+    "visual": "original_assets_and_isolated_graphics"
   }
 }
