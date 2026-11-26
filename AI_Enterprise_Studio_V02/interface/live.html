@@ -1,16 +1,17 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="campus-session" content="__CAMPUS_READ_SESSION__">
+<meta name="campus-command-session" content="__CAMPUS_COMMAND_SESSION__">
 <title>AI Enterprise Studio — Campus connecté</title>
 <link rel="stylesheet" href="/campus/live.css"></head>
-<body><main class="shell"><header><div><small>AI ENTERPRISE STUDIO · DESIGN 22.6</small><h1>Campus connecté</h1><p>D04 · Campus interactif · Lecture seule</p></div><nav><a href="/campus/">Maquette / simulation</a><a href="/">Interface opérationnelle historique</a></nav></header>
+<body><main class="shell"><header><div><small>AI ENTERPRISE STUDIO · DESIGN 22.6</small><h1>Campus connecté</h1><p>D04 · Campus interactif · Commandes limitées</p></div><nav><a href="/campus/">Maquette / simulation</a><a href="/">Interface opérationnelle historique</a></nav></header>
 <p class="notice">Les décors originaux ne représentent pas une occupation réelle. Les données proviennent du moteur local ; une mission de simulation enregistrée n'est pas une activité commerciale réelle. Les chiffres d'affaires et bénéfices ne sont pas encore raccordés.</p>
 <div class="toolbar"><p id="status" role="status" aria-live="polite">Connexion en cours…</p><button id="refresh" type="button">Actualiser</button></div>
 <section id="metrics" class="metrics" aria-label="Indicateurs du moteur"></section>
 <div class="layout"><section class="panel"><div class="scene-head"><h2 id="scene-title">Campus · 7 bâtiments</h2><div class="scene-nav"><button id="campus-back" type="button" hidden>← Campus</button><button id="lift-back" type="button" hidden>⇅ Ascenseur</button></div></div>
 <div id="campus-map"></div><div id="lift-view" hidden></div><div id="room-view" hidden></div>
 <p id="scene-note" class="muted">Sélectionne un bâtiment sur le campus ou dans la liste.</p><div id="buildings" class="buildings" aria-label="Bâtiments"></div></section>
-<section class="panel"><h2 id="detail-title">Agents du bâtiment</h2><div id="agents"></div><h3>Tâches récentes du bâtiment</h3><div id="tasks"></div><section id="station-detail" hidden><h3 id="station-title"></h3><div id="station-content"></div><div id="station-modules"></div><section id="native-tool" hidden aria-label="Outil métier local"></section></section></section></div>
+<section class="panel"><h2 id="detail-title">Agents du bâtiment</h2><div id="agents"></div><h3>Tâches récentes du bâtiment</h3><div id="tasks"></div><section id="station-detail" hidden><h3 id="station-title"></h3><div id="station-content"></div><div id="station-modules"></div><section id="native-tool" hidden aria-label="Outil métier local"></section><section id="campus-commands" hidden aria-label="Commandes du propriétaire"></section></section></section></div>
 <div class="lower"><section class="panel"><h2>Missions récentes</h2><div id="missions"></div></section><section class="panel"><h2>Journal du moteur</h2><div id="events"></div></section><section class="panel"><h2>Livrables enregistrés</h2><div id="artifacts"></div></section></div>
-<footer>Lecture seule dans le campus · Les outils natifs consultent les données locales ; les liens métier ouvrent l’interface historique et ses contrôles habituels. Aucun lancement automatique. Les listes sont limitées aux entrées les plus récentes.</footer></main>
-<script src="/campus/live-layout.js"></script><script src="/campus/live-modules.js"></script><script src="/campus/live-tools.js"></script><script src="/campus/live.js"></script></body></html>
+<footer>Consultation locale et commandes limitées : simulation, arrêt et révocation. Les lancements payants et nouvelles autorisations restent dans l’interface historique. Aucun lancement automatique. Les listes sont limitées aux entrées les plus récentes.</footer></main>
+<script src="/campus/live-layout.js"></script><script src="/campus/live-modules.js"></script><script src="/campus/live-tools.js"></script><script src="/campus/live-commands.js"></script><script src="/campus/live.js"></script></body></html>

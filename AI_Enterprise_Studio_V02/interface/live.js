@@ -38,6 +38,7 @@
     function updateModuleLinks(st){
         const out=$('station-modules');const sig=st?.id||'';
         window.AESNativeTools.setStation(sig||null);
+        window.AESCampusCommands.setStation(sig||null);
         if(out.dataset.station===sig)return;out.dataset.station=sig;out.replaceChildren();
         if(!st||!hasModule(st))return;
         out.append(node('h3','Accès aux modules existants'),node('p','Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
@@ -49,6 +50,7 @@
             if(Object.hasOwn(window.AESNativeTools.names,page)){
                 const btn=node('button','Consulter ici · '+window.AESNativeTools.names[page]);btn.type='button';btn.dataset.native=page;btn.addEventListener('click',()=>window.AESNativeTools.open(page));links.append(btn);
             }
+            if(page==='home'||page==='missions'){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
             links.append(a);
         }out.append(links);
     }
@@ -125,7 +127,7 @@
         list('events',data.events,e=>entry(e.agent+' · '+e.action,'Mission #'+e.mission+' · '+mode(e.mode)+' · '+e.created+' · '+(e.ok===1?'OK':e.ok===0?'Échec':'Résultat inconnu')));
         list('artifacts',data.artifacts,a=>entry(a.name+' · V'+a.version,a.agent+' · mission #'+a.mission+' · '+mode(a.mode)));
     }
-    function clear(){window.AESNativeTools.reset();data=null;for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
+    function clear(){window.AESCampusCommands.setOnline(false);window.AESNativeTools.reset();data=null;for(const id of ['metrics','agents','tasks','missions','events','artifacts'])$(id).replaceChildren();renderBuilding();}
     async function refresh(){
         if(busy)return;busy=true;$('refresh').disabled=true;
         const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);
@@ -134,10 +136,11 @@
             if(!r.ok)throw Error('HTTP '+r.status);
             const next=await r.json();
             if(next.schema!=='aes.campus.read.v1'||next.source!=='local_sqlite'||next.read_only!==true)throw Error('Source incompatible');
-            data=next;render();$('status').className='';$('status').textContent='Connecté · instantané local '+new Date(data.generated_at).toLocaleString('fr-FR');
+            data=next;window.AESCampusCommands.setOnline(true);render();$('status').className='';$('status').textContent='Connecté · instantané local '+new Date(data.generated_at).toLocaleString('fr-FR');
         }catch(e){clear();$('status').className='error';$('status').textContent='Données indisponibles · aucune valeur de remplacement affichée.';}
         finally{clearTimeout(timer);busy=false;$('refresh').disabled=false;}
     }
     restoreLocation();initMap();renderScene();renderBuilding();$('campus-back').addEventListener('click',openCampus);$('lift-back').addEventListener('click',()=>openLift(selected));
+    document.addEventListener('campus-command-completed',refresh);
     $('refresh').addEventListener('click',refresh);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});setInterval(()=>{if(!document.hidden)refresh();},15000);refresh();
 })();
