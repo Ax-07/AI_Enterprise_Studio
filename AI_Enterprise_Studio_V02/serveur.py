@@ -2,7 +2,7 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
@@ -231,7 +231,7 @@ def status():
     cfg=config()
     with db() as c:
         campaign=autopilot.status(c,cfg)
-        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'business':business.status(c),'acquisition':acquisition.status(c),'acquisition_sync':acquisition_sync.status(c),'acquisition_control':acquisition_control.status(c),'hermes_acquisition':hermes_acquisition.status(c),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
+        return {**moteur.extra_status(sys.modules[__name__],c),'pilotage':pilotage.plan(c,cfg),'portfolio':portfolio.status(c),'commercial':commercial.status(c),'business':business.status(c),'acquisition':acquisition.status(c),'acquisition_sync':acquisition_sync.status(c),'acquisition_control':acquisition_control.status(c),'hermes_acquisition':hermes_acquisition.status(c),'acquisition_runtime':acquisition_runtime.status(),'planner':planner.status(c,cfg),'periodic':periodic.status(c,cfg),'draft_recovery':draft_recovery.status(c),'budget_decisions':budgeting.history(c),'laboratory':laboratory.status(c),'autopilot':campaign,'collective_audit':collective_evidence.campaign_summary(c,campaign) if campaign and campaign['state']!='actif' else None,'campaign_readiness':autopilot.readiness(c,cfg,LOCK.locked()),'connectors':connectors.status(c),'intelligence':intelligence.status(c),'campaign_missions':[r[0] for r in c.execute('SELECT mission FROM campaign_missions')],'html_sandbox_enabled':cfg.get('html_sandbox_enabled',False),'mission_budget':cfg['mission_budget']/1e6,'call_limit':cfg['call_limit'],'version':VERSION,'resume_supported':True,'agents':AGENTS,'stages':STAGES,'key':bool(cfg['key']),'brave':bool(cfg['brave']),'budget':cfg['budget']/1e6,'spent':used(c)/1e6,'searches':c.execute('SELECT COUNT(*) FROM searches').fetchone()[0],'search_limit':cfg['limit'],'missions':[dict(x) for x in c.execute('SELECT * FROM missions ORDER BY id DESC LIMIT 30')],'reports':[dict(x) for x in c.execute('SELECT * FROM reports ORDER BY id')],'requests':[dict(x) for x in c.execute('SELECT * FROM requests ORDER BY id DESC')],'ledger':[dict(x) for x in c.execute('SELECT * FROM ledger ORDER BY id DESC LIMIT 100')]}
 def campaign_audit(c,cfg,cid,historical=False):
     # Single read snapshot. Never copy config, environment or session credentials.
     campaign=autopilot.status(c,cfg,cid if historical else None)
@@ -303,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.route()=='/api/acquisition_audit' and self.headers.get('X-Session')==SESSION:
                 with db() as c:
                     c.execute('BEGIN')
-                    return self.send({'schema':'aes-acquisition-audit-v1','version':VERSION,'acquisition':acquisition.status(c),'sync':acquisition_sync.status(c),'control':acquisition_control.status(c),'hermes':hermes_acquisition.status(c)})
+                    return self.send({'schema':'aes-acquisition-audit-v1','version':VERSION,'acquisition':acquisition.status(c),'sync':acquisition_sync.status(c),'control':acquisition_control.status(c),'hermes':hermes_acquisition.status(c),'runtime':acquisition_runtime.status()})
             if self.route()=='/api/business_audit' and self.headers.get('X-Session')==SESSION:
                 with db() as c:
                     c.execute('BEGIN')
@@ -586,10 +586,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send({'ok':True,'reprise':start})
             return self.missing()
         except Exception as e: self.send({'error':str(e)[:300]},400)
+def acquisition_restart_guard():
+    # No TEST grant survives a service process restart; remote child also revokes old grants.
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        now=business.now()
+        for row in c.execute("SELECT page FROM acquisition_test_channels WHERE state!='revoked'").fetchall():
+            acquisition_control.request_stop(c,row['page'],now,'managed_service_restart')
+        for row in c.execute("SELECT page FROM acquisition_test_links WHERE revoked IS NULL").fetchall():
+            acquisition_sync.revoke(c,{'confirm':True,'page':row['page']},now)
+
 def acquisition_control_loop(shutdown):
     while not shutdown.wait(30):
         if not POST_LOCK.acquire(blocking=False):continue
         try:
+            acquisition_runtime.maintain(acquisition_runtime.database_path(DB),acquisition_restart_guard)
             acquisition_control.maintain(sys.modules[__name__])
             with db() as c:
                 c.execute('BEGIN IMMEDIATE')
@@ -600,7 +611,9 @@ def acquisition_control_loop(shutdown):
 if __name__=='__main__':
     try: server=ThreadingHTTPServer(('127.0.0.1',PORT),Handler)
     except OSError as e: print(f'Port {PORT} indisponible : ferme l’ancien serveur avant de redémarrer. {e}');sys.exit(1)
-    init(); print(f'AI Enterprise Studio V{VERSION} : http://127.0.0.1:{PORT}'); print('Ctrl+C pour arrêter. Aucun appel au démarrage.'); print(f'Diagnostic gratuit : http://127.0.0.1:{PORT}/api/health',flush=True)
+    init(); acquisition_restart_guard()
+    acquisition_runtime.start(acquisition_runtime.database_path(DB))
+    print(f'AI Enterprise Studio V{VERSION} : http://127.0.0.1:{PORT}'); print('Ctrl+C pour arrêter. Aucun appel au démarrage.'); print(f'Diagnostic gratuit : http://127.0.0.1:{PORT}/api/health',flush=True)
     if '--no-browser' not in __import__('sys').argv: threading.Timer(0.5,lambda:webbrowser.open(f'http://127.0.0.1:{PORT}')).start()
     shutdown=threading.Event()
     threading.Thread(target=periodic.loop,args=(sys.modules[__name__],shutdown),daemon=True).start()
@@ -608,4 +621,8 @@ if __name__=='__main__':
     threading.Thread(target=acquisition_control_loop,args=(shutdown,),daemon=True).start()
     try: server.serve_forever()
     except KeyboardInterrupt: pass
-    finally: shutdown.set();server.server_close()
+    finally:
+        shutdown.set()
+        acquisition_runtime.stop()
+        acquisition_restart_guard()
+        server.server_close()
