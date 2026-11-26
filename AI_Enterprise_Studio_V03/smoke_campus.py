@@ -289,9 +289,22 @@ def smoke_commands(route='live'):
                     assert s.used(db)==0
                 assert posts==[base+'/campus/command']*2,posts
                 expect(page.locator('[data-command="mission_cloud"]')).to_have_count(0)
+                expect(page.locator('[data-commands="decisions"]')).to_have_count(0)
                 page.goto(base+'/campus/'+route+'/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A2')
                 expect(page.locator('#status')).to_contain_text('Connecté')
-                page.locator('[data-commands="missions"]').click()
+                for index in range(5):
+                    page.locator('#room-view [data-station="OWNER:station:'+str(index)+'"]').click()
+                    for kind in ('missions','home','decisions'):
+                        expect(page.locator('#station-modules [data-commands="'+kind+'"]')).to_have_count(1)
+                page.locator('#room-view [data-station="OWNER:station:2"]').click()
+                page.locator('[data-native="owner"]').click()
+                expect(page.locator('#native-tool [data-owner-command-panel]')).to_have_count(3)
+                page.locator('#native-tool [data-owner-command-panel="home"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
+                for action in ('campaign_start','plan_start','periodic_authorize'):
+                    expect(page.locator('#campus-commands [data-command="'+action+'"]')).to_have_count(1)
+                assert len(posts)==2,posts
+                page.locator('#native-tool [data-owner-command-panel="missions"]').click()
                 expect(page.locator('[data-command="mission_cloud"]')).to_be_enabled()
                 page.locator('#campus-commands textarea').fill('Cloud test navigateur')
                 page.once('dialog',lambda d:d.dismiss())
@@ -304,8 +317,8 @@ def smoke_commands(route='live'):
                     mid=db.execute("SELECT id FROM missions WHERE title='Cloud test navigateur' AND mode='cloud'").fetchone()[0]
                     db.execute("UPDATE missions SET state='terminée' WHERE id=?",(mid,))
                     rid=db.execute("INSERT INTO requests(mission,body) VALUES(?,'{}')",(mid,)).lastrowid
-                page.locator('#room-view [data-station="OWNER:station:4"]').click()
-                page.locator('[data-commands="decisions"]').click()
+                # Decisions reachable without leaving the same owner station.
+                page.locator('#native-tool [data-owner-command-panel="decisions"]').click()
                 expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
                 page.once('dialog',lambda d:d.accept())
                 page.locator('#campus-commands').get_by_role('button',name='Refuser',exact=True).click()
@@ -364,6 +377,7 @@ def smoke_preview():
                 page.locator('[data-native="owner"]').click()
                 expect(page.locator('#native-tool .native-results')).to_contain_text('Solde local estimé')
                 expect(page.locator('#native-tool .native-results')).to_contain_text('Points de vigilance')
+                expect(page.locator('#native-tool [data-owner-command-panel]')).to_have_count(0)
                 page.locator('#native-tool button',has_text='Consulter les décisions réservées').click()
                 expect(page.locator('#native-tool h3').first).to_contain_text('Décisions réservées')
                 expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')

@@ -222,7 +222,15 @@
         if(!st||!hasModule(st))return;
         out.append(node('h3','Accès aux modules existants'),node('p',preview?'Aperçu : consultation native seulement, les liens historiques et commandes sont désactivés.':'Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
         const links=node('div',undefined,'module-links');
-        if(st.id.startsWith('OWNER:station:')){const dashboard=node('button','Tableau de direction');dashboard.type='button';dashboard.dataset.native='owner';dashboard.addEventListener('click',()=>window.AESNativeTools.open('owner'));links.append(dashboard);}
+        const ownerStation=st.id.startsWith('OWNER:station:');
+        if(ownerStation){
+            const dashboard=node('button','Tableau de direction');dashboard.type='button';dashboard.dataset.native='owner';dashboard.addEventListener('click',()=>window.AESNativeTools.open('owner'));links.append(dashboard);
+            if(!preview&&window.AESCampusCommands.ownerContext()){
+                for(const [kind,label] of [['missions','Commandes · Missions'],['home','Commandes · Campagnes, plans et périodes'],['decisions','Commandes · Décisions réservées']]){
+                    const cmd=node('button',label);cmd.type='button';cmd.dataset.commands=kind;cmd.addEventListener('click',()=>window.AESCampusCommands.open(kind));links.append(cmd);
+                }
+            }
+        }
         if(selected==='HERMES'&&['HERMES','SHOWROOM','ADS183','VIDEO183','PUBLISH183','SUPPORT17'].includes(floorId)&&(modules.stations[st.id]||[]).includes('business')&&!(modules.native?.[st.id]||[]).includes('marketing')){const m=node('button','Dossiers HERMES & marketing · préparation interne');m.type='button';m.dataset.native='marketing';m.addEventListener('click',()=>window.AESNativeTools.open('marketing'));links.append(m);}
         for(const tool of modules.native?.[st.id]||[]){
             if(!Object.hasOwn(window.AESNativeTools.names,tool))continue;
@@ -235,7 +243,7 @@
             if(Object.hasOwn(window.AESNativeTools.names,page)){
                 const btn=node('button','Consulter ici · '+window.AESNativeTools.names[page]);btn.type='button';btn.dataset.native=page;btn.addEventListener('click',()=>window.AESNativeTools.open(page));links.append(btn);
             }
-            if(!preview&&(page==='home'||page==='missions'||(st.id.startsWith('OWNER:station:')&&page==='decisions')||(selected==='HERMES'&&page==='business'&&['HERMES','SHOWROOM','ADS183','PUBLISH183','ANALYTICS183'].includes(floorId)))){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
+            if(!preview&&!(ownerStation&&window.AESCampusCommands.ownerContext()&&['home','missions','decisions'].includes(page))&&(page==='home'||page==='missions'||(ownerStation&&page==='decisions')||(selected==='HERMES'&&page==='business'&&['HERMES','SHOWROOM','ADS183','PUBLISH183','ANALYTICS183'].includes(floorId)))){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
             if(!preview)links.append(a);
         }out.append(links);
     }

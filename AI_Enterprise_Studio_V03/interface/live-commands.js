@@ -5,7 +5,7 @@
  const readToken=document.querySelector('meta[name="campus-session"]').content;
  const token=document.querySelector('meta[name="campus-command-session"]').content;
  const ownerToken=document.querySelector('meta[name="campus-owner-session"]').content;
- const isOwner=()=>Boolean(ownerToken&&station?.startsWith('OWNER:station:'));
+ const isOwner=()=>Boolean(token&&ownerToken&&station?.startsWith('OWNER:station:'));
  const commercialFloor=new Set(['HERMES','SHOWROOM','ADS183','PUBLISH183','ANALYTICS183']);
  const isCommercial=()=>Boolean(station&&commercialFloor.has(station.split(':')[0]));
  const commercialActions=new Set(['draft_prepare','draft_revoke','trial_close','test_publish','test_collect','test_stop','test_sync']);
@@ -23,7 +23,8 @@
   const out=node('div',undefined,'command-results');
   const controls=node('div',undefined,'command-actions');
   controls.append(btn('Fermer',reset),btn('Actualiser les états',load));
-  panel.append(node('h3',kind==='business'?'Pilotage commercial · interne / TEST':'Commandes du propriétaire'),node('p',kind==='business'?'Brouillons locaux et canal fictif isolé. Aucun achat, vente, diffusion publique ni génération de média. La publication TEST et la collecte TEST nécessitent deux confirmations distinctes.':'Simulation et arrêts ; dans le bureau du propriétaire, commandes Cloud et autorisations explicites. Les appels déjà engagés peuvent rester facturables.','muted'),controls,status);
+  const heading=node('h3',kind==='business'?'Pilotage commercial · interne / TEST':kind==='missions'?'Commandes · Missions':kind==='home'?'Commandes · Campagnes, plans et périodes':'Commandes · Décisions réservées');heading.tabIndex=-1;
+  panel.append(heading,node('p',kind==='business'?'Brouillons locaux et canal fictif isolé. Aucun achat, vente, diffusion publique ni génération de média. La publication TEST et la collecte TEST nécessitent deux confirmations distinctes.':'Simulation et arrêts ; dans le bureau du propriétaire, commandes Cloud et autorisations explicites. Les appels déjà engagés peuvent rester facturables.','muted'),controls,status);
   let textarea;
   if(kind==='missions'){
    const form=node('form',undefined,'command-form');textarea=node('textarea');textarea.required=true;textarea.maxLength=1500;textarea.placeholder='Objectif de la mission de simulation';textarea.setAttribute('aria-label','Objectif de simulation');
@@ -140,7 +141,8 @@
    }catch(e){uncertain=true;if(n===seq)status.textContent='Résultat incertain : ne relance pas sans vérifier les états.';}
    finally{clearTimeout(timer);pending=false;if(n===seq)lock(true);}
   }
+  heading.focus();
   load();
  }
- window.AESCampusCommands=Object.freeze({open,setStation,setOnline});
+ window.AESCampusCommands=Object.freeze({open,setStation,setOnline,ownerContext:isOwner});
 })();

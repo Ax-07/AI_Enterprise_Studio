@@ -194,7 +194,12 @@
                 }
                 e.append(node('h3','Accès de supervision en lecture seule'));
                 for(const [tool,label] of [['home','Campagnes, plans et autorisations'],['economy','Budget et économie'],['business','Activité commerciale'],['quality','Contrôle des livrables'],['infrastructure','Infrastructure et connecteurs'],['agents','Organisation des agents']])e.append(button(label,()=>open(tool,true)));
-                e.append(node('p','Pour commander, revenir aux commandes du bureau du propriétaire ; les confirmations restent obligatoires.','muted'));
+                if(window.AESCampusCommands?.ownerContext()){
+                    e.append(node('h3','Commandes réservées au propriétaire'),node('p','Ouvrir un formulaire ne lance aucune action. Les confirmations, plafonds et contrôles du moteur restent obligatoires.','muted'));
+                    for(const [kind,label] of [['missions','Ouvrir les commandes de missions'],['home','Ouvrir les commandes de pilotage'],['decisions','Ouvrir les commandes de décisions']]){
+                        const b=button(label,()=>window.AESCampusCommands.open(kind));b.dataset.ownerCommandPanel=kind;e.append(b);
+                    }
+                }else e.append(node('p','Commandes réservées indisponibles dans ce contexte de consultation.','muted'));
                 e.append(node('p','Configuration présente ≠ disponibilité externe vérifiée. Les soldes sont les plafonds locaux, pas les crédits restants chez les fournisseurs.','muted'));
             }
             else if(tool==='decisions'){
