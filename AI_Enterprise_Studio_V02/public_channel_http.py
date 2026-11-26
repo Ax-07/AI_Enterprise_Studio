@@ -5,10 +5,16 @@ import hmac
 import os
 import re
 import time
+import sys
+import threading
+from pathlib import Path
 from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs
-from wsgiref.simple_server import make_server, WSGIRequestHandler
+from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 from contextlib import closing
+if __name__=='__main__' and '--managed-test' in sys.argv:
+    # Python -I deliberately excludes the script directory; add only this trusted location.
+    sys.path.insert(0,str(Path(__file__).resolve().parent))
 import public_channel as ch
 
 MAX_BODY=16000
@@ -113,9 +119,40 @@ def application(path,key,clock=None):
     return app
 
 class QuietHandler(WSGIRequestHandler):
+    def setup(self):
+        self.request.settimeout(2)
+        super().setup()
     def log_message(self,*args):pass
 
-if __name__=='__main__':
+def managed_main(path,nonce):
+    ch.ident(nonce)
+    raw=sys.stdin.buffer.readline(100)
+    if not re.fullmatch(rb'[0-9a-f]{64}\n',raw):raise ValueError('Invalid startup key')
+    key=bytes.fromhex(raw.decode().strip())
+    app=application(path,key)
+    class ManagedServer(WSGIServer):
+        def service_actions(self):
+            with closing(ch.connect(path)) as c:
+                c.execute('BEGIN IMMEDIATE');ch.purge(c,int(time.time()));c.commit()
+    with make_server('127.0.0.1',8765,app,server_class=ManagedServer,handler_class=QuietHandler) as server:
+        with closing(ch.connect(path)) as c:
+            c.execute('BEGIN IMMEDIATE')
+            for row in c.execute('SELECT id FROM channel_pages WHERE revoked IS NULL').fetchall():
+                payload={'page':row['id'],'scope':'publication'}
+                ch.revoke(c,key,payload,ch.sign(key,'revocation-v1',payload),int(time.time()))
+            ch.purge(c,int(time.time()));c.commit()
+        def watch_parent():
+            # Parent retains stdin pipe. EOF on shutdown or crash stops this service.
+            try:sys.stdin.buffer.read(1)
+            finally:server.shutdown()
+        threading.Thread(target=watch_parent,daemon=True).start()
+        print('READY '+nonce,flush=True)
+        server.serve_forever(poll_interval=1)
+
+
+if __name__=='__main__' and len(sys.argv)==4 and sys.argv[1]=='--managed-test':
+    managed_main(sys.argv[2],sys.argv[3])
+elif __name__=='__main__':
     # No default secret, no default database, no external bind and no production mode.
     key=bytes.fromhex(os.environ['AES_CHANNEL_TEST_KEY_HEX'])
     path=os.environ['AES_CHANNEL_TEST_DB']
