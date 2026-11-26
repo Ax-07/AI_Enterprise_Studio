@@ -115,3 +115,8 @@ Correctif O02.5 : CI 45867326675, tests Python et syntaxe JS réussis ; Chromium
 
 ### O02.6 — inventaire des capacités manquantes
 Voir `CAMPUS_CAPABILITIES.md` : inventaire des 52 postes sans association sur 185, calculé sur le commit adf18ecf. Classification proposée R=7, E=10, N=24, X=8, D=3 ; priorités conditionnelles, dépendances, limites et pistes d'outils propriétaires. Aucun raccordement fictif, aucun code métier modifié, aucune autorisation externe. O03/O04/O05 restent l'ordre de réalisation du campus ; les nouveaux moteurs métier suivent une validation spécifique.
+
+O02.5 correctif : CI 45867935471 réussie (trois jobs). Inventaire O02.6 : commit ca6d62d9, documentation seule.
+
+### O03.1 — tableau de direction consolidé
+Extension de l'outil owner existant, sans nouveau module ni commande : totaux exacts des états actifs séparés des listes de 10, ventilation des missions par mode/état, aperçu des décisions et incidents à examiner, alertes de configuration et quota local, raccourcis lecture seule vers les modules existants avec retour au tableau. Aucun traitement de décision, appel externe, migration ou modification graphique. Tests sur base temporaire (12 missions actives pour vérifier la limite, séparation des modes, non-divulgation et DB inchangée), navigation Chromium en aperçu sans POST. CI à vérifier. O03.2 : centraliser les accès aux commandes réservées sans élargir les droits.

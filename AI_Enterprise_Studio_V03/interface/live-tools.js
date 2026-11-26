@@ -166,7 +166,7 @@
                 e=node('div',undefined,'owner-summary');
                 const a=r.active;
                 const metrics=node('div',undefined,'owner-metrics');
-                for(const [k,v] of [['Plafond API local',money(r.budget)],['Engagements estimés',money(r.committed)],['Solde local estimé',money(r.remaining)],['Décisions en attente',String(r.pending)],['Brave · tentatives / limite',r.searches+' / '+r.search_limit],['Agents configurés',String(r.configured_agents)]]){
+                for(const [k,v] of [['Plafond API local',money(r.budget)],['Engagements estimés',money(r.committed)],['Solde local estimé',money(r.remaining)],['Décisions en attente',String(r.pending)],['Brave · tentatives / limite',r.searches+' / '+r.search_limit],['Agents configurés',String(r.configured_agents)],['Missions à examiner',String(r.attention_count)]]){
                     const card=node('div',undefined,'metric');card.append(node('small',k),node('strong',v));metrics.append(card);
                 }
                 e.append(metrics);
@@ -174,12 +174,27 @@
                 e.append(entry('Détail des engagements','Usage mesuré : '+money(r.measured)+' · non mesuré / réservé : '+money(r.unmeasured)),
                     entry('Ressources déclarées','OpenAI : '+(r.openai_configured?'configuré':'non configuré')+' · Brave : '+(r.brave_configured?'configuré':'non configuré')+' · bac à sable : '+(r.sandbox_enabled?'activé':'désactivé')),
                     entry('Limites par mission',money(r.mission_budget)+' · '+r.mission_calls+' appels maximum'));
+                e.append(node('h3','Points de vigilance'));
+                if(r.searches>=r.search_limit)e.append(node('p','Quota Brave local atteint ou nul.','station-pending'));
+                if(!r.openai_configured)e.append(node('p','OpenAI non configuré.','station-pending'));
+                if(!r.brave_configured)e.append(node('p','Brave non configuré.','station-pending'));
+                e.append(entry('Décisions en attente',r.pending+' enregistrée(s) · '+r.pending_decisions.length+' affichée(s)'));
+                for(const d of r.pending_decisions)e.append(entry('Demande #'+d.id+' · '+d.title,'Mission #'+d.mission+' · '+mode(d.mode)+(d.may_resume?' · peut reprendre la mission, appels potentiellement facturables':' · examen requis')));
+                e.append(button('Consulter les décisions réservées',()=>open('decisions',true)));
+                e.append(entry('Missions à examiner',r.attention_count+' enregistrée(s) · '+r.attention.length+' affichée(s)'));
+                for(const m of r.attention)e.append(entry('#'+m.id+' · '+m.title,m.state+' · '+mode(m.mode)));
+                e.append(button('Consulter les incidents',()=>open('incidents',true)));
+                e.append(node('h3','Répartition des missions enregistrées'));
+                for(const m of r.mission_counts)e.append(entry(mode(m.mode),m.state+' · '+m.count));
                 e.append(node('h3','Pilotage actif enregistré'));
                 for(const [key,label] of [['periods','Autorisations périodiques'],['plans','Plans'],['campaigns','Campagnes'],['missions','Missions']]){
-                    e.append(node('b',label));
+                    e.append(node('b',label+' · '+r.active_counts[key]+' au total / '+a[key].length+' affiché(s)'));
                     if(!a[key].length)e.append(node('p','Aucun état actif enregistré.','muted'));
                     for(const row of a[key])e.append(entry('#'+row.id+' · '+(row.title||row.goal||row.cadence||label),row.state+(row.mode?' · '+mode(row.mode):'')+(row.expires?' · expire '+new Date(row.expires*1000).toLocaleString('fr-FR'):'')+(row.budget!==undefined?' · plafond '+money(row.budget):row.total_budget!==undefined?' · plafond '+money(row.total_budget):'')));
                 }
+                e.append(node('h3','Accès de supervision en lecture seule'));
+                for(const [tool,label] of [['home','Campagnes, plans et autorisations'],['economy','Budget et économie'],['business','Activité commerciale'],['quality','Contrôle des livrables'],['infrastructure','Infrastructure et connecteurs'],['agents','Organisation des agents']])e.append(button(label,()=>open(tool,true)));
+                e.append(node('p','Pour commander, revenir aux commandes du bureau du propriétaire ; les confirmations restent obligatoires.','muted'));
                 e.append(node('p','Configuration présente ≠ disponibilité externe vérifiée. Les soldes sont les plafonds locaux, pas les crédits restants chez les fournisseurs.','muted'));
             }
             else if(tool==='decisions'){
@@ -192,7 +207,7 @@
             out.append(e);
         }
     }
-    function open(tool){
+    function open(tool,fromOwner=false){
         if(!station||!Object.hasOwn(names,tool))return;
         reset();active=tool;panel.hidden=false;
         const title=node('h3',names[tool]+' · consultation locale');
@@ -219,6 +234,7 @@
             }catch(e){if(n===epoch){out.replaceChildren();status.textContent='Lecture indisponible'+(e.message==='413'?' : contenu trop volumineux':e.message==='400'?' : paramètres invalides':'')+'.';}}
             finally{clearTimeout(timer);}
         }
+        if(fromOwner)actions.append(button('Retour au tableau de direction',()=>open('owner')));
         actions.append(button('Fermer',reset),button('Actualiser',()=>{if(tool!=='memory'||last.q)load(tool,last);}));
         panel.append(title,desc,actions);
         if(tool==='memory'){

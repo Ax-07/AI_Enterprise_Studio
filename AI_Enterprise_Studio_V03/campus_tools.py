@@ -115,13 +115,30 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None, res
                 'plans':rows("SELECT id,state,budget FROM enterprise_plans WHERE state='active' ORDER BY id DESC LIMIT 10"),
                 'periods':rows("SELECT id,state,cadence,expires,total_budget FROM periodic_grants WHERE state='active' ORDER BY id DESC LIMIT 10"),
             }
+            # Exact totals are independent of the ten-row detail cap.
+            active_counts={
+                'missions':db.execute("SELECT COUNT(*) FROM missions WHERE state='en cours'").fetchone()[0],
+                'campaigns':db.execute("SELECT COUNT(*) FROM campaigns WHERE state='actif'").fetchone()[0],
+                'plans':db.execute("SELECT COUNT(*) FROM enterprise_plans WHERE state='active'").fetchone()[0],
+                'periods':db.execute("SELECT COUNT(*) FROM periodic_grants WHERE state='active'").fetchone()[0],
+            }
+            mission_counts=rows("SELECT mode,state,COUNT(*) AS count FROM missions GROUP BY mode,state ORDER BY mode,state")
+            attention=rows("""SELECT id,substr(title,1,300) AS title,mode,state FROM missions
+                WHERE state IN ('bloquée','en attente','interrompue') ORDER BY id DESC LIMIT 10""")
+            attention_count=db.execute("SELECT COUNT(*) FROM missions WHERE state IN ('bloquée','en attente','interrompue')").fetchone()[0]
+            pending_decisions=rows("""SELECT r.id,r.mission,m.mode,m.state AS mission_state,
+                substr(m.title,1,300) AS title,r.task IS NOT NULL AND m.state='en attente' AS may_resume
+                FROM requests r JOIN missions m ON m.id=r.mission WHERE r.state='en attente'
+                ORDER BY r.id DESC LIMIT 10""")
             result=[{'kind':'resources','budget':resources['budget'],'committed':used,'measured':measured,
                 'unmeasured':used-measured,'remaining':max(0,resources['budget']-used),
                 'over_budget':used>resources['budget'],'search_limit':resources['search_limit'],'searches':searches,
                 'mission_budget':resources['mission_budget'],'mission_calls':resources['mission_calls'],
                 'openai_configured':resources['openai_configured'],'brave_configured':resources['brave_configured'],
                 'sandbox_enabled':resources['sandbox_enabled'],'pending':pending,
-                'configured_agents':len(roles or {}),'active':active}]
+                'configured_agents':len(roles or {}),'active':active,'active_counts':active_counts,
+                'mission_counts':mission_counts,'attention':attention,'attention_count':attention_count,
+                'pending_decisions':pending_decisions,'detail_limit':10}]
         elif tool=='decisions':
             result=rows("""SELECT r.id,r.mission,r.state,r.task,m.title,m.mode,m.state AS mission_state,
                 CASE WHEN length(CAST(r.body AS BLOB))<=32768 THEN r.body ELSE NULL END AS body

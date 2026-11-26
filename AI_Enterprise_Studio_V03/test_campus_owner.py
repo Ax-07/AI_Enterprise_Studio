@@ -16,6 +16,8 @@ class CampusOwnerTests(unittest.TestCase):
                 task=c.execute("INSERT INTO tasks(mission,agent,goal,criteria,state) VALUES(?,'ORION','test','test','en attente')",(mid,)).lastrowid
                 rid=c.execute("INSERT INTO requests(mission,task,body) VALUES(?,?,?)",(mid,task,json.dumps({'objet':'Étude','justification':'Motif','cout_estime':'inconnu','risques':'à vérifier','other':'private-extra'}))).lastrowid
                 c.execute("INSERT INTO requests(mission,body,state) VALUES(?,'malformed','refusée')",(mid,))
+                for i in range(12):
+                    c.execute("INSERT INTO missions(title,mode,state) VALUES(?,'demo','en cours')",('Simulation '+str(i),))
                 c.execute("INSERT INTO ledger(mission,model,reserved,actual,state,agent) VALUES(?,'test',1000,500,'mesuré','ORION')",(mid,))
                 c.execute("INSERT INTO ledger(mission,model,reserved,state,agent) VALUES(?,'test',2000,'réservé','ORION')",(mid,))
             before=s.DB.read_bytes()
@@ -26,6 +28,14 @@ class CampusOwnerTests(unittest.TestCase):
             self.assertEqual(r['unmeasured'],2000)
             self.assertEqual(r['pending'],1)
             self.assertEqual(r['configured_agents'],8)
+            self.assertEqual(r['active_counts']['missions'],12)
+            self.assertEqual(len(r['active']['missions']),10)
+            self.assertEqual(r['attention_count'],1)
+            self.assertEqual(r['attention'][0]['id'],mid)
+            self.assertEqual(r['pending_decisions'][0]['id'],rid)
+            self.assertTrue(r['pending_decisions'][0]['may_resume'])
+            self.assertIn({'mode':'demo','state':'en cours','count':12},r['mission_counts'])
+            self.assertNotIn('private-extra',json.dumps(r))
             self.assertNotIn('must-not-return',json.dumps(r))
             decisions=t.read(s.DB,'decisions',{})['rows']
             self.assertEqual(decisions[0]['id'],rid)
