@@ -16,6 +16,23 @@ def read(db, roles, permissions):
         WHERE m.engine='dynamic' AND m.state IN ('en cours','en attente','bloquée')
           AND t.state IN ('prête','en cours','en attente','bloquée')
         ) GROUP BY agent,mode,category ORDER BY agent,mode,category""")
+    # Historical action outcomes are evidence of tool usage, not competence scores.
+    # Only known action names are exposed; other historical actions are aggregated.
+    known=set().union(*(set(x) for x in permissions.values()))
+    actions=rows("""SELECT e.agent,m.mode,e.action,e.ok,COUNT(*) AS count
+        FROM events e JOIN missions m ON m.id=e.mission
+        WHERE m.engine='dynamic' GROUP BY e.agent,m.mode,e.action,e.ok""")
+    evidence={}
+    for r in actions:
+        if r['agent'] not in roles:continue
+        mode=r['mode'] if r['mode'] in ('cloud','demo') else 'other'
+        action=r['action'] if r['action'] in known else 'other'
+        key=(mode,action)
+        bucket=evidence.setdefault(r['agent'],{}).setdefault(key,{'mode':mode,'action':action,'ok':0,'failed':0,'unknown':0})
+        bucket['ok' if r['ok']==1 else 'failed' if r['ok']==0 else 'unknown']+=r['count']
+    completed=rows("""SELECT t.agent,m.mode,COUNT(*) AS count FROM tasks t
+        JOIN missions m ON m.id=t.mission WHERE m.engine='dynamic' AND t.state='terminée'
+        GROUP BY t.agent,m.mode ORDER BY t.agent,m.mode""")
     total=db.execute("""SELECT COUNT(*) FROM tasks child JOIN tasks parent
         ON parent.id=child.parent AND parent.mission=child.mission
         JOIN missions m ON m.id=child.mission
@@ -32,7 +49,10 @@ def read(db, roles, permissions):
         'delegation_count':total,'delegations_displayed':len(edges)}]
     for aid,role in sorted(roles.items()):
         out.append({'kind':'agent','id':aid,'role':role,'permissions':sorted(permissions.get(aid,())),
-            'load':[{k:v for k,v in r.items() if k!='agent'} for r in counts if r['agent']==aid]})
+            'load':[{k:v for k,v in r.items() if k!='agent'} for r in counts if r['agent']==aid],
+            'completed_tasks':[{'mode':r['mode'] if r['mode'] in ('cloud','demo') else 'other','count':r['count']} for r in completed if r['agent']==aid],
+            'tool_evidence':[v for k,v in sorted(evidence.get(aid,{}).items())],
+            'competence_rating':None})
     for r in edges:
         # Do not expose arbitrary identifiers from corrupt or unknown agent rows as roles.
         for key in ('from_agent','to_agent'):

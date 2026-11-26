@@ -140,3 +140,8 @@ O03.3 CI 45873103366 réussie ; O03.4 commit 011db26f, CI 45873857610 en cours l
 
 ### O04.1 — charge et collaborations enregistrées
 Le moteur actuel délègue via ATLAS uniquement et sélectionne les tâches prêtes dont les enfants sont terminés ; quotas et protections restent inchangés. Projection workforce en lecture seule : charge par agent et mode, états bloqués/en attente/dépendance/sélection, 50 dernières délégations persistées et total, permissions statiques distinctes de compétences et de disponibilité. Aucune affectation ni appel IA, aucun objectif, résultat ou texte de tâche exposé. Quatre postes enrichis (PEOPLE17 0/1 et COMMS 0/1), deux nouvellement raccordés, 135/185. Mobilisation, mesure de compétences et formation restent à développer. Test fixture et navigation Chromium ajoutés. CI requise avant fusion.
+
+O03.4 CI 45873857610 entièrement réussie ; phase O03 validée en CI, installation réelle non testée. O04.1 commit 96ff9e64, CI 45875028327 en cours lors de la préparation.
+
+### O04.2 — preuves d'expérience et besoins à examiner
+Extension de workforce : événements historiques regroupés par agent/mode/action connue et résultat OK/refus/échec/inconnu, actions hors nomenclature agrégées sans texte brut ; tâches terminées distinctes des preuves qualité ; note de compétence absente, aucune déduction de qualification ou de formation à partir d'un blocage. Accès aux preuves qualité et incidents. Enrichissement des postes PEOPLE17 2 et ACADEMY 1, tous deux déjà raccordés ; 135/185. Aucun apprentissage, affectation, appel fournisseur ni mutation. Tests fixture et Chromium complétés. CI requise.

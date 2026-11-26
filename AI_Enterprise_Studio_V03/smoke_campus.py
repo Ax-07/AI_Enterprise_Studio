@@ -224,6 +224,8 @@ def smoke_live():
                 page.locator('[data-native="workforce"]').click()
                 expect(page.locator('#native-tool .native-results')).to_contain_text('MNEMOS → ORION')
                 expect(page.locator('#native-tool .native-results')).to_contain_text('Sélectionnée par le moteur')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('aucune note de compétence')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Autres actions historiques')
                 page.locator('#buildings button[data-id="HERMES"]').click()
                 expect(page.locator('#lift-view [data-floor]')).to_have_count(8)
                 page.locator('#lift-view [data-floor="VIDEO183"]').click()

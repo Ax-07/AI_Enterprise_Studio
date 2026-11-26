@@ -580,5 +580,11 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
   ],
   "COMMS:station:1": [
     "workforce"
+  ],
+  "PEOPLE17:station:2": [
+    "workforce"
+  ],
+  "ACADEMY:station:1": [
+    "workforce"
   ]
 })});
