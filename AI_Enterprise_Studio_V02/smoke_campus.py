@@ -173,7 +173,52 @@ def smoke_live():
         finally:srv.shutdown();srv.server_close();thread.join()
     print('Campus D03 read-only smoke passed')
 
+def smoke_commands():
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as d, patch.object(s,'DB',Path(d)/'db.sqlite3'), patch.object(s,'request',side_effect=AssertionError('Provider forbidden')) as network, patch.object(s,'run'):
+        s.init()
+        srv=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+        thread=threading.Thread(target=srv.serve_forever,daemon=True);thread.start()
+        port=srv.server_address[1];base=f'http://127.0.0.1:{port}'
+        try:
+            with patch.object(s,'PORT',port),patch.object(s,'config',return_value={**s.config(),'budget':4000000}),sync_playwright() as pw:
+                browser=pw.chromium.launch(headless=True)
+                page=browser.new_page()
+                errors=[];posts=[]
+                page.on('pageerror',lambda e:errors.append(str(e)))
+                page.on('request',lambda r:posts.append(r.url) if r.method=='POST' else None)
+                page.route('**/*',lambda r:r.continue_() if r.request.url.startswith(base+'/') else r.abort())
+                page.goto(base+'/campus/live/?building=ATLAS&floor=ATLAS&station=ATLAS%3Astation%3A1')
+                expect(page.locator('#status')).to_contain_text('Connecté')
+                page.locator('[data-commands="missions"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('États locaux relus')
+                expect(page.locator('[data-command="mission_demo"]')).to_be_enabled()
+                page.locator('#campus-commands textarea').fill('Simulation navigateur')
+                page.once('dialog',lambda d:d.dismiss())
+                page.locator('[data-command="mission_demo"]').click()
+                assert not posts,posts
+                page.once('dialog',lambda d:d.accept())
+                page.locator('[data-command="mission_demo"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('Commande acceptée')
+                page.get_by_role('button',name='Actualiser les états').click()
+                expect(page.locator('[data-command="mission_stop"]')).to_have_count(1)
+                page.once('dialog',lambda d:d.accept())
+                page.locator('[data-command="mission_stop"]').click()
+                expect(page.locator('#campus-commands [role=status]')).to_contain_text('Commande acceptée')
+                with s.db() as db:
+                    m=db.execute("SELECT mode,state FROM missions WHERE title='Simulation navigateur'").fetchone()
+                    assert tuple(m)==('demo','arrêtée')
+                    assert s.used(db)==0
+                assert posts==[base+'/campus/command']*2,posts
+                assert not errors,errors
+                network.assert_not_called()
+                browser.close()
+        finally:srv.shutdown();srv.server_close();thread.join()
+    print('Campus D04.4 command smoke passed')
+
 if __name__=='__main__':
     smoke()
     smoke_live()
+    smoke_commands()
 

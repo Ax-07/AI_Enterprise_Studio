@@ -51,14 +51,15 @@
   async function send(body,message){
    if(!online||pending||active!==kind||!confirm(message))return;
    pending=true;lock(true);const n=++seq;status.textContent='Transmission de la commande…';
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
    try{
-    const r=await fetch('/campus/command',{method:'POST',headers:{'X-Campus-Command':token,'Content-Type':'application/json'},body:JSON.stringify({...body,confirm:true}),cache:'no-store'});
+    const r=await fetch('/campus/command',{method:'POST',headers:{'X-Campus-Command':token,'Content-Type':'application/json'},body:JSON.stringify({...body,confirm:true}),cache:'no-store',signal:controller.signal});
     const result=await r.json();
     if(!r.ok){if(n===seq)status.textContent='Commande refusée : '+(result.error||'HTTP '+r.status);return;}
     uncertain=false;if(n===seq){if(body.action==='mission_demo')textarea.value='';status.textContent='Commande acceptée par le moteur. Vérifie son état après actualisation.';out.replaceChildren();}
     document.dispatchEvent(new Event('campus-command-completed'));
    }catch(e){uncertain=true;if(n===seq)status.textContent='Résultat incertain : ne relance pas sans vérifier les états.';}
-   finally{pending=false;if(n===seq)lock(true);}
+   finally{clearTimeout(timer);pending=false;if(n===seq)lock(true);}
   }
   load();
  }
