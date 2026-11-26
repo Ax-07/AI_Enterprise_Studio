@@ -42,6 +42,19 @@ def smoke():
                 page.locator('[data-native="agents"]').click()
                 expect(page.locator('#native-tool .native-results')).to_contain_text('PROMETHEUS')
                 expect(page.locator('#native-tool .native-results')).to_contain_text('MNEMOS')
+                # D05.1: owner resources and decision list; no authorization or POST on navigation.
+                owner_writes=[]
+                page.on('request',lambda req:owner_writes.append(req.url) if req.method=='POST' else None)
+                page.goto(base+'/campus/live/?building=ATLAS&floor=OWNER&station=OWNER%3Astation%3A0')
+                expect(page.locator('#status')).to_contain_text('Connecté')
+                page.locator('[data-native="owner"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Solde local estimé')
+                expect(page.locator('#native-tool .native-results')).to_contain_text('OpenAI : configuré')
+                expect(page.locator('#native-tool .native-results')).not_to_contain_text('fake-test-key')
+                page.locator('#room-view [data-station="OWNER:station:4"]').click()
+                page.locator('[data-native="decisions"]').click()
+                expect(page.locator('#native-tool .native-results')).to_contain_text('Aucune entrée correspondante')
+                assert not owner_writes,owner_writes
                 # Real round trip: legacy module opens on explicit click, return restores station.
                 writes=[]
                 page.on('request',lambda req:writes.append(req.url) if req.method=='POST' else None)

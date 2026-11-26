@@ -3,7 +3,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals'))
+TOOLS=frozenset(('missions','work','files','artifact','memory','report','finance','opps','home','portfolio','laboratory','tools','agents','goals','owner','decisions'))
 MAX_ARTIFACT_BYTES=2*1024*1024
 MAX_REPORT_BYTES=256*1024
 
@@ -11,7 +11,7 @@ class BadQuery(ValueError): pass
 class Missing(LookupError): pass
 class TooLarge(ValueError): pass
 
-def read(path, tool, params, *, roles=None, permissions=None, registry=None):
+def read(path, tool, params, *, roles=None, permissions=None, registry=None, resources=None):
     if tool not in TOOLS: raise BadQuery('Outil inconnu')
     allowed={'id'} if tool in ('artifact','report') else {'q'} if tool=='memory' else set()
     if set(params)-allowed or any(len(v)!=1 for v in params.values()):
@@ -75,6 +75,40 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None):
                 COALESCE(SUM(COALESCE(l.actual,0)),0) AS measured_micro_usd,
                 COALESCE(SUM(CASE WHEN l.actual IS NULL THEN COALESCE(l.reserved,0) ELSE 0 END),0) AS unmeasured_micro_usd
                 FROM ledger l LEFT JOIN missions m ON m.id=l.mission GROUP BY 1,2 ORDER BY 4 DESC,1,2 LIMIT 100""")
+        elif tool=='owner':
+            if resources is None:raise BadQuery('Ressources indisponibles')
+            # No synchronization, planning, provider checks or mutation during dashboard reads.
+            used=db.execute("SELECT COALESCE(SUM(COALESCE(actual,reserved,0)),0) FROM ledger").fetchone()[0]
+            measured=db.execute("SELECT COALESCE(SUM(COALESCE(actual,0)),0) FROM ledger").fetchone()[0]
+            searches=db.execute("SELECT COUNT(*) FROM searches").fetchone()[0]
+            pending=db.execute("SELECT COUNT(*) FROM requests WHERE state='en attente'").fetchone()[0]
+            active={
+                'missions':rows("SELECT id,title,mode,state FROM missions WHERE state='en cours' ORDER BY id DESC LIMIT 10"),
+                'campaigns':rows("SELECT id,goal,state,budget FROM campaigns WHERE state='actif' ORDER BY id DESC LIMIT 10"),
+                'plans':rows("SELECT id,state,budget FROM enterprise_plans WHERE state='active' ORDER BY id DESC LIMIT 10"),
+                'periods':rows("SELECT id,state,cadence,expires,total_budget FROM periodic_grants WHERE state='active' ORDER BY id DESC LIMIT 10"),
+            }
+            result=[{'kind':'resources','budget':resources['budget'],'committed':used,'measured':measured,
+                'unmeasured':used-measured,'remaining':max(0,resources['budget']-used),
+                'over_budget':used>resources['budget'],'search_limit':resources['search_limit'],'searches':searches,
+                'mission_budget':resources['mission_budget'],'mission_calls':resources['mission_calls'],
+                'openai_configured':resources['openai_configured'],'brave_configured':resources['brave_configured'],
+                'sandbox_enabled':resources['sandbox_enabled'],'pending':pending,
+                'configured_agents':len(roles or {}),'active':active}]
+        elif tool=='decisions':
+            result=rows("""SELECT r.id,r.mission,r.state,r.task,m.title,m.mode,m.state AS mission_state,
+                CASE WHEN length(CAST(r.body AS BLOB))<=32768 THEN r.body ELSE NULL END AS body
+                FROM requests r JOIN missions m ON m.id=r.mission
+                ORDER BY CASE WHEN r.state='en attente' THEN 0 ELSE 1 END,r.id DESC LIMIT 100""")
+            for r in result:
+                try:
+                    data=json.loads(r.pop('body') or '{}')
+                    if not isinstance(data,dict):data={}
+                except (ValueError,TypeError):data={}
+                for k in ('objet','justification','cout_estime','risques'):
+                    val=data.get(k)
+                    r[k]=val[:1500] if isinstance(val,str) else None
+                r['may_resume']=r['task'] is not None and r['mission_state']=='en attente'
         elif tool=='home':
             # Each category has its own limit. Status is persisted, not a health probe.
             result=[]
@@ -139,6 +173,6 @@ def read(path, tool, params, *, roles=None, permissions=None, registry=None):
                 substr(o.next_test,1,600) AS next_test,o.created,m.mode FROM opportunities o
                 JOIN missions m ON m.id=o.mission ORDER BY o.id DESC LIMIT 100""")
         return {'schema':'aes.campus.tool.v1','tool':tool,'read_only':True,'rows':result,
-            'limit':50 if tool=='memory' else 1 if tool in ('artifact','report') else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
+            'limit':50 if tool=='memory' else 1 if tool in ('artifact','report') else 1 if tool=='owner' else 45 if tool=='home' else 50+len(registry or {}) if tool=='tools' else 100}
     finally:
         db.close()

@@ -1,7 +1,7 @@
 /* D04.2/D04.3: on-demand native read tools. No POST and no HTML rendering of stored content. */
 (() => {
     'use strict';
-    const names=Object.freeze({missions:'Missions',work:'Tâches',files:'Livrables',memory:'Mémoire collective',finance:'Dépenses API',opps:'Opportunités',home:'Autopilote & campagnes',portfolio:'Portefeuille d’activités',laboratory:'Laboratoire',tools:'Connecteurs & outils',agents:'Organisation des agents',goals:'Objectifs & XP'});
+    const names=Object.freeze({missions:'Missions',work:'Tâches',files:'Livrables',memory:'Mémoire collective',finance:'Dépenses API',opps:'Opportunités',home:'Autopilote & campagnes',portfolio:'Portefeuille d’activités',laboratory:'Laboratoire',tools:'Connecteurs & outils',agents:'Organisation des agents',goals:'Objectifs & XP',decisions:'Décisions réservées',owner:'Tableau de direction'});
     const token=document.querySelector('meta[name="campus-session"]').content;
     const panel=document.getElementById('native-tool');
     const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
@@ -39,6 +39,31 @@
                 if(r.kind==='capability'){e=entry(r.label,r.provider+' · '+(r.implemented?'Implémenté':'Non implémenté')+' · '+(r.enabled?'Autorisé par politique':'Non autorisé'));e.append(node('small',r.policy_present?r.calls+' / '+r.max_calls+' tentatives · '+money(r.reserved)+' / '+money(r.budget)+' réservés / plafond':'Politique absente'));e.append(node('small','Disponibilité externe non testée'));}
                 else e=entry('Tentative #'+r.id+' · '+r.capability,r.actor+' · '+r.state+' · '+money(r.reserved)+' réservés · '+r.created);
             }
+            else if(tool==='owner'){
+                e=node('div',undefined,'owner-summary');
+                const a=r.active;
+                const metrics=node('div',undefined,'owner-metrics');
+                for(const [k,v] of [['Plafond API local',money(r.budget)],['Engagements estimés',money(r.committed)],['Solde local estimé',money(r.remaining)],['Décisions en attente',String(r.pending)],['Brave · tentatives / limite',r.searches+' / '+r.search_limit],['Agents configurés',String(r.configured_agents)]]){
+                    const card=node('div',undefined,'metric');card.append(node('small',k),node('strong',v));metrics.append(card);
+                }
+                e.append(metrics);
+                if(r.over_budget)e.append(node('p','Plafond local dépassé : aucun solde disponible.','error'));
+                e.append(entry('Détail des engagements','Usage mesuré : '+money(r.measured)+' · non mesuré / réservé : '+money(r.unmeasured)),
+                    entry('Ressources déclarées','OpenAI : '+(r.openai_configured?'configuré':'non configuré')+' · Brave : '+(r.brave_configured?'configuré':'non configuré')+' · bac à sable : '+(r.sandbox_enabled?'activé':'désactivé')),
+                    entry('Limites par mission',money(r.mission_budget)+' · '+r.mission_calls+' appels maximum'));
+                e.append(node('h3','Pilotage actif enregistré'));
+                for(const [key,label] of [['periods','Autorisations périodiques'],['plans','Plans'],['campaigns','Campagnes'],['missions','Missions']]){
+                    e.append(node('b',label));
+                    if(!a[key].length)e.append(node('p','Aucun état actif enregistré.','muted'));
+                    for(const row of a[key])e.append(entry('#'+row.id+' · '+(row.title||row.goal||row.cadence||label),row.state+(row.mode?' · '+mode(row.mode):'')+(row.expires?' · expire '+new Date(row.expires*1000).toLocaleString('fr-FR'):'')+(row.budget!==undefined?' · plafond '+money(row.budget):row.total_budget!==undefined?' · plafond '+money(row.total_budget):'')));
+                }
+                e.append(node('p','Configuration présente ≠ disponibilité externe vérifiée. Les soldes sont les plafonds locaux, pas les crédits restants chez les fournisseurs.','muted'));
+            }
+            else if(tool==='decisions'){
+                e=entry('#'+r.id+' · '+(r.objet||'Demande sans objet lisible'),r.state+' · mission #'+r.mission+' · '+mode(r.mode));
+                e.append(node('small',r.title),node('p',r.justification||'Justification non disponible'),node('small','Coût estimé déclaré : '+(r.cout_estime||'Non indiqué')),node('small','Risques déclarés : '+(r.risques||'Non indiqués')));
+                if(r.state==='en attente')e.append(node('p',r.may_resume?'Attention : le traitement de cette demande peut reprendre une mission. En mode Cloud, de nouveaux appels peuvent être facturés.':'Décision réservée au propriétaire. Une acceptation pour étude ne constitue pas une autorisation d’achat.','station-pending'));
+            }
             else if(tool==='agents'||tool==='goals'){e=entry(r.id+' · '+r.xp+' XP',r.role);e.append(node('small','Tâches enregistrées : '+(Object.entries(r.task_counts).map(([m,n])=>n+' · '+mode(m)).join(' / ')||'aucune')));if(tool==='agents')e.append(node('p','Permissions moteur : '+r.permissions.join(', ')));}
             else {e=entry(tool==='artifact'?r.name+' · V'+r.version:'Rapport #'+r.id,r.agent+' · mission #'+r.mission+' · '+mode(r.mode));e.append(node('pre',r.content));if(tool==='artifact')e.append(button('Télécharger le fichier original',()=>download(r)));}
             out.append(e);
@@ -48,7 +73,7 @@
         if(!station||!Object.hasOwn(names,tool))return;
         reset();active=tool;panel.hidden=false;
         const title=node('h3',names[tool]+' · consultation locale');
-        const descriptions={home:'États enregistrés des campagnes, plans et autorisations périodiques (15 de chaque). Aucun lancement ni reprise. Les montants sont des engagements locaux estimés.',portfolio:'100 dernières activités enregistrées. Aucune création de projet ni synchronisation automatique.',laboratory:'100 derniers essais enregistrés ; aucun test déclenché. Un statut ne constitue pas une validation commerciale.',tools:'Catalogue et politiques locales, 50 dernières tentatives. Aucun test de disponibilité ni appel de connecteur.',agents:'Rôles et permissions actuels du moteur, en consultation. Aucun agent créé.',goals:'XP enregistrés par le moteur et tâches par mode. Les XP ne donnent aucun droit ; les objectifs éditables restent dans le module historique.'};
+        const descriptions={owner:'Vue consolidée des ressources et du pilotage, sans vérification réseau. Aucun chiffre d’affaires ni bénéfice déduit.',decisions:'100 demandes au maximum, en attente en priorité. Les coûts et risques sont déclarés par les agents, pas des devis vérifiés. Les décisions restent dans le module historique.',home:'États enregistrés des campagnes, plans et autorisations périodiques (15 de chaque). Aucun lancement ni reprise. Les montants sont des engagements locaux estimés.',portfolio:'100 dernières activités enregistrées. Aucune création de projet ni synchronisation automatique.',laboratory:'100 derniers essais enregistrés ; aucun test déclenché. Un statut ne constitue pas une validation commerciale.',tools:'Catalogue et politiques locales, 50 dernières tentatives. Aucun test de disponibilité ni appel de connecteur.',agents:'Rôles et permissions actuels du moteur, en consultation. Aucun agent créé.',goals:'XP enregistrés par le moteur et tâches par mode. Les XP ne donnent aucun droit ; les objectifs éditables restent dans le module historique.'};
         const desc=node('p',descriptions[tool]|| (tool==='finance'?'Registre API local, tous modes. Les montants sont des estimations locales, pas des factures ni des revenus. Groupes limités à 100.':tool==='opps'?'Hypothèses enregistrées, pas des marchés ni des revenus validés. 100 dernières entrées.':tool==='memory'?'Recherche littérale dans les rapports enregistrés (50 résultats maximum ; insensibilité à la casse ASCII).': '100 dernières entrées du moteur, tous bâtiments et tous modes.'),'muted');
         const actions=node('div',undefined,'native-actions'),status=node('p','','muted'),out=node('div',undefined,'native-results');
         status.setAttribute('role','status');status.setAttribute('aria-live','polite');

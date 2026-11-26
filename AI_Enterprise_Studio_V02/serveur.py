@@ -287,7 +287,14 @@ class Handler(BaseHTTPRequestHandler):
                         q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=4)
                         tools=q.pop('tool',[])
                         if len(tools)!=1:raise campus_tools.BadQuery('Outil requis')
-                        return self.send(campus_tools.read(DB,tools[0],q,roles=moteur.ROLES,permissions=moteur.PERMS,registry=connectors.REGISTRY))
+                        resources=None
+                        if tools[0]=='owner':
+                            cfg=config()
+                            resources={'budget':cfg['budget'],'search_limit':cfg['limit'],
+                                'mission_budget':cfg['mission_budget'],'mission_calls':cfg['call_limit'],
+                                'openai_configured':bool(cfg['key']),'brave_configured':bool(cfg['brave']),
+                                'sandbox_enabled':cfg.get('html_sandbox_enabled',False)}
+                        return self.send(campus_tools.read(DB,tools[0],q,roles=moteur.ROLES,permissions=moteur.PERMS,registry=connectors.REGISTRY,resources=resources))
                     except campus_tools.Missing as e:return self.send({'error':str(e)},404)
                     except campus_tools.TooLarge as e:return self.send({'error':str(e)},413)
                     except ValueError:return self.send({'error':'Paramètres de lecture invalides'},400)

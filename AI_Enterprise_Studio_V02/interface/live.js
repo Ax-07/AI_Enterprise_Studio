@@ -43,6 +43,7 @@
         if(!st||!hasModule(st))return;
         out.append(node('h3','Accès aux modules existants'),node('p','Ouvre l’interface historique (module complet, sans filtre automatique). Ses confirmations et permissions restent applicables.','muted'));
         const links=node('div',undefined,'module-links');
+        if(st.id.startsWith('OWNER:station:')){const dashboard=node('button','Tableau de direction');dashboard.type='button';dashboard.dataset.native='owner';dashboard.addEventListener('click',()=>window.AESNativeTools.open('owner'));links.append(dashboard);}
         for(const page of modules.stations[st.id]){
             if(!Object.hasOwn(modules.pages,page))continue;
             const a=node('a',modules.pages[page]);a.dataset.module=page;
