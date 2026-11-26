@@ -47,7 +47,7 @@ def smoke():
             known={st['id'] for b in connected for f in b['floors'] for st in f['stations']}
             assert set(modules['stations'])<=known
             assert set(modules['native'])<=known
-            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure','economy'}
+            assert {tool for tools in modules['native'].values() for tool in tools}=={'incidents','quality','infrastructure','economy','business','marketing'}
             assert {p for ps in modules['stations'].values() for p in ps}==set(modules['pages'])
             assert len(modules['pages'])==14
             assert 'VIDEO183:station:1' not in modules['stations']
@@ -220,6 +220,11 @@ def smoke_live():
                 expect(page.locator('#lift-view [data-floor]')).to_have_count(8)
                 page.locator('#lift-view [data-floor="VIDEO183"]').click()
                 expect(page.locator('#room-view [data-station]')).to_have_count(5)
+                page.locator('#room-view [data-station="VIDEO183:station:0"]').click()
+                expect(page.locator('[data-native="marketing"]')).to_have_count(1)
+                page.locator('[data-native="marketing"]').click()
+                expect(page.locator('#native-tool [role=status]')).to_contain_text('résultat')
+                expect(page.locator('#native-tool')).to_contain_text('aucun média généré')
                 page.locator('#room-view [data-station="VIDEO183:station:1"]').click()
                 expect(page.locator('#station-content')).to_contain_text('non raccordée')
                 expect(page.locator('#station-modules a')).to_have_count(0)

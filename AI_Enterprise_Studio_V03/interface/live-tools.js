@@ -116,6 +116,7 @@
                 }else if(r.kind==='offer'){
                     e=entry('Offre #'+r.id+' · '+r.title,r.state+' · vente non autorisée');
                     if(r.price_cents!==undefined)e.append(node('p','Prix indicatif : '+eur(r.price_cents)),node('small','Résultat mensuel hypothétique : '+(r.monthly_result_hypothesis_cents===null?'non disponible':eur(r.monthly_result_hypothesis_cents))),node('small','Revue : '+(r.review||'non disponible')),node('p','Écarts : '+(r.gaps.join(' · ')||'aucun écart enregistré')));
+                    if(r.state!=='unavailable')e.append(button('Consulter le dossier produit et son protocole',()=>loadDetail('offer_detail',r.id)));
                 }else if(r.kind==='trial'){
                     e=entry('Protocole #'+r.id+' · offre #'+r.offer,r.state+' · '+r.observations+' / '+r.sample_size+' observations déclarées');e.append(node('small',r.positive+' positives · seuil '+r.success_min+' · non vérifiées'));
                 }else if(r.kind==='channel'){
@@ -132,9 +133,34 @@
                 if(r.state==='draft'&&r.marketing_saved)e.append(button('Vérifier et lire le dossier marketing / scénario YouTube',()=>loadDetail('marketing_detail',r.id)));
                 if(!r.hermes_saved&&!r.marketing_saved)e.append(node('p','Aucun dossier enregistré.','muted'));
             }
+            else if(tool==='offer_detail'){
+                e=entry('Offre #'+r.id,r.state+' · proposition interne · vente non autorisée');
+                if(r.content){const c=r.content;
+                    e.append(node('p',r.limit),node('small','Projet #'+r.project+' · mission #'+r.mission+' · livrable '+(r.artifact?'#'+r.artifact:'absent')));
+                    for(const [label,key] of [['Public cible (hypothèse)','audience'],['Problème','problem'],['Offre','offer'],['Livrables','deliverables'],['Canal envisagé','channel'],['Risques','risks']])e.append(entry(label,c[key]));
+                    e.append(entry('Prix indicatif',new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(c.price_cents/100)),entry('Protocole envisagé',c.metric+' · '+c.success_min+' / '+c.sample_size+' · '+c.duration_days+' jours (non exécuté par cette consultation)'),entry('Contrôle avant vente','Revue : '+(r.review||'absente')+' · '+(r.gaps.join(' · ')||'aucun écart enregistré')));
+                    if(r.review_gaps)e.append(node('p',r.review_gaps));
+                    e.append(node('small',r.draft_eligible?'Préparation interne admissible selon les règles actuelles.':'Préparation interne non admissible selon les règles actuelles.'));
+                }else e.append(node('p','Dossier indisponible ou référence invalide.'));
+            }
             else if(tool==='marketing_detail'||tool==='hermes_detail'){
                 e=entry('Dossier #'+r.id,r.state==='unavailable'?'Référence invalide, révoquée ou dossier indisponible.':'Dossier interne · '+r.state+' · publication non autorisée');
-                if(r.content){e.append(node('p',r.limit),node('pre',JSON.stringify(r.content,null,2)));}
+                if(r.content){const c=r.content;e.append(node('p',r.limit));
+                    if(tool==='marketing_detail'){
+                        e.append(entry('Page de présentation · brouillon',c.landing.title));
+                        for(const k of ['summary','evidence','limitations','price','cta'])e.append(node('p',c.landing[k]));
+                        e.append(entry('YouTube · scénario textuel',c.youtube.title),node('p',c.youtube.description),node('small','Durée prévue : '+r.storyboard_seconds+' s · aucun média généré'));
+                        for(const [i,s] of c.youtube.storyboard.entries())e.append(entry('Séquence '+(i+1)+' · '+s.seconds+' s',s.visual),node('p','Voix prévue : '+s.voice));
+                        e.append(entry('Réseaux sociaux · texte interne',c.social.text),entry('Règles média',c.media_policy.assets+' · '+c.media_policy.music),node('p','Contrôle technique du texte uniquement. Aucune diffusion, file de publication, voix, vidéo ou montage disponible.'));
+                    }else{
+                        e.append(entry('Présentation produit',c.title),node('p',c.offer_text));
+                        for(const [label,key] of [['Livrables','deliverables'],['Public cible (hypothèse)','audience_hypothesis'],['Limites','limitations'],['Risques','risks']])e.append(entry(label,Array.isArray(c[key])?c[key].join(' · '):c[key]));
+                        e.append(entry('Prix indicatif',new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format(c.price_cents/100)),entry('Démonstration synthétique',c.demo_status));
+                        for(const f of c.faq)e.append(entry(f.question,f.answer));
+                        e.append(node('p','Étape prévue : contrôle du contenu avant toute activation.'));
+                    }
+                    e.append(node('pre',JSON.stringify(c,null,2)));
+                }
             }
             else if(tool==='owner'){
                 e=node('div',undefined,'owner-summary');
@@ -170,7 +196,7 @@
         if(!station||!Object.hasOwn(names,tool))return;
         reset();active=tool;panel.hidden=false;
         const title=node('h3',names[tool]+' · consultation locale');
-        const descriptions={economy:'Registre API USD et encaissements EUR séparés ; 30 évaluations les plus récentes par opportunité, calculs et références contrôlés localement. Aucun nouveau devis, paiement, investissement ou prévision certifiée.',infrastructure:'Inventaire du moteur et des tables SQLite, configuration sans secrets, historique des connecteurs et rapport de préparation éventuel. Aucun ping, contrôle intégral, lancement de maintenance, sauvegarde ou restauration.',quality:'50 dernières vérifications et 50 derniers essais de laboratoire. Correspondance SHA-256 avec le contenu actuel, statut enregistré et assertions limitées. Simulation distincte de Cloud. Aucun test relancé, aucune validation de vente ou de sécurité générale.',incidents:'États persistés et règles réelles de reprise. 50 missions à examiner et 50 reprises les plus récentes au maximum. Aucune reprise déclenchée, aucun diagnostic réseau ; une reprise enregistrée ne prouve pas la résolution.',business:'Offres, protocoles, canaux TEST et registre EUR. Les montants déclarés ne sont pas vérifiés. Les signaux périmés ne sont pas affichés comme actuels. Aucun lancement externe.',marketing:'30 derniers brouillons. La présence d’un dossier ne garantit pas sa validité ; chaque ouverture recontrôle les preuves. Aucun média généré ou publié.',owner:'Vue consolidée des ressources et du pilotage, sans vérification réseau. Aucun chiffre d’affaires ni bénéfice déduit.',decisions:'100 demandes au maximum, en attente en priorité. Les coûts et risques sont déclarés par les agents, pas des devis vérifiés. Le traitement est disponible dans le bureau du propriétaire ; le module historique reste accessible.',home:'États enregistrés des campagnes, plans et autorisations périodiques (15 de chaque). Aucun lancement ni reprise. Les montants sont des engagements locaux estimés.',portfolio:'100 dernières activités enregistrées. Aucune création de projet ni synchronisation automatique.',laboratory:'100 derniers essais enregistrés ; aucun test déclenché. Un statut ne constitue pas une validation commerciale.',tools:'Catalogue et politiques locales, 50 dernières tentatives. Aucun test de disponibilité ni appel de connecteur.',agents:'Rôles et permissions actuels du moteur, en consultation. Aucun agent créé.',goals:'XP enregistrés par le moteur et tâches par mode. Les XP ne donnent aucun droit ; les objectifs éditables restent dans le module historique.'};
+        const descriptions={economy:'Registre API USD et encaissements EUR séparés ; 30 évaluations les plus récentes par opportunité, calculs et références contrôlés localement. Aucun nouveau devis, paiement, investissement ou prévision certifiée.',infrastructure:'Inventaire du moteur et des tables SQLite, configuration sans secrets, historique des connecteurs et rapport de préparation éventuel. Aucun ping, contrôle intégral, lancement de maintenance, sauvegarde ou restauration.',quality:'50 dernières vérifications et 50 derniers essais de laboratoire. Correspondance SHA-256 avec le contenu actuel, statut enregistré et assertions limitées. Simulation distincte de Cloud. Aucun test relancé, aucune validation de vente ou de sécurité générale.',incidents:'États persistés et règles réelles de reprise. 50 missions à examiner et 50 reprises les plus récentes au maximum. Aucune reprise déclenchée, aucun diagnostic réseau ; une reprise enregistrée ne prouve pas la résolution.',business:'Offres, protocoles, canaux TEST et registre EUR. Les montants déclarés ne sont pas vérifiés. Les signaux périmés ne sont pas affichés comme actuels. Aucun lancement externe.',marketing:'30 derniers brouillons internes. La présence d’un dossier ne garantit pas sa validité ; chaque ouverture recontrôle les preuves. Scénarios et textes uniquement : aucun média généré, aucun compte ou calendrier de publication opérationnel.',owner:'Vue consolidée des ressources et du pilotage, sans vérification réseau. Aucun chiffre d’affaires ni bénéfice déduit.',decisions:'100 demandes au maximum, en attente en priorité. Les coûts et risques sont déclarés par les agents, pas des devis vérifiés. Le traitement est disponible dans le bureau du propriétaire ; le module historique reste accessible.',home:'États enregistrés des campagnes, plans et autorisations périodiques (15 de chaque). Aucun lancement ni reprise. Les montants sont des engagements locaux estimés.',portfolio:'100 dernières activités enregistrées. Aucune création de projet ni synchronisation automatique.',laboratory:'100 derniers essais enregistrés ; aucun test déclenché. Un statut ne constitue pas une validation commerciale.',tools:'Catalogue et politiques locales, 50 dernières tentatives. Aucun test de disponibilité ni appel de connecteur.',agents:'Rôles et permissions actuels du moteur, en consultation. Aucun agent créé.',goals:'XP enregistrés par le moteur et tâches par mode. Les XP ne donnent aucun droit ; les objectifs éditables restent dans le module historique.'};
         const desc=node('p',descriptions[tool]|| (tool==='finance'?'Registre API local, tous modes. Les montants sont des estimations locales, pas des factures ni des revenus. Groupes limités à 100.':tool==='opps'?'Hypothèses enregistrées, pas des marchés ni des revenus validés. 100 dernières entrées.':tool==='memory'?'Recherche littérale dans les rapports enregistrés (50 résultats maximum ; insensibilité à la casse ASCII).': '100 dernières entrées du moteur, tous bâtiments et tous modes.'),'muted');
         const actions=node('div',undefined,'native-actions'),status=node('p','','muted'),out=node('div',undefined,'native-results');
         status.setAttribute('role','status');status.setAttribute('aria-live','polite');
@@ -188,7 +214,7 @@
                 if(n!==epoch)return;
                 if(payload.schema!=='aes.campus.tool.v1'||payload.read_only!==true||payload.tool!==kind||!Array.isArray(payload.rows))throw Error('schema');
                 status.textContent=payload.rows.length+' résultat(s) · instantané local';
-                if(['artifact','report','marketing_detail','hermes_detail'].includes(kind))out.append(button('← Retour aux résultats',()=>load(tool,last)));
+                if(['artifact','report','marketing_detail','hermes_detail','offer_detail'].includes(kind))out.append(button('← Retour aux résultats',()=>load(tool,last)));
                 renderRows(kind,payload.rows,out,(k,id)=>load(k,{id:String(id)}));
             }catch(e){if(n===epoch){out.replaceChildren();status.textContent='Lecture indisponible'+(e.message==='413'?' : contenu trop volumineux':e.message==='400'?' : paramètres invalides':'')+'.';}}
             finally{clearTimeout(timer);}

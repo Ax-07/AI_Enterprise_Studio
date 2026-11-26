@@ -7,13 +7,26 @@ import acquisition_sync
 import hermes_acquisition
 import marketing
 
-TOOLS=frozenset(('business','marketing','marketing_detail','hermes_detail'))
-DETAILS=frozenset(('marketing_detail','hermes_detail'))
+TOOLS=frozenset(('business','marketing','marketing_detail','hermes_detail','offer_detail'))
+DETAILS=frozenset(('marketing_detail','hermes_detail','offer_detail'))
 EXPECTED=(ValueError,TypeError,KeyError,AttributeError,RuntimeError,IndexError)
 
 def read(db,tool,ident=None):
     def rows(sql,args=()):
         return [dict(r) for r in db.execute(sql,args)]
+    if tool=='offer_detail':
+        if not db.execute('SELECT 1 FROM commercial_offers WHERE id=?',(ident,)).fetchone():return []
+        base={'kind':tool,'id':ident,'sale_authorized':False,'publication_authorized':False,'limit':business.LIMIT}
+        try:
+            v,eligible,gaps=business.gate(db,business.offer_row(db,ident))
+            plan=v['plan']
+            # Internal proposal only; never expose raw evidence, receipts or participant references.
+            content={k:plan[k] for k in commercial.OFFER_TEXT+('price_cents','metric','sample_size','success_min','duration_days')}
+            return [{**base,'state':v['state'],'project':v['project'],'mission':v['mission'],
+                     'artifact':v['artifact'],'artifact_sha256':v['artifact_sha256'],'draft_eligible':eligible,
+                     'gaps':gaps,'review':(v['review'] or {}).get('verdict'),
+                     'review_gaps':(v['review'] or {}).get('gaps'),'content':content}]
+        except EXPECTED:return [{**base,'state':'unavailable','content':None}]
     if tool in DETAILS:
         row=db.execute('SELECT id,offer FROM acquisition_drafts WHERE id=?',(ident,)).fetchone()
         if not row:return []
@@ -25,7 +38,7 @@ def read(db,tool,ident=None):
                 # Only the deterministic, independently checked template content.
                 content={k:p['content'][k] for k in ('landing','youtube','social','media_policy')}
                 return [{**base,'state':'technical_pass','revision':p['revision'],'content':content,
-                    'limit':p['limit'],'video_generated':False}]
+                    'limit':p['limit'],'video_generated':False,'storyboard_seconds':sum(s['seconds'] for s in content['youtube']['storyboard'])}]
             p=hermes_acquisition.packet(db,ident)
             content={k:p[k] for k in ('title','offer_text','deliverables','audience_hypothesis','price_cents','limitations','risks','faq','next_action')}
             content['demo_status']=p['product_demo']['status']

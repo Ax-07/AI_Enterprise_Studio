@@ -516,5 +516,57 @@ window.AESLiveModules = Object.freeze({pages:Object.freeze({"home":"Accueil & Au
   ],
   "OPPORTUNITIES:station:3": [
     "economy"
+  ],
+  "HERMES:station:0": [
+    "marketing"
+  ],
+  "HERMES:station:1": [
+    "marketing"
+  ],
+  "HERMES:station:2": [
+    "business",
+    "marketing"
+  ],
+  "HERMES:station:3": [
+    "marketing"
+  ],
+  "SHOWROOM:station:0": [
+    "marketing"
+  ],
+  "SHOWROOM:station:1": [
+    "marketing"
+  ],
+  "SHOWROOM:station:2": [
+    "marketing"
+  ],
+  "SHOWROOM:station:3": [
+    "marketing"
+  ],
+  "SUPPORT17:station:4": [
+    "marketing"
+  ],
+  "COMMS:station:3": [
+    "marketing"
+  ],
+  "ADS183:station:0": [
+    "marketing"
+  ],
+  "ADS183:station:1": [
+    "marketing"
+  ],
+  "ADS183:station:2": [
+    "marketing"
+  ],
+  "ADS183:station:4": [
+    "marketing"
+  ],
+  "VIDEO183:station:0": [
+    "marketing"
+  ],
+  "PUBLISH183:station:0": [
+    "marketing"
+  ],
+  "PUBLISH183:station:1": [
+    "marketing"
   ]
 })});
