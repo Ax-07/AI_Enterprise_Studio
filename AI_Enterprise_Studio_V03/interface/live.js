@@ -147,11 +147,12 @@
     function clearFlows(){clearTimeout(flowTimer);document.getElementById('live-flows')?.replaceChildren();}
     function renderActivity(){
         for(const b of layout){
-            const g=document.querySelector('[data-building="'+b.id+'"]'),badge=g?.querySelector('.activity-label');
+            const g=document.querySelector('[data-building="'+b.id+'"]'),sign=fidelity?document.querySelector('#original-signs [data-id="'+b.id+'"]'):null,badge=(sign||g)?.querySelector('.activity-label');
             const local=data?.buildings.find(x=>x.id===b.id);
             const s=local?buildingActivity(local):{state:'unknown',detail:'Données indisponibles'};
             if(g){g.dataset.activity=s.state;g.setAttribute('aria-label',labels[b.id]+' · '+(stateNames[s.state]||s.detail)+' · '+s.detail+' · ouvrir l’ascenseur');}
-            if(badge)badge.textContent=s.detail;
+            if(sign)sign.dataset.activity=s.state;
+            if(badge)badge.textContent=fidelity?(b.id==='CORE'?'DATA CORE':b.id)+' · '+b.floors.length+' niv. · '+(local?local.agents.length+' agent(s)':'—'):s.detail;
             const button=document.querySelector('#buildings button[data-id="'+b.id+'"]');
             if(button){button.dataset.activity=s.state;button.title=stateNames[s.state]||s.detail;button.querySelector('small').textContent=s.detail;}
         }
@@ -180,6 +181,7 @@
     }
     function initMap(){
         const map=svg('svg',{viewBox:'0 0 1000 600',class:'campus-map-svg',role:'group','aria-label':'Campus interactif'});
+        const signs=svg('g',{id:'original-signs','aria-hidden':'true'});
         map.append(svg('image',{id:'campus-decor',href:'/campus/assets/campus_1_1.webp',class:'live-hd-art',x:0,y:0,width:1000,height:600,preserveAspectRatio:'none'}));
         for(const b of [...layout].sort((a,b)=>a.x+a.y-b.x-b.y)){
             const w=b.w*.82,d=b.d*.82,h=b.h*.77,X=b.x-w/2,Y=b.y-d/2,top=b.type==='core'?51:h+(b.type==='hq'?28:8);
@@ -187,15 +189,17 @@
             const a=X-9,c=X+w+9,e=Y-9,f=Y+d+9;
             for(const pts of [[[a,f,5],[c,f,5],[c,f,top],[a,f,top]],[[c,e,5],[c,f,5],[c,f,top],[c,e,top]],[[a,e,top],[c,e,top],[c,f,top],[a,f,top]],[[a,e,6],[c,e,6],[c,f,6],[a,f,6]]])g.append(polygon(pts,{class:'live-hit'}));
             const [px,py]=project(b.x,b.y,0);g.append(svg('ellipse',{class:'building-halo',cx:px,cy:py+3,rx:(w+d)*.48,ry:(w+d)*.23,fill:'none',stroke:b.color,'pointer-events':'none'}));
-            const y=Math.max(4,py-(b.type==='hq'?h+71:b.type==='core'?84:h+54)-12),x=px;
-            const label=svg('g',{class:'live-domain-label','pointer-events':'none'});
-            label.append(svg('path',{d:'M'+x+' '+(y+44)+'v12',stroke:b.color,'stroke-dasharray':'2 3',opacity:.8}),svg('rect',{class:'live-label-bg',x:x-82,y,width:164,height:44,rx:5,stroke:b.color}),svg('rect',{x:x-78,y:y+5,width:2,height:34,fill:b.color}));
-            const t=svg('text',{x,y:y+13,class:'map-label'});t.textContent=fidelity?window.AESOriginalOffice.departments[b.id].lines[0]:b.id==='CORE'?'DATA CORE':b.id;label.append(t);
-            const sub=svg('text',{x,y:y+26,class:'map-subtitle'});sub.textContent=fidelity?window.AESOriginalOffice.departments[b.id].lines[1]:labels[b.id].toUpperCase()+' · '+b.floors.length+' NIV.';label.append(sub);
-            const badge=svg('text',{x,y:y+38,class:'activity-label'});badge.textContent='Données indisponibles';label.append(badge);g.append(label);g.dataset.activity='unknown';
+            const labelHeight=fidelity?b.h:h;
+            const y=Math.max(4,py-(b.type==='hq'?labelHeight+71:b.type==='core'?84:labelHeight+54)-12),x=px;
+            const label=svg('g',fidelity?{class:'live-domain-label map-node domain15','data-id':b.id,style:'--accent:'+b.color,'aria-hidden':'true'}:{class:'live-domain-label','pointer-events':'none'});
+            label.append(svg('path',{d:'M'+x+' '+(y+44)+'v12',stroke:b.color,'stroke-dasharray':'2 3',opacity:.8}),svg('rect',{class:fidelity?'live-label-bg tag label-bg':'live-label-bg',x:x-82,y,width:164,height:44,rx:5,stroke:b.color}),svg('rect',{x:x-78,y:y+5,width:2,height:34,fill:b.color}));
+            const t=svg('text',{x,y:y+(fidelity?12:13),class:'map-label'});t.textContent=fidelity?window.AESOriginalOffice.departments[b.id].lines[0]:b.id==='CORE'?'DATA CORE':b.id;label.append(t);
+            const sub=svg('text',{x,y:y+(fidelity?24:26),class:'map-subtitle'});sub.textContent=fidelity?window.AESOriginalOffice.departments[b.id].lines[1]:labels[b.id].toUpperCase()+' · '+b.floors.length+' NIV.';label.append(sub);
+            const badge=svg('text',{x,y:y+(fidelity?37:38),class:'activity-label'});badge.textContent='Données indisponibles';label.append(badge);if(fidelity){signs.append(label);label.addEventListener('click',()=>openLift(b.id));const light=on=>label.classList.toggle('lit181',on);for(const el of [g,label]){el.addEventListener('pointerenter',()=>light(true));el.addEventListener('pointerleave',()=>light(false));}g.addEventListener('focus',()=>light(true));g.addEventListener('blur',()=>light(false));const [tx,ty]=project(b.x,Y+d+1,22);if(b.type!=='core'){const roof=svg('text',{x:tx,y:ty,transform:'rotate(25 '+tx+' '+ty+')',class:'hd-sign','text-anchor':'middle'});roof.textContent=b.id;g.append(roof);}}else g.append(label);g.dataset.activity='unknown';
             g.addEventListener('click',()=>openLift(b.id));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openLift(b.id);}});map.append(g);
         }
         map.append(svg('g',{id:'live-flows','pointer-events':'none','aria-hidden':'true'}));
+        if(fidelity)map.append(signs);
         $('campus-map').replaceChildren(map);
         $('buildings').replaceChildren(...layout.map(b=>{const btn=node('button',labels[b.id]);btn.type='button';btn.dataset.id=b.id;btn.dataset.activity='unknown';if(fidelity){btn.className='agent';btn.style.setProperty('--c',b.color);btn.replaceChildren();const avatar=node('span',undefined,'avatar'),av=svg('svg',{viewBox:'-20 -40 40 45','aria-hidden':'true'});av.append(art.robot(b.color,.8));avatar.append(av);const desc=node('span');desc.append(node('span',window.AESOriginalOffice.departments[b.id].title,'name'),node('small','Données indisponibles'));btn.append(avatar,desc);}else btn.append(node('small','Données indisponibles'));btn.addEventListener('click',()=>openLift(b.id));return btn;}));
     }
@@ -271,7 +275,8 @@
     function sceneTransition(){
         if(!motion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
         const e=scene==='campus'?$('campus-map'):scene==='lift'?$('lift-view'):$('room-view');
-        e.animate([{opacity:.55,transform:'translateY(3px)'},{opacity:1,transform:'translateY(0)'}],{duration:200,easing:'ease-out'});
+        if(fidelity){const door=$('doorTransition');door.getAnimations().forEach(a=>a.cancel());door.animate([{opacity:1},{opacity:0}],{duration:180,easing:'ease-out'});}
+        else e.animate([{opacity:.55,transform:'translateY(3px)'},{opacity:1,transform:'translateY(0)'}],{duration:200,easing:'ease-out'});
     }
     function renderScene(){
         const b=byId.get(selected),f=currentFloor();
@@ -279,13 +284,14 @@
         $('campus-back').hidden=scene==='campus';$('lift-back').hidden=scene!=='room';
         if(fidelity){$('roomScene').hidden=scene!=='room';$('campusPanel').classList.toggle('room-open',scene==='room');$('campusPanel').classList.toggle('lift-open181',scene==='lift');}
         document.querySelectorAll('#buildings button').forEach(btn=>btn.setAttribute('aria-pressed',String(btn.dataset.id===selected)));
+        if(fidelity){for(const g of $('campus-map').querySelectorAll('[data-building]'))g.setAttribute('aria-pressed',String(g.dataset.building===selected));for(const g of $('campus-map').querySelectorAll('#original-signs [data-id]'))g.classList.toggle('selected',g.dataset.id===selected);}
         renderTeam();
         if(scene==='campus'){$('scene-title').textContent='Campus · 7 bâtiments';$('scene-note').textContent='Sélectionne un bâtiment sur le campus ou dans la liste.';return;}
         if(scene==='lift'){
             $('scene-title').textContent='Ascenseur · '+labels[b.id];$('scene-note').textContent='Services du design · leur présence ne signifie pas qu’ils sont opérationnels.';
-            const wrap=node('div',undefined,'lift-layout'),list=node('div',undefined,'floor-list'),towerBox=node('div',undefined,'lift-tower-box');towerBox.append(tower(b),node('p','','lift-preview'));wrap.append(towerBox,list);$('lift-view').style.setProperty('--lift',b.color);
-            for(const f of [...b.floors].reverse()){const btn=node('button');btn.type='button';btn.dataset.floor=f.id;const body=node('span');body.append(node('b',f.name),node('small',f.description),node('small',f.stations.some(hasModule)?'Accès métier partiel · occupation inconnue':'Service graphique · aucun accès métier associé'),node('small','','floor-activity'));btn.append(node('span',levelLabel(f.level),'floor-number'),body,node('span','›','floor-arrow'));if(lastFloor===f.id)btn.setAttribute('aria-current','true');btn.addEventListener('pointerenter',()=>highlightFloor(f.id));btn.addEventListener('pointerleave',()=>highlightFloor(lastFloor));btn.addEventListener('focus',()=>highlightFloor(f.id));btn.addEventListener('blur',()=>highlightFloor(lastFloor));btn.addEventListener('click',()=>openFloor(f.id));list.append(btn);}
-            $('lift-view').replaceChildren(node('p','','lift-activity'),wrap);renderLiftStatus();highlightFloor(lastFloor);return;
+            const wrap=node('div',undefined,fidelity?'lift-layout liftLayout181':'lift-layout'),list=node('div',undefined,fidelity?'floor-list liftList181':'floor-list'),towerBox=node('div',undefined,fidelity?'lift-tower-box liftTower181':'lift-tower-box');towerBox.append(tower(b),node('p','','lift-preview'));wrap.append(towerBox,list);$('lift-view').style.setProperty('--lift',b.color);
+            for(const f of [...b.floors].reverse()){const btn=node('button');btn.type='button';btn.dataset.floor=f.id;if(fidelity)btn.className='floor181';const body=node('span');body.append(node('b',f.name),node('small',f.description),node('small',f.stations.some(hasModule)?'Accès métier partiel · occupation inconnue':'Service graphique · aucun accès métier associé'),node('small','','floor-activity'));btn.append(node('span',levelLabel(f.level),fidelity?'floor-number num181':'floor-number'),body,node('span','›',fidelity?'floor-arrow arrow181':'floor-arrow'));if(lastFloor===f.id)btn.setAttribute('aria-current','true');btn.addEventListener('pointerenter',()=>highlightFloor(f.id));btn.addEventListener('pointerleave',()=>highlightFloor(lastFloor));btn.addEventListener('focus',()=>highlightFloor(f.id));btn.addEventListener('blur',()=>highlightFloor(lastFloor));btn.addEventListener('click',()=>openFloor(f.id));list.append(btn);}
+            if(fidelity){const hero=node('div',undefined,'liftHero181'),heading=node('div'),count=node('div',undefined,'liftCount181');heading.append(node('small','ACCÈS VERTICAL / '+b.id),node('h3',window.AESOriginalOffice.departments[b.id].title),node('p','Ascenseur interactif · services de référence'));count.append(node('strong',String(b.floors.length)),node('span','niveaux accessibles'));hero.append(heading,count);$('lift-view').replaceChildren(hero,node('p','','lift-activity'),wrap);}else $('lift-view').replaceChildren(node('p','','lift-activity'),wrap);renderLiftStatus();highlightFloor(lastFloor);return;
         }
         $('scene-title').textContent=levelLabel(f.level)+' · '+f.name;$('scene-note').textContent='Décor du service · les données de droite sont celles du bâtiment, pas une mesure de l’occupation du service.';
         const room=$('room-view');room.replaceChildren();

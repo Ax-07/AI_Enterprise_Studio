@@ -1,17 +1,17 @@
 /* Original design.css remains authoritative. Only additions for real local data. */
 .original-shell #campus-map,.original-shell #lift-view,.original-shell #roomScene{width:100%;min-width:0}
 .original-shell .campus-map-svg{display:block;width:100%;max-height:600px;overflow:visible}
-.original-shell .day .campus-map-svg{filter:brightness(1.14) saturate(.8)}
+/* Design 18.1 already applies the original day filter on .map-wrap. Do not apply it twice. */
 .original-shell .live-hd-art{filter:contrast(1.07) saturate(1.13);pointer-events:none}
 .original-shell .live-map-node{cursor:pointer;outline:none}
 .original-shell .live-hit{fill:transparent;stroke:transparent;stroke-width:1.8;pointer-events:all;transition:stroke .2s,fill .2s}
 .original-shell .live-map-node:hover .live-hit,.original-shell .live-map-node:focus-visible .live-hit{stroke:var(--accent);fill:var(--accent);fill-opacity:.07}
 .original-shell .building-halo{opacity:.1;transition:opacity .2s}
 .original-shell .live-map-node:hover .building-halo,.original-shell .live-map-node:focus-visible .building-halo{opacity:.8}
-.original-shell .live-domain-label{pointer-events:none}.original-shell .live-label-bg{fill:#081625;fill-opacity:.96;stroke-width:1.1}
+.original-shell .live-domain-label{pointer-events:auto;cursor:pointer}.original-shell .live-domain-label text{pointer-events:none}.original-shell .live-label-bg{fill:#081625;fill-opacity:.96;stroke-width:1.1}
 .original-shell .live-map-node:hover .live-label-bg,.original-shell .live-map-node:focus-visible .live-label-bg{fill:#18374a;filter:drop-shadow(0 0 6px #6cdfff99)}
-.original-shell .map-label,.original-shell .map-subtitle,.original-shell .activity-label{text-anchor:middle;font-weight:750;fill:var(--accent);font-size:11px}
-.original-shell .activity-label{fill:var(--state-color,#d0dfef);font-size:9px}
+.original-shell .map-label,.original-shell .map-subtitle,.original-shell .activity-label{text-anchor:middle;font-weight:750;fill:var(--accent);font-size:11.5px}.original-shell .map-subtitle{font-size:10.4px}
+.original-shell .activity-label{fill:#d0dfef;font-size:9px;font-weight:400}
 .original-shell [data-activity=selected],.original-shell [data-activity=running_recorded]{--state-color:#70dfb6}
 .original-shell [data-activity=queued]{--state-color:#79bdff}.original-shell [data-activity=waiting]{--state-color:#edc474}.original-shell [data-activity=blocked]{--state-color:#ff9988}.original-shell [data-activity=unknown]{--state-color:#788797}
 .original-shell #buildings .agent[aria-pressed=true]{background:#1b2c42;border-color:#34506c}.original-shell #buildings small{color:var(--state-color,var(--muted))}
@@ -39,3 +39,10 @@
 .original-shell .immersive .main{grid-template-columns:1fr}.original-shell .immersive .campus-map-svg{max-height:76vh}
 @media(max-width:620px){.original-shell .lift-layout{grid-template-columns:1fr}.original-shell .lift-tower{max-height:190px}}
 @media(prefers-reduced-motion:reduce){.original-shell .live-hit,.original-shell .level181,.original-shell .floor-list button{transition:none}.original-shell .floor-list button:hover{transform:none}.original-shell #live-flows{display:none}}
+
+/* Original 18.1 layer hierarchy and highlight, not a new visual treatment. */
+.original-shell .domain15.lit181 .tag{stroke-width:2.2;fill:#1c3549}.original-shell .domain15.lit181 text{filter:brightness(1.35)}
+.original-shell .live-map-node[aria-pressed=true] .building-halo{opacity:.5}.original-shell .live-map-node[aria-pressed=true]:hover .building-halo{opacity:.8}
+.original-shell .liftHero181{border-bottom:1px solid #34516a}.original-shell .liftTower181 svg{width:100%;max-width:270px;max-height:450px}
+.original-shell .campus-map-svg{aspect-ratio:1000/600;max-height:600px}.original-shell .immersive .campus-map-svg{max-height:76vh}
+.original-shell #doorTransition{pointer-events:none}
