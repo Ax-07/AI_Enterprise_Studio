@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
 from infrastructure.configuration import load_config
 from infrastructure.database import transaction
-from infrastructure import providers
+from infrastructure import providers, security
 import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, campus_tools, campus_commands, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
@@ -246,15 +246,12 @@ class Handler(BaseHTTPRequestHandler):
         route=self.route()[:120]
         print(f'[HTTP 404] {self.command} {route} — serveur {VERSION}',flush=True)
         return self.send({'error':'Route inconnue : '+self.command+' '+route,'version':VERSION},404)
-    def local(self): return self.headers.get('Host') in (f'127.0.0.1:{PORT}',f'localhost:{PORT}')
+    def local(self): return security.local_host(self.headers,PORT)
     def do_GET(self):
         if not self.local(): return self.send({'error':'Hôte refusé'},403)
         try:
             if self.route() in ('/campus/live-data','/campus/read'):
-                origin=self.headers.get('Origin')
-                if (not secrets.compare_digest(self.headers.get('X-Campus-Session','').encode(),CAMPUS_READ_SESSION.encode())
-                    or origin not in (None,'http://'+self.headers.get('Host',''))
-                    or self.headers.get('Sec-Fetch-Site') not in (None,'same-origin')):
+                if not security.campus_read_allowed(self.headers,CAMPUS_READ_SESSION):
                     return self.send({'error':'Accès lecture campus refusé'},403)
                 if self.route()=='/campus/read':
                     try:
@@ -283,7 +280,7 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     return self.send({'error':'Données du campus indisponibles'},503)
             if self.route() in ('/campus/live','/campus/original'):
-                if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
+                if not security.direct_navigation_allowed(self.headers):
                     return self.send({'error':'Accès local direct requis'},403)
                 asset=campus_preview.read(ROOT,self.route())
                 if asset is None:return self.missing()
@@ -298,8 +295,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(data,typ=typ,csp=campus_preview.CSP)
             if self.route()=='/api/health': return self.send({'application':'AI Enterprise Studio','version':VERSION,'resume_supported':True,'resume_route':'POST /api/resume','paid_call':False})
             if self.route()=='/': return self.send((ROOT/'index.html').read_text(encoding='utf8').replace('__SESSION__',SESSION).encode(),typ='text/html; charset=utf-8')
-            if self.route()=='/api/status' and self.headers.get('X-Session')==SESSION: return self.send(status())
-            if self.route()=='/api/mission_diagnostic' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/status' and security.legacy_session_allowed(self.headers,SESSION): return self.send(status())
+            if self.route()=='/api/mission_diagnostic' and security.legacy_session_allowed(self.headers,SESSION):
                 mid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:
                     mission=c.execute('SELECT * FROM missions WHERE id=?',(mid,)).fetchone()
@@ -308,83 +305,83 @@ class Handler(BaseHTTPRequestHandler):
                     tasks=[dict(r) for r in c.execute('SELECT id,agent,state,turns FROM tasks WHERE mission=?',(mid,))]
                     calls,cost=c.execute('SELECT COUNT(*),COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger WHERE mission=?',(mid,)).fetchone()
                 return self.send({'mission':dict(mission),'tasks':tasks,'events':events,'calls':calls,'estimated_usd':cost/1e6,'limit':'Extraits de journal local; vérifier avant partage.'})
-            if self.route()=='/api/n8n_template' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/n8n_template' and security.legacy_session_allowed(self.headers,SESSION):
                 cap=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('capability',[''])[0]
                 files={n8n_bridge.HEALTH:'aes_health.json',n8n_bridge.METRICS:'aes_metrics.json',n8n_bridge.COMPARE:'aes_market_compare.json'}
                 if cap not in files:raise ValueError('Workflow inconnu')
                 return self.send(json.loads((ROOT/'n8n'/files[cap]).read_text(encoding='utf8')))
-            if self.route()=='/api/marketing_packet' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/marketing_packet' and security.legacy_session_allowed(self.headers,SESSION):
                 did=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send(marketing.packet(c,did))
-            if self.route()=='/api/hermes_packet' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/hermes_packet' and security.legacy_session_allowed(self.headers,SESSION):
                 did=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send(hermes_acquisition.packet(c,did))
-            if self.route()=='/api/acquisition_preview' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/acquisition_preview' and security.legacy_session_allowed(self.headers,SESSION):
                 did=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send(acquisition.preview(c,did))
-            if self.route()=='/api/acquisition_audit' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/acquisition_audit' and security.legacy_session_allowed(self.headers,SESSION):
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send({'schema':'aes-acquisition-audit-v1','version':VERSION,'acquisition':acquisition.status(c),'sync':acquisition_sync.status(c),'control':acquisition_control.status(c),'hermes':hermes_acquisition.status(c),'runtime':acquisition_runtime.status(),'marketing':marketing.status(c)})
-            if self.route()=='/api/business_audit' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/business_audit' and security.legacy_session_allowed(self.headers,SESSION):
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send({'schema':'aes-business-audit-v1','version':VERSION,'business':business.status(c)})
-            if self.route()=='/api/commercial' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/commercial' and security.legacy_session_allowed(self.headers,SESSION):
                 pid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['project'][0])
                 with db() as c:
                     if not portfolio.project(c,pid):raise ValueError('Activité absente')
                     return self.send(commercial.project_status(c,pid))
-            if self.route()=='/api/intelligence' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/intelligence' and security.legacy_session_allowed(self.headers,SESSION):
                 with db() as c:return self.send(intelligence.status(c,full=True))
-            if self.route()=='/api/connectors' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/connectors' and security.legacy_session_allowed(self.headers,SESSION):
                 with db() as c:return self.send(connectors.status(c))
-            if self.route()=='/api/campaign_audit' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/campaign_audit' and security.legacy_session_allowed(self.headers,SESSION):
                 cid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 cfg=config()
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send(campaign_audit(c,cfg,cid))
-            if self.route()=='/api/periodic_audit' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/periodic_audit' and security.legacy_session_allowed(self.headers,SESSION):
                 gid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:
                     c.execute('BEGIN')
                     st=periodic.status(c,config(),gid)
                     if not st['grant']:raise ValueError('Autorisation absente')
                     return self.send({'schema':'aes-periodic-audit-v1','version':VERSION,'periodic':st})
-            if self.route()=='/api/plan_audit' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/plan_audit' and security.legacy_session_allowed(self.headers,SESSION):
                 pid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 cfg=config()
                 with db() as c:
                     c.execute('BEGIN')
                     return self.send(plan_audit(c,cfg,pid))
-            if self.route()=='/api/campaign_diagnostic' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/campaign_diagnostic' and security.legacy_session_allowed(self.headers,SESSION):
                 cfg=config()
                 with db() as c:
                     return self.send({'version':VERSION,'readiness':autopilot.readiness(c,cfg,LOCK.locked()),
                         'campaign':autopilot.status(c,cfg),'limit':'Journal local sans clés API; les objectifs peuvent contenir des informations privées.'})
-            if self.route()=='/api/improvement' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/improvement' and security.legacy_session_allowed(self.headers,SESSION):
                 rid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:r=c.execute('SELECT * FROM improvement_cycles WHERE id=?',(rid,)).fetchone()
                 if not r:raise ValueError('Cycle absent')
                 return self.send({**dict(r),'plan':json.loads(r['plan']),'result':json.loads(r['result'])})
-            if self.route()=='/api/laboratory' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/laboratory' and security.legacy_session_allowed(self.headers,SESSION):
                 rid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c:r=c.execute('SELECT * FROM laboratory_runs WHERE id=?',(rid,)).fetchone()
                 if not r:raise ValueError('Expérience absente')
                 return self.send({**laboratory.summary_row(r),'result':json.loads(r['result'])})
-            if self.route()=='/api/verification' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/verification' and security.legacy_session_allowed(self.headers,SESSION):
                 vid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c: r=c.execute('SELECT * FROM verification_results WHERE id=?',(vid,)).fetchone()
                 if not r: raise ValueError('Test absent')
                 return self.send({'id':r['id'],'artifact':r['artifact'],'mission':r['mission'],'agent':r['agent'],'created':r['created'],'spec':r['spec'],'result':json.loads(r['result'])})
-            if self.route()=='/api/artifact' and self.headers.get('X-Session')==SESSION:
+            if self.route()=='/api/artifact' and security.legacy_session_allowed(self.headers,SESSION):
                 aid=int(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)['id'][0])
                 with db() as c: r=c.execute('SELECT * FROM artifacts WHERE id=?',(aid,)).fetchone()
                 if not r: raise ValueError('Fichier absent')
@@ -398,13 +395,9 @@ class Handler(BaseHTTPRequestHandler):
         campus=route in ('/campus/command','/campus/owner-command')
         owner=route=='/campus/owner-command'
         if campus:
-            if (not self.local() or not secrets.compare_digest(self.headers.get('X-Campus-Owner' if owner else 'X-Campus-Command','').encode(),(CAMPUS_OWNER_SESSION if owner else CAMPUS_COMMAND_SESSION).encode())
-                or self.headers.get('Origin')!='http://'+self.headers.get('Host','')
-                or self.headers.get('Sec-Fetch-Site') not in (None,'same-origin')
-                or self.headers.get('Content-Type','').split(';',1)[0].strip().lower()!='application/json'
-                or urllib.parse.urlsplit(self.path).query):
+            if not self.local() or not security.campus_command_allowed(self.headers,self.path,CAMPUS_OWNER_SESSION if owner else CAMPUS_COMMAND_SESSION,owner=owner):
                 return self.send({'error':'Commande campus refusée'},403)
-        elif not self.local() or self.headers.get('X-Session')!=SESSION or self.headers.get('Origin') not in (None,f'http://127.0.0.1:{PORT}',f'http://localhost:{PORT}'): return self.send({'error':'Accès refusé'},403)
+        elif not self.local() or not security.legacy_command_allowed(self.headers,SESSION,PORT): return self.send({'error':'Accès refusé'},403)
         try:
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')

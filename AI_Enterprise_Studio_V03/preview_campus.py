@@ -2,6 +2,7 @@
 import argparse
 import webbrowser
 import serveur as s
+from infrastructure import security
 
 class PreviewHandler(s.Handler):
     campus_preview_mode=True
@@ -18,7 +19,7 @@ class PreviewHandler(s.Handler):
         if route=='/api/health':
             return self.send({'application':'AI Enterprise Studio','version':s.VERSION,'mode':'preview_read_only','paid_call':False})
         if route in ('/campus/live','/campus/original'):
-            if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
+            if not security.direct_navigation_allowed(self.headers):
                 return self.send({'error':'Accès local direct requis'},403)
             asset=s.campus_preview.read(s.ROOT,route)
             if asset is None:return self.missing()
