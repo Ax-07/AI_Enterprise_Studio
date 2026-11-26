@@ -11,6 +11,7 @@ VERSION="0.5.0"
 SESSION=secrets.token_urlsafe(32)
 CAMPUS_READ_SESSION=secrets.token_urlsafe(32)
 CAMPUS_COMMAND_SESSION=secrets.token_urlsafe(32)
+CAMPUS_OWNER_SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 POST_LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -309,7 +310,9 @@ class Handler(BaseHTTPRequestHandler):
                 asset=campus_preview.read(ROOT,self.route())
                 if asset is None:return self.missing()
                 data,typ=asset
-                return self.send(data.replace(b'__CAMPUS_READ_SESSION__',CAMPUS_READ_SESSION.encode()).replace(b'__CAMPUS_COMMAND_SESSION__',CAMPUS_COMMAND_SESSION.encode()),typ=typ,csp=campus_preview.LIVE_CSP)
+                q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                owner=q.get('building')==['ATLAS'] and q.get('floor')==['OWNER']
+                return self.send(data.replace(b'__CAMPUS_READ_SESSION__',CAMPUS_READ_SESSION.encode()).replace(b'__CAMPUS_COMMAND_SESSION__',CAMPUS_COMMAND_SESSION.encode()).replace(b'__CAMPUS_OWNER_SESSION__',CAMPUS_OWNER_SESSION.encode() if owner else b''),typ=typ,csp=campus_preview.LIVE_CSP)
             if self.route()=='/campus' or self.route().startswith('/campus/'):
                 asset=campus_preview.read(ROOT,self.route())
                 if asset is None:return self.missing()
@@ -414,9 +417,10 @@ class Handler(BaseHTTPRequestHandler):
         with POST_LOCK:self._post()
     def _post(self):
         route=self.route()
-        campus=route=='/campus/command'
+        campus=route in ('/campus/command','/campus/owner-command')
+        owner=route=='/campus/owner-command'
         if campus:
-            if (not self.local() or not secrets.compare_digest(self.headers.get('X-Campus-Command','').encode(),CAMPUS_COMMAND_SESSION.encode())
+            if (not self.local() or not secrets.compare_digest(self.headers.get('X-Campus-Owner' if owner else 'X-Campus-Command','').encode(),(CAMPUS_OWNER_SESSION if owner else CAMPUS_COMMAND_SESSION).encode())
                 or self.headers.get('Origin')!='http://'+self.headers.get('Host','')
                 or self.headers.get('Sec-Fetch-Site') not in (None,'same-origin')
                 or self.headers.get('Content-Type','').split(';',1)[0].strip().lower()!='application/json'
@@ -427,7 +431,7 @@ class Handler(BaseHTTPRequestHandler):
             n=int(self.headers.get('Content-Length',0))
             if not 0<n<=20000: raise ValueError('Taille invalide.')
             p=json.loads(self.rfile.read(n))
-            if campus:route,p=campus_commands.translate(p)
+            if campus:route,p=(campus_commands.owner_translate if owner else campus_commands.translate)(p)
             cfg=config()
 
             business_routes={'/api/business/authorize':business.authorize,'/api/business/observe':business.observe,

@@ -51,7 +51,7 @@
             if(Object.hasOwn(window.AESNativeTools.names,page)){
                 const btn=node('button','Consulter ici · '+window.AESNativeTools.names[page]);btn.type='button';btn.dataset.native=page;btn.addEventListener('click',()=>window.AESNativeTools.open(page));links.append(btn);
             }
-            if(page==='home'||page==='missions'){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
+            if(page==='home'||page==='missions'||(st.id.startsWith('OWNER:station:')&&page==='decisions')){const cmd=node('button','Commandes · '+modules.pages[page]);cmd.type='button';cmd.dataset.commands=page;cmd.addEventListener('click',()=>window.AESCampusCommands.open(page));links.append(cmd);}
             links.append(a);
         }out.append(links);
     }
@@ -64,7 +64,7 @@
     }
     function currentFloor(){return byId.get(selected)?.floors.find(f=>f.id===floorId);}
     function openLift(id){if(!byId.has(id))return;selected=id;scene='lift';floorId=null;stationId=null;renderScene();renderBuilding();$('lift-view').querySelector('button')?.focus();}
-    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;scene='room';floorId=id;stationId=null;renderScene();renderBuilding();$('lift-back').focus();}
+    function openFloor(id){const f=byId.get(selected)?.floors.find(f=>f.id===id);if(!f)return;if(id==='OWNER'&&!document.querySelector('meta[name="campus-owner-session"]').content){location.assign('/campus/live/?building=ATLAS&floor=OWNER');return;}scene='room';floorId=id;stationId=null;renderScene();renderBuilding();$('lift-back').focus();}
     function openCampus(){scene='campus';floorId=null;stationId=null;renderScene();renderBuilding();document.querySelector('[data-building="'+selected+'"]')?.focus();}
     function tower(b){
         const h=b.floors.length*28+40,t=svg('svg',{viewBox:'0 0 170 '+h,class:'lift-tower','aria-hidden':'true'});

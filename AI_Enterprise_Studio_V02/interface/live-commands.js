@@ -4,6 +4,9 @@
  const panel=document.getElementById('campus-commands');
  const readToken=document.querySelector('meta[name="campus-session"]').content;
  const token=document.querySelector('meta[name="campus-command-session"]').content;
+ const ownerToken=document.querySelector('meta[name="campus-owner-session"]').content;
+ const isOwner=()=>Boolean(ownerToken&&station?.startsWith('OWNER:station:'));
+ const paid=new Set(['decision','mission_cloud','mission_resume','campaign_start','campaign_resume','plan_start','plan_resume','periodic_authorize']);
  const node=(tag,t,cls)=>{const e=document.createElement(tag);if(t!==undefined)e.textContent=t;if(cls)e.className=cls;return e;};
  const btn=(label,fn)=>{const e=node('button',label);e.type='button';e.addEventListener('click',fn);return e;};
  let station=null,active=null,seq=0,pending=false,uncertain=false,online=false;
@@ -11,18 +14,40 @@
  function setStation(id){if(station!==id){reset();station=id;}}
  function setOnline(value){online=value;if(!value)reset();}
  function open(kind){
-  if(!station||!online||pending||!['home','missions'].includes(kind))return;
+  if(!station||!online||pending||!['home','missions','decisions'].includes(kind)||(kind==='decisions'&&!isOwner()))return;
   reset();active=kind;panel.hidden=false;
   const status=node('p','','muted');status.setAttribute('role','status');
   const out=node('div',undefined,'command-results');
   const controls=node('div',undefined,'command-actions');
   controls.append(btn('Fermer',reset),btn('Actualiser les états',load));
-  panel.append(node('h3','Commandes du propriétaire'),node('p','Simulation locale et arrêts uniquement. Les appels déjà engagés peuvent rester facturables. Aucun lancement Cloud ni nouvelle autorisation.','muted'),controls,status);
+  panel.append(node('h3','Commandes du propriétaire'),node('p','Simulation et arrêts ; dans le bureau du propriétaire, commandes Cloud et autorisations explicites. Les appels déjà engagés peuvent rester facturables.','muted'),controls,status);
   let textarea;
   if(kind==='missions'){
    const form=node('form',undefined,'command-form');textarea=node('textarea');textarea.required=true;textarea.maxLength=1500;textarea.placeholder='Objectif de la mission de simulation';textarea.setAttribute('aria-label','Objectif de simulation');
-   const submit=node('button','Lancer une simulation');submit.type='submit';submit.dataset.command='mission_demo';form.append(textarea,submit);
+   const submit=node('button','Lancer une simulation');submit.type='submit';submit.dataset.command='mission_demo';form.append(textarea,submit);if(isOwner()){const cloud=btn('Lancer en Cloud',()=>{const title=textarea.value.trim();if(title)send({action:'mission_cloud',title},'Lancer en Cloud : '+title+' ? Des appels OpenAI et des recherches Brave peuvent être facturés dans les limites locales.');});cloud.dataset.command='mission_cloud';form.append(cloud);}
    form.addEventListener('submit',e=>{e.preventDefault();const title=textarea.value.trim();if(title)send({action:'mission_demo',title},'Lancer cette mission en simulation locale ? Aucun appel IA payant.');});panel.append(form);
+  }
+  if(kind==='home'&&isOwner()){
+   const field=(form,key,label,type,attrs={})=>{const wrap=node('label',label),input=node('input');input.name=key;input.type=type;for(const [k,v] of Object.entries(attrs))input.setAttribute(k,String(v));if(type!=='checkbox')input.required=true;wrap.append(input);form.append(wrap);return input;};
+   function authorization(action,title,setup,collect){
+    const details=node('details'),summary=node('summary',title),form=node('form',undefined,'command-form');details.append(summary,form);
+    const f=setup(form,field);const submit=node('button','Confirmer '+title);submit.type='submit';submit.dataset.command=action;form.append(submit);
+    form.addEventListener('submit',e=>{e.preventDefault();const body=collect(f);send({action,...body},title+' ?\n'+JSON.stringify(body,null,2)+'\nDes appels IA peuvent être facturés. Les limites du moteur restent applicables. Aucun achat, envoi ou lancement commercial externe.');});panel.append(details);
+   }
+   const amount={min:'0.01',max:'10',step:'0.000001',placeholder:'USD'};
+   const num=(max,min=0)=>({min,max,step:1});
+   const n=x=>Number(x.value),v=x=>x.value,checked=x=>x.checked;
+   authorization('campaign_start','une campagne Cloud',(f,add)=>{
+    const goal=add(f,'goal','Objectif','text',{maxlength:600}),budget=add(f,'budget','Budget maximal USD','number',amount),count=add(f,'count','Missions max.','number',num(10,1)),search=add(f,'search','Recherches Brave max.','number',num(10));
+    const scope=add(f,'project','Activité : auto, explore ou identifiant','text',{placeholder:'auto'});scope.value='auto';
+    const flags={};for(const [key,label] of [['research','Recherche'],['production','Production'],['tests','Tests'],['market','Préparation commerciale']])flags[key]=add(f,key,label,'checkbox');
+    return {goal,budget,count,search,scope,flags};
+   },f=>({goal:v(f.goal),budget:v(f.budget),max_missions:n(f.count),search_cap:n(f.search),project:/^[1-9][0-9]*$/.test(v(f.scope))?n(f.scope):v(f.scope),permissions:Object.fromEntries(Object.entries(f.flags).map(([k,x])=>[k,checked(x)]))}));
+   authorization('plan_start','un plan autonome',(f,add)=>({budget:add(f,'budget','Budget total USD','number',amount),per:add(f,'per','Budget par campagne USD','number',amount),count:add(f,'count','Campagnes max.','number',num(5,1)),search:add(f,'search','Recherches Brave max.','number',num(10)),explore:add(f,'explore','Autoriser l’exploration','checkbox')}),f=>({budget:v(f.budget),per_campaign:v(f.per),max_campaigns:n(f.count),search_cap:n(f.search),explore:checked(f.explore)}));
+   authorization('periodic_authorize','une autorisation périodique',(f,add)=>{
+    const label=node('label','Cadence'),cadence=node('select');cadence.name='cadence';for(const [key,text] of [['daily','Quotidienne'],['weekly','Hebdomadaire'],['monthly','30 jours']]){const opt=node('option',text);opt.value=key;cadence.append(opt);}label.append(cadence);f.append(label);
+    return {cadence,periods:add(f,'periods','Nombre de périodes','number',num(12,1)),total:add(f,'total','Budget total USD','number',amount),period:add(f,'period','Budget par période USD','number',amount),per:add(f,'per','Budget par campagne USD','number',amount),count:add(f,'count','Campagnes par période','number',num(5,1)),totalSearch:add(f,'totalSearch','Brave total','number',num(120)),periodSearch:add(f,'periodSearch','Brave par période','number',num(10)),explore:add(f,'explore','Autoriser l’exploration','checkbox')};
+   },f=>({cadence:v(f.cadence),periods:n(f.periods),total_budget:v(f.total),period_budget:v(f.period),per_campaign:v(f.per),max_campaigns:n(f.count),total_search:n(f.totalSearch),period_search:n(f.periodSearch),explore:checked(f.explore)}));
   }
   panel.append(out);
   function lock(value){for(const el of panel.querySelectorAll('[data-command]'))el.disabled=value;}
@@ -34,9 +59,18 @@
     if(n!==seq)return;if(data.schema!=='aes.campus.tool.v1'||data.tool!==kind||data.read_only!==true||!Array.isArray(data.rows))throw Error('Réponse invalide');
     for(const row of data.rows){
      let action,label,title;
+     if(kind==='decisions'){
+      if(row.state!=='en attente')continue;
+      const e=node('div',undefined,'entry');e.append(node('b','#'+row.id+' · '+(row.objet||'Demande')),node('p',row.justification||'Justification non disponible'),node('small','Coût déclaré : '+(row.cout_estime||'inconnu')),node('small','Risques déclarés : '+(row.risques||'inconnus')));
+      for(const [decision,label] of [['étude acceptée','Accepter pour étude'],['refusée','Refuser']]){const b=btn(label,()=>send({action:'decision',id:row.id,decision},label+' la demande #'+row.id+' ? Le traitement peut reprendre une mission et engendrer des appels facturables. Aucun achat ni envoi autorisé.'));b.dataset.command='decision';e.append(b);}out.append(e);continue;
+     }
      if(kind==='missions'){
+      if(isOwner()&&['bloquée','interrompue','arrêtée','prête'].includes(row.state)){const e=node('div',undefined,'entry'),b=btn('Reprendre la mission',()=>send({action:'mission_resume',id:row.id},'Reprendre la mission #'+row.id+' ? Nouveaux appels potentiellement facturables.'));b.dataset.command='mission_resume';e.append(node('b','#'+row.id+' · '+row.title+' · '+row.mode),node('small',row.state),b);out.append(e);}
+
       if(!['en cours','en attente','prête'].includes(row.state))continue;
       action='mission_stop';label='Arrêter la mission';title='Mission #'+row.id+' · '+row.title+' · '+row.mode;
+     }else if(isOwner()&&((row.kind==='campaign'&&['interrompu','arrêté','en attente','bloqué'].includes(row.state))||(row.kind==='plan'&&row.state==='paused'))){
+      const a=row.kind==='campaign'?'campaign_resume':'plan_resume',e=node('div',undefined,'entry'),b=btn('Reprendre',()=>send({action:a,id:row.id},'Reprendre '+row.kind+' #'+row.id+' ? Nouveaux appels potentiellement facturables, sans remise à zéro des plafonds.'));b.dataset.command=a;e.append(node('b',row.kind+' #'+row.id),node('small',row.state),b);out.append(e);continue;
      }else if(row.kind==='campaign'&&row.state==='actif'){action='campaign_stop';label='Arrêter la campagne';title='Campagne #'+row.id+' · '+row.goal;}
      else if(row.kind==='plan'&&row.state==='active'){action='plan_stop';label='Suspendre le plan';title='Plan #'+row.id;}
      else if(row.kind==='periodic'&&['active','suspended'].includes(row.state)){action='periodic_revoke';label='Révoquer l’autorisation';title='Autorisation périodique #'+row.id;}
@@ -44,16 +78,16 @@
      const e=node('div',undefined,'entry'),b=btn(label,()=>send({action,id:row.id},label+' #'+row.id+' ? Les engagements existants sont conservés. Une mission liée peut arrêter sa campagne ; les plans et périodes actifs doivent être arrêtés au niveau approprié.'));
      b.dataset.command=action;e.append(node('b',title),node('small',row.state),b);out.append(e);
     }
-    if(!out.children.length)out.append(node('p','Aucun arrêt ou révocation disponible dans cet instantané.','muted'));
+    if(!out.children.length)out.append(node('p','Aucune action sur un état existant disponible dans cet instantané.','muted'));
     status.textContent=uncertain?'État relu. Vérifie le résultat précédent avant toute nouvelle commande.':'États locaux relus. Les protections du moteur restent applicables.';lock(false);
    }catch(e){if(n===seq){out.replaceChildren();status.textContent='États indisponibles. Aucune commande proposée.';lock(true);}}
   }
   async function send(body,message){
-   if(!online||pending||active!==kind||!confirm(message))return;
+   if(!online||pending||active!==kind||(paid.has(body.action)&&!isOwner())||!confirm(message))return;
    pending=true;lock(true);const n=++seq;status.textContent='Transmission de la commande…';
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
    try{
-    const r=await fetch('/campus/command',{method:'POST',headers:{'X-Campus-Command':token,'Content-Type':'application/json'},body:JSON.stringify({...body,confirm:true}),cache:'no-store',signal:controller.signal});
+    const owner=paid.has(body.action);const r=await fetch(owner?'/campus/owner-command':'/campus/command',{method:'POST',headers:{[owner?'X-Campus-Owner':'X-Campus-Command']:owner?ownerToken:token,'Content-Type':'application/json'},body:JSON.stringify({...body,confirm:true}),cache:'no-store',signal:controller.signal});
     const result=await r.json();
     if(!r.ok){if(n===seq)status.textContent='Commande refusée : '+(result.error||'HTTP '+r.status);return;}
     uncertain=false;if(n===seq){if(body.action==='mission_demo')textarea.value='';status.textContent='Commande acceptée par le moteur. Vérifie son état après actualisation.';out.replaceChildren();}
