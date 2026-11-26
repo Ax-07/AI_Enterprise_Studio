@@ -2,13 +2,14 @@ import json, os, sqlite3, threading, time, urllib.request, urllib.parse, urllib.
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import contextmanager
-import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, sys
+import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
 DB=DATA/'enterprise.sqlite3'
 PORT=8790
 VERSION="0.5.0"
 SESSION=secrets.token_urlsafe(32)
+CAMPUS_READ_SESSION=secrets.token_urlsafe(32)
 LOCK=threading.Lock()
 POST_LOCK=threading.Lock()
 PRICES={'gpt-6-luna':(.1,.5),'gpt-6.1-terra':(1,5),'gpt-6.2-sol':(2,10)}
@@ -274,6 +275,23 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.local(): return self.send({'error':'Hôte refusé'},403)
         try:
+            if self.route()=='/campus/live-data':
+                origin=self.headers.get('Origin')
+                if (not secrets.compare_digest(self.headers.get('X-Campus-Session','').encode(),CAMPUS_READ_SESSION.encode())
+                    or origin not in (None,'http://'+self.headers.get('Host',''))
+                    or self.headers.get('Sec-Fetch-Site') not in (None,'same-origin')):
+                    return self.send({'error':'Accès lecture campus refusé'},403)
+                try:
+                    return self.send(campus_live.snapshot(DB,AGENTS,config()['budget'],VERSION))
+                except Exception:
+                    return self.send({'error':'Données du campus indisponibles'},503)
+            if self.route()=='/campus/live':
+                if self.headers.get('Sec-Fetch-Site') not in (None,'none','same-origin'):
+                    return self.send({'error':'Accès local direct requis'},403)
+                asset=campus_preview.read(ROOT,self.route())
+                if asset is None:return self.missing()
+                data,typ=asset
+                return self.send(data.replace(b'__CAMPUS_READ_SESSION__',CAMPUS_READ_SESSION.encode()),typ=typ,csp=campus_preview.LIVE_CSP)
             if self.route()=='/campus' or self.route().startswith('/campus/'):
                 asset=campus_preview.read(ROOT,self.route())
                 if asset is None:return self.missing()

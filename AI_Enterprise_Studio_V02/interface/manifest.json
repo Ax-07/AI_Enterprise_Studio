@@ -41,5 +41,11 @@
   ],
   "mode": "simulation",
   "api": false,
-  "registry_schema": 1
+  "registry_schema": 1,
+  "live": {
+    "phase": "D03",
+    "route": "/campus/live/",
+    "schema": "aes.campus.read.v1",
+    "mode": "read_only"
+  }
 }

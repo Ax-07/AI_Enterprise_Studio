@@ -75,4 +75,47 @@ def smoke():
     finally:srv.shutdown();srv.server_close();thread.join()
     print('Campus D02 smoke passed')
 
-if __name__=='__main__':smoke()
+def smoke_live():
+    import tempfile
+    from pathlib import Path
+    from test_campus_live import fixture
+    with tempfile.TemporaryDirectory() as d:
+        path=Path(d)/'test.db';fixture(path)
+        srv=s.ThreadingHTTPServer(('127.0.0.1',0),s.Handler)
+        thread=threading.Thread(target=srv.serve_forever,daemon=True);thread.start()
+        port=srv.server_address[1];base=f'http://127.0.0.1:{port}'
+        try:
+            with patch.object(s,'PORT',port),patch.object(s,'DB',path),patch.object(s,'config',return_value={'budget':4000000}),sync_playwright() as pw:
+                browser=pw.chromium.launch(headless=True)
+                page=browser.new_page()
+                errors=[];writes=[];external=[]
+                page.on('pageerror',lambda e:errors.append(str(e)))
+                def guard(route):
+                    req=route.request
+                    if not req.url.startswith(base+'/'):
+                        external.append(req.url);route.abort()
+                    elif req.method!='GET':
+                        writes.append(req.url);route.abort()
+                    else:route.continue_()
+                page.route('**/*',guard)
+                page.goto(base+'/campus/live/')
+                expect(page.locator('#status')).to_contain_text('Connecté')
+                expect(page.locator('#buildings button')).to_have_count(7)
+                page.locator('#buildings button[data-id="CORE"]').click()
+                expect(page.locator('#agents')).to_contain_text('MNEMOS')
+                expect(page.locator('#agents')).to_contain_text('PROMETHEUS')
+                expect(page.locator('#missions')).to_contain_text('SIMULATION enregistrée')
+                expect(page.locator('#artifacts')).to_contain_text('SIMULATION enregistrée')
+                page.route('**/campus/live-data',lambda r:r.fulfill(status=503,body='{}',content_type='application/json'))
+                page.locator('#refresh').click()
+                expect(page.locator('#status')).to_contain_text('Données indisponibles')
+                expect(page.locator('#metrics .metric')).to_have_count(0)
+                assert not errors and not writes and not external,(errors,writes,external)
+                browser.close()
+        finally:srv.shutdown();srv.server_close();thread.join()
+    print('Campus D03 read-only smoke passed')
+
+if __name__=='__main__':
+    smoke()
+    smoke_live()
+

@@ -24,6 +24,8 @@ jobs:
           python -c "from pathlib import Path; s=Path('index.html').read_text(encoding='utf8'); Path('/tmp/enterprise-ui.js').write_text(s.split('<script>',1)[1].split('</script>',1)[0], encoding='utf8')"
           node --check /tmp/enterprise-ui.js
           node --check interface/design.js
+          node --check interface/campus-registry.js
+          node --check interface/live.js
           node smoke_n8n_contracts.js
 
       - name: Install Chromium test dependencies
@@ -32,7 +34,7 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Chromium smoke (no external API)
         run: python smoke_ui.py
-      - name: Chromium campus D01 (no API)
+      - name: Chromium campus D02 / D03 (local read-only)
         run: python smoke_campus.py
 
       - name: Build optional HTML sandbox
