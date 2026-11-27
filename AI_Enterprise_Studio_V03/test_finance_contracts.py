@@ -116,7 +116,7 @@ class FinanceFlowTests(unittest.TestCase):
     def receipt(self,c,oid,reference,mode,kind,amount,parent=None):
         return business.receipt(c,{'offer':oid,'reference':reference,'mode':mode,'kind':kind,
                                    'parent':parent,'amount_cents':amount,'occurred_at':100,
-                                   'source_attested':True},t=200)
+                                   'source_attested':True,'confirm':True},t=200)
 
     def test_hypotheses_and_receipts_never_become_verified_revenue_or_usd_costs(self):
         with s.db() as c:
