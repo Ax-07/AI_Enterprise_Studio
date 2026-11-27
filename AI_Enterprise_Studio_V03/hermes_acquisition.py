@@ -5,7 +5,7 @@ import acquisition as ac
 import business as b
 import commercial
 import laboratory as lab
-from departments import product_demonstrations
+from departments import product_demonstrations, marketing_coordination
 
 LIMIT='Préparation HERMES interne. Aucun lancement, aucune demande réelle, aucune preuve nouvelle de performance.'
 MAX_PER_CYCLE=3
@@ -51,26 +51,7 @@ def packet(c,did):
     return p
 
 def run_once(c,t=None):
-    """Create at most three internal packets per cycle. Never override a revoked draft."""
-    t=b.now() if t is None else t
-    made=[]
-    for project in c.execute("SELECT id FROM projects WHERE state='active' ORDER BY id"):
-        if len(made)>=MAX_PER_CYCLE:break
-        v=commercial.project_status(c,project['id'])['offer']
-        if not v:continue
-        try:
-            _,eligible,_=b.gate(c,b.offer_row(c,v['id']))
-            if not eligible:continue
-            snap=b.digest(b.frozen(v))
-            row=c.execute('SELECT * FROM acquisition_drafts WHERE offer=? AND snapshot_sha256=? AND language=\'fr\'',(v['id'],snap)).fetchone()
-            if row and ac.state(c,row)!='draft':continue
-            if row and c.execute('SELECT 1 FROM hermes_preparations WHERE draft=?',(row['id'],)).fetchone():continue
-            did=ac.prepare(c,{'confirm':True,'offer':v['id'],'snapshot_sha256':snap,'language':'fr'},t)
-            prepare(c,did,t)
-            made.append(did)
-        except (ValueError,KeyError,TypeError,AttributeError):
-            continue
-    return made
+    return marketing_coordination.acquisition_cycle(c,t,b=b,commercial=commercial,ac=ac,prepare=prepare,max_per_cycle=MAX_PER_CYCLE)
 
 def status(c,project=None):
     rows=c.execute("""SELECT h.*,d.offer,d.snapshot_sha256,o.project FROM hermes_preparations h
@@ -88,12 +69,4 @@ def status(c,project=None):
     return {'packets':out,'real_prospects':0,'external_authorized':False,'limit':LIMIT}
 
 def agent_context(c,mid,agent):
-    """Only a project-scoped compact view for HERMES in an explicitly scoped commercial campaign."""
-    if agent!='HERMES':return None
-    scope=commercial.scope(c,mid)
-    if not scope or scope['state']!='actif' or scope['mission_state']!='en cours' or scope['mode']!='cloud' or scope['project_state']!='active':
-        return None
-    if not json.loads(scope['permissions']).get('market'):return None
-    out=status(c,scope['project'])
-    out['packets']=[p for p in out['packets'] if p['state']=='internal_ready'][:3]
-    return out
+    return marketing_coordination.acquisition_context(c,mid,agent,commercial=commercial,json=json,status=status)

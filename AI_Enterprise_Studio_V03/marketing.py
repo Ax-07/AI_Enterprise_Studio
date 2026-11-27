@@ -5,6 +5,7 @@ import hermes_acquisition as h
 import marketing_review as sentinel
 import marketing_templates as templates
 import commercial
+from departments import marketing_coordination
 
 def init(c):
     c.executescript("""CREATE TABLE IF NOT EXISTS marketing_drafts(
@@ -36,14 +37,7 @@ def packet(c,did):
     return {'payload':p,'review':review}
 
 def run_once(c,t=None):
-    t=b.now() if t is None else t
-    made=[]
-    for row in c.execute("""SELECT h.draft FROM hermes_preparations h LEFT JOIN marketing_drafts m
-        ON m.draft=h.draft AND m.revision=? WHERE m.draft IS NULL ORDER BY h.draft""",(templates.REVISION,)).fetchall():
-        if len(made)>=3:break
-        try:prepare(c,row['draft'],t);made.append(row['draft'])
-        except (ValueError,TypeError,KeyError,AttributeError,RuntimeError,IndexError):continue
-    return made
+    return marketing_coordination.content_cycle(c,t,b=b,templates=templates,prepare=prepare)
 
 def status(c,project=None):
     out=[]
@@ -59,12 +53,4 @@ def status(c,project=None):
     return {'drafts':out,'publication_authorized':False,'video_generated':False,'limit':sentinel.LIMIT}
 
 def agent_context(c,mid,agent):
-    if agent not in ('HERMES','SENTINEL'):return None
-    scope=commercial.scope(c,mid)
-    if not scope or scope['state']!='actif' or scope['mission_state']!='en cours' or scope['mode']!='cloud' or scope['project_state']!='active':
-        return None
-    flags=json.loads(scope['permissions'])
-    if not flags.get('market') or (agent=='SENTINEL' and not flags.get('tests')):return None
-    out=status(c,scope['project'])
-    out['drafts']=out['drafts'][:3]
-    return out
+    return marketing_coordination.content_context(c,mid,agent,commercial=commercial,json=json,status=status)
