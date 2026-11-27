@@ -1,5 +1,6 @@
 """Read-only next-step planner. No provider calls, no mutation, no autonomous spend."""
 import json
+from departments import accounting
 import verification
 import recovery
 
@@ -22,8 +23,8 @@ def plan(c,cfg):
             return result('opportunity','Explorer une opportunité','Aucune mission Cloud enregistrée; préparer une étude, sans lancement automatique.')
         return result('review','Configurer les ressources','Aucune mission Cloud; vérifier les ressources et plafonds avant une étude.')
     mid=mission['id'];state=mission['state']
-    spent,calls=c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0),COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()
-    total=c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0]
+    spent,calls=accounting.mission_totals(c,mid)
+    total=accounting.global_total(c)
     events=c.execute('SELECT COUNT(*) FROM events WHERE mission=?',(mid,)).fetchone()[0]
     # Only the latest version of each deliverable; prioritize the newest NEXUS output.
     artifact=c.execute("SELECT * FROM artifacts WHERE mission=? AND agent='NEXUS' ORDER BY id DESC LIMIT 1",(mid,)).fetchone()

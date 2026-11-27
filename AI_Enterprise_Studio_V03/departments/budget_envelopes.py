@@ -1,8 +1,9 @@
 """Budget fitting policy; caller owns the database transaction and cost ledger."""
+from departments import accounting
 
 def fit(c,mid,stage,agent,body,pi,po,cfg,used,campaign,*,costs,estimate,dumps):
     requested=body['max_output_tokens']
-    spent,count=c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0),COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()
+    spent,count=accounting.mission_totals(c,mid)
     if count>=cfg['call_limit']:raise RuntimeError('Plafond des appels IA de mission atteint.')
     limits={'global':max(0,cfg['budget']-used),'mission':max(0,cfg['mission_budget']-spent),
             'campaign':max(0,campaign['budget']-costs(c,campaign['id']))}

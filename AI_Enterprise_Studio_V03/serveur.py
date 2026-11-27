@@ -6,7 +6,7 @@ from core import agents as agent_registry
 from infrastructure.configuration import load_config
 from infrastructure.database import transaction
 from infrastructure import providers, security, diagnostics
-from departments import ai_costs
+from departments import ai_costs, accounting
 import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, campus_tools, campus_commands, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
@@ -67,7 +67,7 @@ def init():
         acquisition_sync.purge(c,business.now())
 def config():
     return load_config(ROOT, DEFAULT, PRICES)
-def used(c): return c.execute('SELECT COALESCE(SUM(CASE WHEN actual IS NULL THEN reserved ELSE actual END),0) FROM ledger').fetchone()[0]
+def used(c): return accounting.global_total(c)
 def request(url, keyheaders, body=None):
     return providers.request_json(url, keyheaders, body)
 class TokenLimit(RuntimeError): pass
@@ -91,7 +91,7 @@ def call_model(mid, agent, prompt, cfg, maxout=8192, stage=None, *, schema=None,
         else:
             if used(c)+reserve>cfg['budget']: raise RuntimeError('Budget logiciel insuffisant pour réserver cet appel.')
             if schema is not None:
-                spent,count=c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0),COUNT(*) FROM ledger WHERE mission=?',(mid,)).fetchone()
+                spent,count=accounting.mission_totals(c,mid)
                 if count>=cfg['call_limit']: raise RuntimeError('Plafond des appels IA de mission atteint.')
                 if spent+reserve>cfg['mission_budget']: raise RuntimeError('Budget de mission insuffisant pour réserver cet appel.')
         if refused_budget is None:
