@@ -24,6 +24,7 @@ from core import collaboration
 from core import orchestration
 from core import turn_execution
 from core import model_turn
+from departments import artifacts
 
 ROLES=agent_registry.roles()
 PERMS=permission_registry.build_permissions(ROLES, connectors.REGISTRY[connectors.PUBLIC]['roles'], commercial.ACTIONS)
@@ -135,34 +136,19 @@ def fetch_page(url):
         return {'url':url,'date':datetime.now(timezone.utc).isoformat(),'texte':txt[:16000],'partiel':truncated or len(txt)>16000,'note':'Texte public extrait, non certifié; aucun script exécuté, aucune connexion au compte.'}
     finally: conn.close()
 
-def latest(c,mid,name): return c.execute('SELECT * FROM artifacts WHERE mission=? AND name=? ORDER BY version DESC LIMIT 1',(mid,name)).fetchone()
+def latest(c,mid,name): return artifacts.latest(c,mid,name)
 
 def attached_artifact(c,mid):
-    return c.execute("SELECT a.* FROM mission_artifact_refs r JOIN artifacts a ON a.id=r.artifact JOIN missions m ON m.id=a.mission WHERE r.mission=? AND m.mode='cloud'",(mid,)).fetchone()
+    return artifacts.attached_artifact(c,mid)
 
 def resolve_artifact(c,mid,target):
-    if target.startswith('ref:'):
-        row=attached_artifact(c,mid)
-        if not row or target!='ref:'+str(row['id']): raise ValueError('Référence non autorisée pour cette mission')
-        return row,True
-    return latest(c,mid,target),False
+    return artifacts.resolve_artifact(c,mid,target,attached_artifact=attached_artifact,latest=latest)
 
 def reference_metadata(row):
-    return {'target':'ref:'+str(row['id']),'id':row['id'],'mission_source':row['mission'],'name':row['name'],'version':row['version'],'agent':row['agent'],'lecture_seule':True}
+    return artifacts.reference_metadata(row)
 
 def check(name,content):
-    suffix=name.rsplit('.',1)[-1].lower()
-    try:
-        if suffix=='py': ast.parse(content); label='Syntaxe Python valide'
-        elif suffix=='json': json.loads(content); label='JSON décodable'
-        elif suffix=='csv':
-            rows=list(csv.reader(io.StringIO(content),strict=True)); widths={len(r) for r in rows if r}
-            if not rows or len(widths)!=1 or not next(iter(widths),0): raise ValueError('CSV vide ou colonnes incohérentes')
-            label=f'CSV rectangulaire : {len(rows)} lignes, {next(iter(widths))} colonnes'
-        else: label='Contenu non vide; pas de validateur spécialisé'
-        if not content.strip(): raise ValueError('Fichier vide')
-        return {'valide':True,'controle':label,'limite':'Aucun code exécuté, aucun test fonctionnel ni conformité garantis.'}
-    except (SyntaxError,ValueError,csv.Error) as e: return {'valide':False,'controle':str(e)[:300],'limite':'Contrôle statique uniquement.'}
+    return artifacts.check(name,content,ast=ast,csv=csv,io=io,json=json)
 
 def record_verification(s,row,mid,agent,spec,cfg):
     # The file comes from SQLite and is copied by value to the verifier. No path is accepted.
