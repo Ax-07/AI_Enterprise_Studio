@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 import intelligence as intel
 import portfolio
 import research
-from departments import commercial_economics, commercial_validation
+from departments import commercial_economics, commercial_validation, commercial_evidence
 
 LIMIT='Préparation interne uniquement. Citations vérifiées dans des extraits locaux, interprétation non certifiée. Aucun prospect contacté, aucune exposition mesurée, aucune vente ni dépense commerciale. Un protocole n’est pas un test exécuté.'
 ACTIONS={'commercial_signal':'ORION','commercial_offer':'HERMES','commercial_economics':'MIDAS','commercial_review':'SENTINEL','commercial_extend':'SENTINEL'}
@@ -127,27 +127,13 @@ def _id(target):
     return commercial_validation.numeric_id(target)
 
 def _proof(c,row):
-    p=intel.page_reference(c,row['mission'],row['page'])
-    content=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(row['page'],)).fetchone()[0])
-    if row['quote'] not in content['texte'] or p!=intel.decode(row['proof']):raise ValueError('Citation ou empreinte modifiée')
-    return p
+    return commercial_evidence.proof(c,row,intel=intel)
 
 def signals(c,pid,mid=None,limit=12):
-    out=[]
-    for row in c.execute("""SELECT s.* FROM commercial_signals s JOIN missions m ON m.id=s.mission
-        WHERE s.project=? AND m.mode='cloud' AND (m.state='terminée' OR s.mission=?) AND (? IS NULL OR s.mission<=?)
-        ORDER BY s.id DESC LIMIT ?""",(pid,mid,mid,mid,limit)):
-        try: proof=_proof(c,row)
-        except (ValueError,TypeError,KeyError,AttributeError):continue
-        excerpt=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(row['page'],)).fetchone()[0])['texte']
-        out.append({**{k:row[k] for k in ('id','mission','kind','quote','interpretation','created')},'proof':proof,'quality':research.excerpt_quality(excerpt)})
-    return out
+    return commercial_evidence.signals(c,pid,mid,limit,intel=intel,research=research,proof=_proof)
 
 def _signal(c,pid,sid,mid):
-    row=c.execute("""SELECT s.* FROM commercial_signals s JOIN missions m ON m.id=s.mission
-        WHERE s.id=? AND s.project=? AND m.mode='cloud' AND (m.state='terminée' OR s.mission=?)""",(sid,pid,mid)).fetchone()
-    if not row:raise ValueError('Signal de cette activité requis')
-    return row,_proof(c,row)
+    return commercial_evidence.signal(c,pid,sid,mid,proof=_proof)
 
 def _offer(c,pid,mid,oid):
     row=c.execute('SELECT * FROM commercial_offers WHERE id=? AND project=? AND mission=?',(oid,pid,mid)).fetchone()
