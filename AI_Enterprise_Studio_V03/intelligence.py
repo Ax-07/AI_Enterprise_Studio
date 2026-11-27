@@ -4,6 +4,7 @@ from datetime import datetime,timezone
 from decimal import Decimal,ROUND_HALF_UP
 from urllib.parse import urlencode
 from departments import macroeconomic
+from departments import provenance
 
 CAP='worldbank.market'
 COUNTRIES=tuple('AUS AUT BEL BRA CAN CHE CHL CHN COL CZE DEU DNK ESP FIN FRA GBR GRC HUN IDN IND IRL ISR ITA JPN KEN KOR MAR MEX MYS NLD NOR NZL PHL POL PRT ROU SAU SGP SWE THA TUN TUR USA VNM ZAF'.split())
@@ -65,37 +66,16 @@ def fetch(value):
     finally:conn.close()
 
 def record(c,rid,result):
-    snapshot=result['snapshot']
-    raw=result['raw_json'].encode('utf8')
-    if digest(snapshot)!=result['snapshot_sha256'] or hashlib.sha256(raw).hexdigest()!=result['raw_sha256']:raise ValueError('Empreinte de source incohérente')
-    req={'countries':snapshot['countries'],'year':snapshot['year']}
-    if result['url']!=url_for(req) or parse(raw,req)!=snapshot:raise ValueError('Projection de source incohérente')
-    c.execute('INSERT INTO market_sources(run,source,url,retrieved,raw_sha256,snapshot,snapshot_sha256) VALUES(?,?,?,?,?,?,?)',(rid,result['source'],result['url'],result['retrieved'],result['raw_sha256'],canonical(snapshot),result['snapshot_sha256']))
-    c.execute('INSERT INTO market_source_raw(run,raw_json) VALUES(?,?)',(rid,result['raw_json']))
+    return provenance.record(c,rid,result,digest=digest,url_for=url_for,parse=parse,canonical=canonical)
 
 def raw_integrity(c,r,d):
-    row=c.execute('SELECT raw_json FROM market_source_raw WHERE run=?',(r['run'],)).fetchone()
-    if not row:return False,None
-    raw=row['raw_json'].encode('utf8')
-    try:ok=hashlib.sha256(raw).hexdigest()==r['raw_sha256'] and parse(raw,{'countries':d['countries'],'year':d['year']})==d and r['url']==url_for({'countries':d['countries'],'year':d['year']})
-    except (ValueError,TypeError,KeyError,AttributeError):ok=False
-    return ok,row['raw_json']
+    return provenance.raw_integrity(c,r,d,parse=parse,url_for=url_for)
 
 def source(c,rid,mid):
-    r=c.execute("""SELECT s.*,r.mission,r.state FROM market_sources s JOIN connector_runs r ON r.id=s.run
-        WHERE s.run=? AND r.mission=? AND r.capability=? AND r.state='received'""",(rid,mid,CAP)).fetchone()
-    if not r:raise ValueError('Source officielle reçue de cette mission requise')
-    d=decode(r['snapshot'])
-    if digest(d)!=r['snapshot_sha256'] or not raw_integrity(c,r,d)[0]:raise ValueError('Empreinte ou projection de source modifiée')
-    return d
+    return provenance.source(c,rid,mid,CAP=CAP,decode=decode,digest=digest,raw_integrity=raw_integrity)
 
 def sources(c,mid):
-    out=[]
-    for r in c.execute("""SELECT s.*,r.mission FROM market_sources s JOIN connector_runs r ON r.id=s.run WHERE r.mission=? AND r.state='received' ORDER BY s.run DESC LIMIT 3""",(mid,)):
-        try:d=source(c,r['run'],mid)
-        except ValueError:continue
-        out.append({'run':r['run'],'url':r['url'],'retrieved':r['retrieved'],'snapshot':d})
-    return out
+    return provenance.sources(c,mid,source=source)
 
 def compare_ref(text):
     if not isinstance(text,str) or len(text)>200:raise ValueError('Référence trop longue')
@@ -117,18 +97,10 @@ def compare_input(c,value,mid):
     return canonical({'rows':rows})
 
 def page_reference(c,mid,rid):
-    r=c.execute("SELECT id,url,content,created FROM fetched WHERE id=? AND mission=? AND state='reçue'",(rid,mid)).fetchone()
-    if not r:raise ValueError('Page effectivement lue dans cette mission requise')
-    d=decode(r['content'])
-    if not isinstance(d,dict) or d.get('url')!=r['url'] or not isinstance(d.get('texte'),str):raise ValueError('Extrait de page invalide')
-    return {'id':r['id'],'url':r['url'],'date':d.get('date') or r['created'],'partial':bool(d.get('partiel')),'excerpt_sha256':hashlib.sha256(d['texte'].encode()).hexdigest(),'limit':'Page publique lue, extrait non certifié; pas une validation de demande.'}
+    return provenance.page_reference(c,mid,rid,decode=decode)
 
 def page_refs(c,mid):
-    out=[]
-    for r in c.execute("SELECT id FROM fetched WHERE mission=? AND state='reçue' ORDER BY id DESC LIMIT 8",(mid,)):
-        try:out.append(page_reference(c,mid,r['id']))
-        except ValueError:continue
-    return out
+    return provenance.page_refs(c,mid,page_reference=page_reference)
 
 def opportunity_hash(o):
     return digest({k:o[k] for k in ('title','body','next_test')})
