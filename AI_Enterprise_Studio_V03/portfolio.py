@@ -2,6 +2,7 @@
 import hashlib,json
 import laboratory
 import improvement
+from departments import accounting
 
 STATES=('active','paused','archived')
 def init(c):
@@ -170,8 +171,7 @@ def status(c):
         o=c.execute('SELECT id,title,body,next_test FROM opportunities WHERE id=?',(p['opportunity'],)).fetchone() if p['opportunity'] is not None else None
         ms=[dict(r) for r in c.execute("""SELECT m.id,m.title,m.state,pm.provenance FROM project_missions pm
             JOIN missions m ON m.id=pm.mission WHERE pm.project=? ORDER BY m.id DESC""",(pid,))]
-        spend=c.execute("""SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved)),0) FROM ledger l
-            JOIN project_missions pm ON pm.mission=l.mission WHERE pm.project=?""",(pid,)).fetchone()[0]
+        spend=accounting.project_total(c,pid)
         files=[dict(r) for r in c.execute("""SELECT a.id,a.name,a.version,a.agent FROM artifacts a
             JOIN project_missions pm ON pm.mission=a.mission WHERE pm.project=? ORDER BY a.id DESC""",(pid,))]
         search_count=c.execute("""SELECT COUNT(*) FROM searches s JOIN project_missions pm ON pm.mission=s.mission WHERE pm.project=? AND s.status='reçue'""",(pid,)).fetchone()[0]
@@ -180,7 +180,6 @@ def status(c):
         items.append({**dict(p),'opportunity_data':dict(o) if o else None,'missions':ms,'files':files,
             'latest_artifact':a['id'] if a else None,'versions':improvement.status(c,pid),'improvement_modes':improvement.available(c,a),'proofs':evidence(c,a),'laboratory':laboratory.canonical(c,a),'spent':spend,'search_results':search_count,
             'market_studies':market,'next_kind':step[0] if step else None,'reason':reason})
-    unallocated=c.execute("""SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved)),0) FROM ledger l
-        LEFT JOIN project_missions pm ON pm.mission=l.mission WHERE pm.mission IS NULL""").fetchone()[0]
+    unallocated=accounting.unallocated_total(c)
     return {'projects':items,'unallocated':unallocated,'recommendation':recommend(c,flags),
         'limit':'Coûts locaux attribués une seule fois par mission; études et preuves bornées, aucune demande ou rentabilité certifiée.'}

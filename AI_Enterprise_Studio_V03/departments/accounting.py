@@ -17,3 +17,13 @@ def mission_totals(c,mid):
 def campaign_total(c,cid):
     return c.execute("""SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved)),0) FROM ledger l
         JOIN campaign_missions cm ON cm.mission=l.mission WHERE cm.campaign=?""",(cid,)).fetchone()[0]
+
+
+def project_total(c,pid):
+    return c.execute("""SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved)),0) FROM ledger l
+        JOIN project_missions pm ON pm.mission=l.mission WHERE pm.project=?""",(pid,)).fetchone()[0]
+
+
+def unallocated_total(c):
+    return c.execute("""SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved)),0) FROM ledger l
+        LEFT JOIN project_missions pm ON pm.mission=l.mission WHERE pm.mission IS NULL""").fetchone()[0]

@@ -1,6 +1,7 @@
 """Owner-only local commercial registry. No agent actions, contacts, publication or payment API."""
 import hashlib,json,re,time
 import commercial,portfolio
+from departments import receipt_accounting
 
 LIMIT='Registre local uniquement. Observations volontaires attestées par le propriétaire, non vérifiées par un tiers. Aucune prospection, publication, transaction, livraison ni dépense externe autorisée. Paiements test et déclarations propriétaire séparés; revenus vérifiés indisponibles avant intégration d’un prestataire.'
 def now():return int(time.time())
@@ -162,11 +163,7 @@ def status(c,t=None):
             'observation_eligible':eligible and not bool(exists),'sale_authorized':False})
     trials=[trial_status(c,x,t) for x in c.execute('SELECT * FROM business_trials ORDER BY id DESC')]
     receipts=[dict(x) for x in c.execute('SELECT * FROM business_receipts ORDER BY id DESC')]
-    totals={}
-    for mode in ('test','owner_declared_live'):
-        gross=sum(x['amount_cents'] for x in receipts if x['mode']==mode and x['kind']=='payment')
-        refunds=sum(x['amount_cents'] for x in receipts if x['mode']==mode and x['kind']=='refund')
-        totals[mode]={'gross_cents':gross,'refunds_cents':refunds,'net_cents':gross-refunds}
+    totals=receipt_accounting.totals(receipts)
     return {'catalog':catalog,'trials':trials,'receipts':receipts,'totals':totals,'currency':'EUR',
         'verified_live_cents':0,'verified_live_available':False,'external_authorized':False,
         'external_spend_cents':0,'events':[dict(x) for x in c.execute('SELECT * FROM business_events ORDER BY id DESC')],
