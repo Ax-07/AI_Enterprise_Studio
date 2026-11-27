@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 import intelligence as intel
 import portfolio
 import research
+from departments import commercial_economics
 
 LIMIT='Préparation interne uniquement. Citations vérifiées dans des extraits locaux, interprétation non certifiée. Aucun prospect contacté, aucune exposition mesurée, aucune vente ni dépense commerciale. Un protocole n’est pas un test exécuté.'
 ACTIONS={'commercial_signal':'ORION','commercial_offer':'HERMES','commercial_economics':'MIDAS','commercial_review':'SENTINEL','commercial_extend':'SENTINEL'}
@@ -160,12 +161,7 @@ def _offer(c,pid,mid,oid):
     return row
 
 def economics_result(plan,d):
-    contribution=plan['price_cents']-d['variable_cost_cents']
-    adverse=plan['price_cents']-(d['variable_cost_cents']*120+99)//100
-    return {'contribution_cents':contribution,'monthly_result_cents':contribution*d['monthly_units']-d['fixed_month_cents'],
-        'breakeven_units':(d['fixed_month_cents']+contribution-1)//contribution if contribution>0 else None,
-        'adverse_monthly_result_cents':adverse*max(1,d['monthly_units']//2)-d['fixed_month_cents'],
-        'classification':'hypothèses EUR, avant impôt et coûts initiaux non inclus'}
+    return commercial_economics.economics_result(plan,d)
 
 def execute(c,t,action,target,text,detail):
     mid=t['mission'];agent=t['agent'];sc=scope(c,mid)
@@ -283,8 +279,7 @@ def offer_status(c,row):
     kinds={x['kind'] for x in usable}
     economics={'id':eco['id'],'assumptions':intel.decode(eco['assumptions']),'result':intel.decode(eco['result'])} if eco else None
     if economics:
-        d=economics['assumptions'];v=(d['variable_cost_cents']*120+99)//100;units=max(1,d['monthly_units']//2)
-        economics['adverse_parameters']={'price_cents':plan['price_cents'],'variable_cost_cents':v,'monthly_units':units,'fixed_month_cents':d['fixed_month_cents'],'breakeven_units':(d['fixed_month_cents']+plan['price_cents']-v-1)//(plan['price_cents']-v) if plan['price_cents']>v else None,'rule':'Volume divisé par deux (arrondi inférieur, minimum 1); coût variable +20 % (arrondi supérieur au centime); prix et fixes inchangés.'}
+        economics['adverse_parameters']=commercial_economics.adverse_parameters(plan,economics['assumptions'])
     audit={'id':review['id'],**intel.decode(review['review'])} if review else None
     gaps=[]
     if not independent:gaps.append('preuve_technique_independante_manquante')
