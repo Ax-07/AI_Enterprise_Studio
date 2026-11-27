@@ -1,7 +1,7 @@
 """Owner-only local commercial registry. No agent actions, contacts, publication or payment API."""
 import hashlib,json,re,time
 import commercial,portfolio
-from departments import receipt_accounting
+from departments import receipt_accounting, commercial_validation
 
 LIMIT='Registre local uniquement. Observations volontaires attestées par le propriétaire, non vérifiées par un tiers. Aucune prospection, publication, transaction, livraison ni dépense externe autorisée. Paiements test et déclarations propriétaire séparés; revenus vérifiés indisponibles avant intégration d’un prestataire.'
 def now():return int(time.time())
@@ -30,15 +30,11 @@ def digest(v):return hashlib.sha256(canonical(v).encode()).hexdigest()
 def log(c,event,oid,detail,t):
     c.execute('INSERT INTO business_events(at,event,object_id,detail) VALUES(?,?,?,?)',(t,event,oid,canonical(detail)))
 def fields(b,keys):
-    if not isinstance(b,dict) or set(b)!=set(keys)|{'confirm'} or b.get('confirm') is not True:
-        raise ValueError('Confirmation explicite et champs exacts requis')
+    return commercial_validation.fields(b,keys)
 def integer(v,lo=1,hi=9007199254740991):
-    if type(v) is not int or not lo<=v<=hi:raise ValueError('Entier hors limites')
-    return v
+    return commercial_validation.integer(v,lo,hi)
 def opaque(v):
-    if not isinstance(v,str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',v):raise ValueError('Référence opaque de 16–80 caractères (lettres, chiffres, tiret, underscore); jamais nom, email, clé ou numéro de carte')
-    # Store only digests, not the original reference. Pseudonymization is not anonymization.
-    return hashlib.sha256(v.encode()).hexdigest()
+    return commercial_validation.opaque(v,re=re,hashlib=hashlib)
 def offer_row(c,oid):
     row=c.execute("""SELECT o.* FROM commercial_offers o JOIN missions m ON m.id=o.mission
         WHERE o.id=? AND m.mode='cloud' AND m.state='terminée'""",(integer(oid),)).fetchone()

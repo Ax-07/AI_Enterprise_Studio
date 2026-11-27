@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 import intelligence as intel
 import portfolio
 import research
-from departments import commercial_economics
+from departments import commercial_economics, commercial_validation
 
 LIMIT='Préparation interne uniquement. Citations vérifiées dans des extraits locaux, interprétation non certifiée. Aucun prospect contacté, aucune exposition mesurée, aucune vente ni dépense commerciale. Un protocole n’est pas un test exécuté.'
 ACTIONS={'commercial_signal':'ORION','commercial_offer':'HERMES','commercial_economics':'MIDAS','commercial_review':'SENTINEL','commercial_extend':'SENTINEL'}
@@ -115,22 +115,16 @@ def scope(c,mid):
         JOIN missions m ON m.id=cm.mission WHERE cm.mission=? AND cm.kind='commercial' AND cp.scope='commercial'""",(mid,)).fetchone()
 
 def _obj(text,fields):
-    if not isinstance(text,str) or len(text)>10000:raise ValueError('JSON commercial trop long')
-    d=intel.decode(text)
-    if not isinstance(d,dict) or set(d)!=set(fields):raise ValueError('Champs requis : '+', '.join(fields))
-    return d
+    return commercial_validation.obj(text,fields,intel=intel)
 
 def _text(d,k,lo=3,hi=1200):
-    if not isinstance(d[k],str):raise ValueError(f'Texte invalide : {k}; chaîne JSON de {lo} à {hi} caractères requise, type reçu {type(d[k]).__name__}')
-    n=len(d[k].strip())
-    if not lo<=n<=hi:raise ValueError(f'Texte invalide : {k}; {n} caractères reçus, {lo} à {hi} requis; raccourcir sans perdre les risques essentiels')
+    return commercial_validation.text(d,k,lo,hi)
 
 def _int(d,k,lo,hi):
-    if type(d[k]) is not int or not lo<=d[k]<=hi:raise ValueError(f'Valeur invalide : {k}; entier JSON de {lo} à {hi} requis')
+    return commercial_validation.bounded_field(d,k,lo,hi)
 
 def _id(target):
-    if not target.isascii() or not target.isdigit() or len(target)>12 or int(target)<=0:raise ValueError('ID numérique requis')
-    return int(target)
+    return commercial_validation.numeric_id(target)
 
 def _proof(c,row):
     p=intel.page_reference(c,row['mission'],row['page'])
