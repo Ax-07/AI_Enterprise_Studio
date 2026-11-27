@@ -1,7 +1,7 @@
 """Owner-only local commercial registry. No agent actions, contacts, publication or payment API."""
 import hashlib,json,re,time
 import commercial,portfolio
-from departments import receipt_accounting, commercial_validation
+from departments import receipt_accounting, commercial_validation, commercial_qualification
 
 LIMIT='Registre local uniquement. Observations volontaires attestées par le propriétaire, non vérifiées par un tiers. Aucune prospection, publication, transaction, livraison ni dépense externe autorisée. Paiements test et déclarations propriétaire séparés; revenus vérifiés indisponibles avant intégration d’un prestataire.'
 def now():return int(time.time())
@@ -41,19 +41,9 @@ def offer_row(c,oid):
     if not row:raise ValueError('Offre interne achevée requise')
     return row
 def gate(c,row):
-    v=commercial.offer_status(c,row);p=portfolio.project(c,row['project'])
-    latest=commercial.project_status(c,row['project'])['offer']
-    reasons=list(v['gaps'])
-    if not p or p['state']!='active':reasons.append('activité inactive')
-    if not latest or latest['id']!=row['id']:reasons.append('offre remplacée')
-    # Documentary/review gaps may justify an observation-only protocol, never a sale.
-    permitted_gaps={'indices_documentaires_insuffisants','revue_independante_manquante_ou_reserves'}
-    review=(v['review'] or {}).get('verdict')
-    eligible=bool(p and p['state']=='active' and latest and latest['id']==row['id'] and row['artifact'] and
-                  set(v['gaps'])<=permitted_gaps and review in ('study_further','propose_future_test'))
-    return v,eligible,reasons
+    return commercial_qualification.gate(c,row,commercial=commercial,portfolio=portfolio)
 def frozen(v):
-    return {k:v[k] for k in ('id','project','mission','artifact','artifact_sha256','plan','economics','review','gaps','state')}
+    return commercial_qualification.frozen(v)
 def trial_row(c,tid):
     row=c.execute('SELECT * FROM business_trials WHERE id=?',(integer(tid),)).fetchone()
     if not row:raise ValueError('Protocole absent')
