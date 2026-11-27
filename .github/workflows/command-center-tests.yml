@@ -21,6 +21,15 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m unittest discover -v
+      - name: Static repository inventory (committed public-source paths)
+        run: python audit_repository.py --summary --output "$RUNNER_TEMP/aes-repository-inventory.json"
+      - name: Upload static inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: aes-repository-inventory
+          path: ${{ runner.temp }}/aes-repository-inventory.json
+          if-no-files-found: error
+          retention-days: 14
       - name: JavaScript syntax
         run: |
           python -c "from pathlib import Path; s=Path('index.html').read_text(encoding='utf8'); Path('/tmp/enterprise-ui.js').write_text(s.split('<script>',1)[1].split('</script>',1)[0], encoding='utf8')"
@@ -65,13 +74,15 @@ jobs:
           git -C "$GITHUB_WORKSPACE" archive 3dbfe4c382e9008d54e6f3df8db14cd1299b1218 AI_Enterprise_Studio_V02 | tar -x -C "$RUNNER_TEMP/aes-stable"
           python -I -c "import sys; sys.path.insert(0,sys.argv[1]); import serveur as s; s.init(); c=s.db(); db=c.__enter__(); mid=db.execute(\"INSERT INTO missions(title,mode,state,engine) VALUES('historical fixture','cloud','terminée','dynamic')\").lastrowid; db.execute(\"INSERT INTO ledger(mission,model,reserved,actual,state) VALUES(?,'test',1000,500,'mesuré')\",(mid,)); c.__exit__(None,None,None)" "$RUNNER_TEMP/aes-stable/AI_Enterprise_Studio_V02"
           python build_candidate.py "$RUNNER_TEMP/AI_Enterprise_Studio_V03.zip"
+          python smoke_release_guard.py --archive "$RUNNER_TEMP/AI_Enterprise_Studio_V03.zip"
           python -m zipfile -e "$RUNNER_TEMP/AI_Enterprise_Studio_V03.zip" "$RUNNER_TEMP/aes-package"
           python "$RUNNER_TEMP/aes-package/AI_Enterprise_Studio_V03/prepare_update.py" --source "$RUNNER_TEMP/aes-stable/AI_Enterprise_Studio_V02" --destination "$RUNNER_TEMP/AI_Enterprise_Studio_V03" --confirm-offline
           python -c "import json,sys; from pathlib import Path; r=json.loads(Path(sys.argv[1]).read_text()); assert r['protected_tables']['ledger']==1 and not r['started']" "$RUNNER_TEMP/AI_Enterprise_Studio_V03/PREPARATION.json"
+          python smoke_release_guard.py --archive "$RUNNER_TEMP/AI_Enterprise_Studio_V03.zip" --installed "$RUNNER_TEMP/AI_Enterprise_Studio_V03"
       - name: Upload candidate package (public source only)
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Enterprise-Studio-V3.0.0
+          name: AI-Enterprise-Studio-candidate
           path: ${{ runner.temp }}/AI_Enterprise_Studio_V03.zip
           if-no-files-found: error
           retention-days: 14

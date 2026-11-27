@@ -1,6 +1,7 @@
 """D03/D07: read-only local projection, including persisted task and delegation state."""
 import sqlite3
 from pathlib import Path
+from infrastructure.database import read_snapshot
 from datetime import datetime, timezone
 
 BUILDINGS = {
@@ -11,11 +12,7 @@ BUILDINGS = {
 
 def snapshot(path, agents, budget, version):
     # mode=ro prevents creating a missing database or writing existing data.
-    db = sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro', uri=True, timeout=3)
-    try:
-        db.row_factory = sqlite3.Row
-        db.execute('PRAGMA query_only=ON')
-        db.execute('BEGIN')
+    with read_snapshot(path) as db:
         def rows(sql, params=()):
             return [dict(r) for r in db.execute(sql, params)]
         missions=rows("SELECT id,title,mode,state,created FROM missions ORDER BY id DESC LIMIT 30")
@@ -83,5 +80,3 @@ def snapshot(path, agents, budget, version):
             'enterprise_kpi':kpi,
             'pending_requests':waiting,'mission_counts':mission_counts,'attention_missions':attention,
             'missions':missions,'tasks':tasks,'events':events,'artifacts':artifacts}
-    finally:
-        db.close()

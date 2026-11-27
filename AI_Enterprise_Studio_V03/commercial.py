@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 import intelligence as intel
 import portfolio
 import research
+from departments import commercial_economics, commercial_validation, commercial_evidence, commercial_qualification
 
 LIMIT='Préparation interne uniquement. Citations vérifiées dans des extraits locaux, interprétation non certifiée. Aucun prospect contacté, aucune exposition mesurée, aucune vente ni dépense commerciale. Un protocole n’est pas un test exécuté.'
 ACTIONS={'commercial_signal':'ORION','commercial_offer':'HERMES','commercial_economics':'MIDAS','commercial_review':'SENTINEL','commercial_extend':'SENTINEL'}
@@ -114,45 +115,25 @@ def scope(c,mid):
         JOIN missions m ON m.id=cm.mission WHERE cm.mission=? AND cm.kind='commercial' AND cp.scope='commercial'""",(mid,)).fetchone()
 
 def _obj(text,fields):
-    if not isinstance(text,str) or len(text)>10000:raise ValueError('JSON commercial trop long')
-    d=intel.decode(text)
-    if not isinstance(d,dict) or set(d)!=set(fields):raise ValueError('Champs requis : '+', '.join(fields))
-    return d
+    return commercial_validation.obj(text,fields,intel=intel)
 
 def _text(d,k,lo=3,hi=1200):
-    if not isinstance(d[k],str):raise ValueError(f'Texte invalide : {k}; chaîne JSON de {lo} à {hi} caractères requise, type reçu {type(d[k]).__name__}')
-    n=len(d[k].strip())
-    if not lo<=n<=hi:raise ValueError(f'Texte invalide : {k}; {n} caractères reçus, {lo} à {hi} requis; raccourcir sans perdre les risques essentiels')
+    return commercial_validation.text(d,k,lo,hi)
 
 def _int(d,k,lo,hi):
-    if type(d[k]) is not int or not lo<=d[k]<=hi:raise ValueError(f'Valeur invalide : {k}; entier JSON de {lo} à {hi} requis')
+    return commercial_validation.bounded_field(d,k,lo,hi)
 
 def _id(target):
-    if not target.isascii() or not target.isdigit() or len(target)>12 or int(target)<=0:raise ValueError('ID numérique requis')
-    return int(target)
+    return commercial_validation.numeric_id(target)
 
 def _proof(c,row):
-    p=intel.page_reference(c,row['mission'],row['page'])
-    content=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(row['page'],)).fetchone()[0])
-    if row['quote'] not in content['texte'] or p!=intel.decode(row['proof']):raise ValueError('Citation ou empreinte modifiée')
-    return p
+    return commercial_evidence.proof(c,row,intel=intel)
 
 def signals(c,pid,mid=None,limit=12):
-    out=[]
-    for row in c.execute("""SELECT s.* FROM commercial_signals s JOIN missions m ON m.id=s.mission
-        WHERE s.project=? AND m.mode='cloud' AND (m.state='terminée' OR s.mission=?) AND (? IS NULL OR s.mission<=?)
-        ORDER BY s.id DESC LIMIT ?""",(pid,mid,mid,mid,limit)):
-        try: proof=_proof(c,row)
-        except (ValueError,TypeError,KeyError,AttributeError):continue
-        excerpt=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(row['page'],)).fetchone()[0])['texte']
-        out.append({**{k:row[k] for k in ('id','mission','kind','quote','interpretation','created')},'proof':proof,'quality':research.excerpt_quality(excerpt)})
-    return out
+    return commercial_evidence.signals(c,pid,mid,limit,intel=intel,research=research,proof=_proof)
 
 def _signal(c,pid,sid,mid):
-    row=c.execute("""SELECT s.* FROM commercial_signals s JOIN missions m ON m.id=s.mission
-        WHERE s.id=? AND s.project=? AND m.mode='cloud' AND (m.state='terminée' OR s.mission=?)""",(sid,pid,mid)).fetchone()
-    if not row:raise ValueError('Signal de cette activité requis')
-    return row,_proof(c,row)
+    return commercial_evidence.signal(c,pid,sid,mid,proof=_proof)
 
 def _offer(c,pid,mid,oid):
     row=c.execute('SELECT * FROM commercial_offers WHERE id=? AND project=? AND mission=?',(oid,pid,mid)).fetchone()
@@ -160,12 +141,7 @@ def _offer(c,pid,mid,oid):
     return row
 
 def economics_result(plan,d):
-    contribution=plan['price_cents']-d['variable_cost_cents']
-    adverse=plan['price_cents']-(d['variable_cost_cents']*120+99)//100
-    return {'contribution_cents':contribution,'monthly_result_cents':contribution*d['monthly_units']-d['fixed_month_cents'],
-        'breakeven_units':(d['fixed_month_cents']+contribution-1)//contribution if contribution>0 else None,
-        'adverse_monthly_result_cents':adverse*max(1,d['monthly_units']//2)-d['fixed_month_cents'],
-        'classification':'hypothèses EUR, avant impôt et coûts initiaux non inclus'}
+    return commercial_economics.economics_result(plan,d)
 
 def execute(c,t,action,target,text,detail):
     mid=t['mission'];agent=t['agent'];sc=scope(c,mid)
@@ -262,45 +238,7 @@ def execute(c,t,action,target,text,detail):
     raise ValueError('Action inconnue')
 
 def offer_status(c,row):
-    plan=intel.decode(row['plan']);pid=row['project'];mid=row['mission']
-    evidence=[];invalid=[]
-    for sid in plan['signal_ids']:
-        try:
-            s,p=_signal(c,pid,sid,mid)
-            excerpt=intel.decode(c.execute('SELECT content FROM fetched WHERE id=?',(s['page'],)).fetchone()[0])['texte']
-            evidence.append({'id':sid,'kind':s['kind'],'proof':p,'quote':s['quote'],'interpretation':s['interpretation'],'quality':research.excerpt_quality(excerpt)})
-        except (ValueError,TypeError,KeyError,AttributeError):invalid.append(sid)
-    eco=c.execute('SELECT * FROM commercial_economics WHERE offer=?',(row['id'],)).fetchone()
-    review=c.execute('SELECT * FROM commercial_reviews WHERE offer=?',(row['id'],)).fetchone()
-    art=portfolio.latest(c,pid);proofs=[];lab=None
-    exact=bool(art and art['id']==row['artifact'] and hashlib.sha256(art['content'].encode()).hexdigest()==row['artifact_sha256'])
-    if exact:
-        proofs=portfolio.evidence(c,art);lab=portfolio.laboratory.canonical(c,art)
-    independent=any(p['agent']=='SENTINEL' and p['status']=='passed' for p in proofs) and not any(p['agent']=='SENTINEL' and p['status']=='failed' for p in proofs)
-    if exact and portfolio.laboratory.supports(art):independent=independent and bool(lab and lab['status']=='passed')
-    usable=[x for x in evidence if x['quality']=='text_available']
-    domains={urlsplit(x['proof']['url']).hostname for x in usable}
-    kinds={x['kind'] for x in usable}
-    economics={'id':eco['id'],'assumptions':intel.decode(eco['assumptions']),'result':intel.decode(eco['result'])} if eco else None
-    if economics:
-        d=economics['assumptions'];v=(d['variable_cost_cents']*120+99)//100;units=max(1,d['monthly_units']//2)
-        economics['adverse_parameters']={'price_cents':plan['price_cents'],'variable_cost_cents':v,'monthly_units':units,'fixed_month_cents':d['fixed_month_cents'],'breakeven_units':(d['fixed_month_cents']+plan['price_cents']-v-1)//(plan['price_cents']-v) if plan['price_cents']>v else None,'rule':'Volume divisé par deux (arrondi inférieur, minimum 1); coût variable +20 % (arrondi supérieur au centime); prix et fixes inchangés.'}
-    audit={'id':review['id'],**intel.decode(review['review'])} if review else None
-    gaps=[]
-    if not independent:gaps.append('preuve_technique_independante_manquante')
-    if invalid:gaps.append('signaux_invalides')
-    if len(domains)<2 or 'buyer_problem' not in kinds or not kinds.intersection({'competitor_offer','competitor_price','alternative'}):gaps.append('indices_documentaires_insuffisants')
-    if not economics or economics['result']!=economics_result(plan,economics['assumptions']) or economics['result']['monthly_result_cents']<=0 or economics['result']['contribution_cents']<=0:gaps.append('scenario_economique_manquant_ou_defavorable')
-    if not audit or audit['verdict']!='propose_future_test':gaps.append('revue_independante_manquante_ou_reserves')
-    m=c.execute('SELECT state FROM missions WHERE id=?',(mid,)).fetchone()
-    if m['state']!='terminée':gaps.append('mission_non_terminee')
-    origin=c.execute("""SELECT base_offer FROM commercial_followups WHERE resulting_offer=?
-        UNION ALL SELECT f.base_offer FROM commercial_followup_retries r JOIN commercial_followups f ON f.campaign=r.original_campaign WHERE r.resulting_offer=?""",(row['id'],row['id'])).fetchone()
-    return {'id':row['id'],'base_offer':origin['base_offer'] if origin else None,'project':pid,'mission':mid,'artifact':row['artifact'],'artifact_sha256':row['artifact_sha256'],
-        'plan':plan,'evidence':evidence,'invalid_signal_ids':invalid,'economics':economics,'review':audit,
-        'technical_proofs':proofs,'laboratory':lab,'gaps':gaps,
-        'state':'proposition_a_examiner' if not gaps else 'preparation_incomplete',
-        'observations':0,'sales':0,'commercial_spend_cents':0,'external_authorized':False,'limit':LIMIT}
+    return commercial_qualification.offer_status(c,row,intel=intel,signal=_signal,research=research,portfolio=portfolio,hashlib=hashlib,urlsplit=urlsplit,commercial_economics=commercial_economics,economics_result=economics_result,limit=LIMIT)
 
 def project_status(c,pid,mid=None):
     row=c.execute("""SELECT o.* FROM commercial_offers o JOIN missions m ON m.id=o.mission WHERE o.project=?

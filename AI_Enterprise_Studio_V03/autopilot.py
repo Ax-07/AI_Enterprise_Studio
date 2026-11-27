@@ -1,5 +1,6 @@
 """Bounded, persistent internal campaign scheduler. No provider outside the mission engine."""
 import json, hashlib
+from departments import accounting
 import protocol_recovery
 import working_memory
 import portfolio
@@ -35,8 +36,7 @@ def link(c,mid):
     return c.execute("""SELECT c.*,cm.kind,cm.artifact FROM campaigns c JOIN campaign_missions cm ON cm.campaign=c.id WHERE cm.mission=?""",(mid,)).fetchone()
 
 def costs(c,cid):
-    return c.execute("""SELECT COALESCE(SUM(COALESCE(l.actual,l.reserved)),0) FROM ledger l
-        JOIN campaign_missions cm ON cm.mission=l.mission WHERE cm.campaign=?""",(cid,)).fetchone()[0]
+    return accounting.campaign_total(c,cid)
 
 def searches(c,cid):
     return c.execute("""SELECT COUNT(*) FROM searches s JOIN campaign_missions cm ON cm.mission=s.mission WHERE cm.campaign=?""",(cid,)).fetchone()[0]
@@ -118,7 +118,7 @@ def readiness(c,cfg,locked=False):
     campaign=c.execute("SELECT id FROM campaigns WHERE state='actif'").fetchone()
     mission=c.execute("SELECT id FROM missions WHERE state='en cours' ORDER BY id LIMIT 1").fetchone()
     pending=c.execute("SELECT COUNT(*) FROM requests WHERE state='en attente'").fetchone()[0]
-    remaining=max(0,cfg['budget']-c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0])
+    remaining=max(0,cfg['budget']-accounting.global_total(c))
     blockers=[]
     if campaign:blockers.append('Campagne #'+str(campaign[0])+' en cours')
     if mission:blockers.append('Mission #'+str(mission[0])+' en cours')
@@ -161,7 +161,7 @@ def start(c,body,cfg):
         if not d.is_finite() or not Decimal('0.01')<=d<=Decimal('10') or micro!=micro.to_integral_value():raise ValueError('Budget entre 0,01 et 10 USD requis')
         budget=int(micro)
     except (InvalidOperation,ValueError,OverflowError):raise ValueError('Budget invalide')
-    remaining=cfg['budget']-c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0]
+    remaining=cfg['budget']-accounting.global_total(c)
     if not cfg['key'] or budget>remaining:raise ValueError('Clé ou budget global disponible insuffisant')
     portfolio.sync(c)
     requested=body.get('project')
@@ -219,7 +219,7 @@ def resume(c,cid,cfg):
     if not p or p['state'] not in ('interrompu','arrêté','en attente','bloqué'):raise ValueError('Campagne non reprenable automatiquement')
     if active(c) or c.execute("SELECT 1 FROM missions WHERE state='en cours'").fetchone():raise ValueError('Un travail est déjà en cours')
     if c.execute("SELECT 1 FROM requests WHERE state='en attente'").fetchone():raise ValueError('Traiter les décisions en attente')
-    if not cfg['key'] or costs(c,cid)>=p['budget'] or c.execute('SELECT COALESCE(SUM(COALESCE(actual,reserved)),0) FROM ledger').fetchone()[0]>=cfg['budget']:raise ValueError('Ressources insuffisantes; aucune remise à zéro')
+    if not cfg['key'] or costs(c,cid)>=p['budget'] or accounting.global_total(c)>=cfg['budget']:raise ValueError('Ressources insuffisantes; aucune remise à zéro')
     scope=portfolio.scope(c,cid)
     if scope and scope['project'] is not None and portfolio.project(c,scope['project'])['state']!='active':raise ValueError('Réactiver cette activité avant la reprise')
     cy=improvement.cycle(c,cid)

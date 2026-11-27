@@ -1,6 +1,7 @@
 """Owner-only local commercial registry. No agent actions, contacts, publication or payment API."""
 import hashlib,json,re,time
 import commercial,portfolio
+from departments import receipt_accounting, commercial_validation, commercial_qualification
 
 LIMIT='Registre local uniquement. Observations volontaires attestées par le propriétaire, non vérifiées par un tiers. Aucune prospection, publication, transaction, livraison ni dépense externe autorisée. Paiements test et déclarations propriétaire séparés; revenus vérifiés indisponibles avant intégration d’un prestataire.'
 def now():return int(time.time())
@@ -29,34 +30,20 @@ def digest(v):return hashlib.sha256(canonical(v).encode()).hexdigest()
 def log(c,event,oid,detail,t):
     c.execute('INSERT INTO business_events(at,event,object_id,detail) VALUES(?,?,?,?)',(t,event,oid,canonical(detail)))
 def fields(b,keys):
-    if not isinstance(b,dict) or set(b)!=set(keys)|{'confirm'} or b.get('confirm') is not True:
-        raise ValueError('Confirmation explicite et champs exacts requis')
+    return commercial_validation.fields(b,keys)
 def integer(v,lo=1,hi=9007199254740991):
-    if type(v) is not int or not lo<=v<=hi:raise ValueError('Entier hors limites')
-    return v
+    return commercial_validation.integer(v,lo,hi)
 def opaque(v):
-    if not isinstance(v,str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',v):raise ValueError('Référence opaque de 16–80 caractères (lettres, chiffres, tiret, underscore); jamais nom, email, clé ou numéro de carte')
-    # Store only digests, not the original reference. Pseudonymization is not anonymization.
-    return hashlib.sha256(v.encode()).hexdigest()
+    return commercial_validation.opaque(v,re=re,hashlib=hashlib)
 def offer_row(c,oid):
     row=c.execute("""SELECT o.* FROM commercial_offers o JOIN missions m ON m.id=o.mission
         WHERE o.id=? AND m.mode='cloud' AND m.state='terminée'""",(integer(oid),)).fetchone()
     if not row:raise ValueError('Offre interne achevée requise')
     return row
 def gate(c,row):
-    v=commercial.offer_status(c,row);p=portfolio.project(c,row['project'])
-    latest=commercial.project_status(c,row['project'])['offer']
-    reasons=list(v['gaps'])
-    if not p or p['state']!='active':reasons.append('activité inactive')
-    if not latest or latest['id']!=row['id']:reasons.append('offre remplacée')
-    # Documentary/review gaps may justify an observation-only protocol, never a sale.
-    permitted_gaps={'indices_documentaires_insuffisants','revue_independante_manquante_ou_reserves'}
-    review=(v['review'] or {}).get('verdict')
-    eligible=bool(p and p['state']=='active' and latest and latest['id']==row['id'] and row['artifact'] and
-                  set(v['gaps'])<=permitted_gaps and review in ('study_further','propose_future_test'))
-    return v,eligible,reasons
+    return commercial_qualification.gate(c,row,commercial=commercial,portfolio=portfolio)
 def frozen(v):
-    return {k:v[k] for k in ('id','project','mission','artifact','artifact_sha256','plan','economics','review','gaps','state')}
+    return commercial_qualification.frozen(v)
 def trial_row(c,tid):
     row=c.execute('SELECT * FROM business_trials WHERE id=?',(integer(tid),)).fetchone()
     if not row:raise ValueError('Protocole absent')
@@ -162,11 +149,7 @@ def status(c,t=None):
             'observation_eligible':eligible and not bool(exists),'sale_authorized':False})
     trials=[trial_status(c,x,t) for x in c.execute('SELECT * FROM business_trials ORDER BY id DESC')]
     receipts=[dict(x) for x in c.execute('SELECT * FROM business_receipts ORDER BY id DESC')]
-    totals={}
-    for mode in ('test','owner_declared_live'):
-        gross=sum(x['amount_cents'] for x in receipts if x['mode']==mode and x['kind']=='payment')
-        refunds=sum(x['amount_cents'] for x in receipts if x['mode']==mode and x['kind']=='refund')
-        totals[mode]={'gross_cents':gross,'refunds_cents':refunds,'net_cents':gross-refunds}
+    totals=receipt_accounting.totals(receipts)
     return {'catalog':catalog,'trials':trials,'receipts':receipts,'totals':totals,'currency':'EUR',
         'verified_live_cents':0,'verified_live_available':False,'external_authorized':False,
         'external_spend_cents':0,'events':[dict(x) for x in c.execute('SELECT * FROM business_events ORDER BY id DESC')],
