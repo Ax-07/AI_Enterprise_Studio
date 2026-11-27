@@ -6,6 +6,7 @@ from core import agents as agent_registry
 from infrastructure.configuration import load_config
 from infrastructure.database import transaction
 from infrastructure import providers, security, diagnostics
+from departments import ai_costs
 import moteur, pilotage, recovery, autopilot, portfolio, laboratory, improvement, connectors, n8n_bridge, intelligence, collective_evidence, commercial, research, planner, incidents, periodic, budgeting, draft_recovery, business, acquisition, acquisition_sync, acquisition_control, hermes_acquisition, acquisition_runtime, marketing, campus_preview, campus_live, campus_tools, campus_commands, sys
 ROOT=Path(__file__).resolve().parent
 DATA=ROOT/'donnees'; DATA.mkdir(exist_ok=True)
@@ -76,8 +77,7 @@ def call_model(mid, agent, prompt, cfg, maxout=8192, stage=None, *, schema=None,
     model=cfg['models'][agent]; pi,po=PRICES[model]
     body=providers.responses_payload(model,prompt,maxout,RULES,SCHEMA,schema=schema,rules=rules)
     # Estimation conservatrice en octets UTF-8 + marge, pas un plafond fournisseur garanti.
-    bound=len(json.dumps(body,ensure_ascii=False).encode())+1024
-    reserve=math.ceil(bound*pi+maxout*po)
+    reserve=ai_costs.reservation(body,pi,po,maxout,dumps=json.dumps,ceil=math.ceil)
     refused_budget=None
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
@@ -105,7 +105,7 @@ def call_model(mid, agent, prompt, cfg, maxout=8192, stage=None, *, schema=None,
         raise RuntimeError(agent+' : appel OpenAI non confirmé; réservation conservée. '+diag) from None
     it,ot,rt,reason,status_api,refused,diag=providers.response_usage(r)
     if isinstance(it,int) and isinstance(ot,int) and it>=0 and ot>=0:
-        actual=math.ceil(it*pi+ot*po)
+        actual=ai_costs.measured(it,ot,pi,po,ceil=math.ceil)
         with db() as c: c.execute("UPDATE ledger SET actual=?,state='mesuré',input_tokens=?,output_tokens=?,reasoning_tokens=?,diagnostic=? WHERE id=?",(actual,it,ot,rt,diag,rid))
     else:
         with db() as c: c.execute("UPDATE ledger SET state='à rapprocher',diagnostic=? WHERE id=?",(diag+' / usage absent',rid))

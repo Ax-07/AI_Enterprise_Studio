@@ -1,5 +1,6 @@
 """Conservative fit of the actual outgoing output limit; no change to price or input bound."""
 import math,json
+from departments import ai_costs
 
 def init(c):
     c.execute("""CREATE TABLE IF NOT EXISTS budget_decisions(
@@ -10,7 +11,7 @@ def init(c):
         created TEXT DEFAULT CURRENT_TIMESTAMP)""")
 def estimate(body,pi,po,tokens):
     b={**body,'max_output_tokens':tokens}
-    return math.ceil((len(json.dumps(b,ensure_ascii=False).encode())+1024)*pi+tokens*po)
+    return ai_costs.reservation(b,pi,po,tokens,dumps=json.dumps,ceil=math.ceil)
 def fit(c,mid,stage,agent,body,pi,po,cfg,used,campaign):
     import autopilot
     requested=body['max_output_tokens']
